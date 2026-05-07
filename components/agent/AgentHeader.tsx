@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -8,23 +8,30 @@ import {
   Sun01Icon,
   CellularNetworkIcon,
 } from "@hugeicons/core-free-icons";
-import Image from "next/image";
+
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useThemeMode } from "@/hooks/useThemeMode";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
+import { authorizedFetch } from "@/lib/api/client";
+import AgentSessionMenu from "@/components/agent/AgentSessionMenu";
 
-type AgentHeaderProps = {
-  title?: string;
-  subtitle?: string;
-};
-
-export default function AgentHeader({ title, subtitle }: AgentHeaderProps) {
+export default function AgentHeader() {
   const isOnline = useOnlineStatus();
   const { toggleTheme } = useThemeMode();
-  const showDebugToast = () => {
-    toast("This is a debug toast. Replace with actual functionality.");
-  };
+  const bootstrapQuery = useQuery({
+    queryKey: ["agent-header-bootstrap"],
+    queryFn: async () =>
+      (
+        await authorizedFetch<{
+          success: boolean;
+          bootstrap: {
+            profile: { fullName?: string; organizationRole?: string };
+          };
+        }>("/api/agent/bootstrap")
+      ).bootstrap,
+  });
+ 
 
   return (
     <header className="sticky top-0 z-30 bg-background/95">
@@ -32,17 +39,13 @@ export default function AgentHeader({ title, subtitle }: AgentHeaderProps) {
         <div className="flex items-center justify-between">
           <div className="">
             {/* logo */}
-            <Image
-              src="/logo.png"
-              alt="FieldOps Logo"
-              width={60}
-              height={60}
-              className="w-16 h-auto"
-            />
+            <span className="text-xl font-semibold tracking-tight text-foreground">
+              Activation<span className="text-primary">IQ</span>
+            </span>
           </div>
 
           <div className="flex items-center gap-2">
-            <Button
+            {/* <Button
               variant="secondary"
               size="icon"
               className="rounded-full bg-muted/70 text-foreground hover:bg-muted"
@@ -53,7 +56,7 @@ export default function AgentHeader({ title, subtitle }: AgentHeaderProps) {
                 size={18}
                 strokeWidth={1.9}
               />
-            </Button>
+            </Button> */}
             <Button
               variant="secondary"
               size="icon"
@@ -68,7 +71,7 @@ export default function AgentHeader({ title, subtitle }: AgentHeaderProps) {
                 <HugeiconsIcon icon={Sun01Icon} size={18} strokeWidth={1.9} />
               </span>
             </Button>
-            <Button
+            {/* <Button
               variant="secondary"
               size="icon"
               className="rounded-full bg-muted/70 text-foreground hover:bg-muted"
@@ -80,7 +83,7 @@ export default function AgentHeader({ title, subtitle }: AgentHeaderProps) {
                 size={18}
                 strokeWidth={1.9}
               />
-            </Button>
+            </Button> */}
             <Button
               variant="secondary"
               size="icon"
@@ -95,6 +98,10 @@ export default function AgentHeader({ title, subtitle }: AgentHeaderProps) {
                 strokeWidth={1.9}
               />
             </Button>
+            <AgentSessionMenu
+              fullName={bootstrapQuery.data?.profile.fullName}
+              roleLabel={bootstrapQuery.data?.profile.organizationRole}
+            />
           </div>
         </div>
       </div>

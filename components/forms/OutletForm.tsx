@@ -1,126 +1,118 @@
 "use client";
 
 import { useState } from "react";
-import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-export default function OutletForm() {
-  const [gpsCaptured, setGpsCaptured] = useState(false);
+export type OutletFormConfig = {
+  requireOutletName?: boolean;
+  requireOutletType?: boolean;
+  requireContactPerson?: boolean;
+  requirePhone?: boolean;
+  requireAddress?: boolean;
+  requireGps?: boolean;
+};
+
+type OutletFormValue = {
+  name: string;
+  outletType?: string;
+  contactPerson?: string;
+  phone?: string;
+  address?: string;
+};
+
+export default function OutletForm({
+  config,
+  outletTypes,
+  loading,
+  onCaptureGps,
+  gpsCaptured,
+  onSubmit,
+}: {
+  config?: OutletFormConfig;
+  outletTypes: string[];
+  loading?: boolean;
+  onCaptureGps?: () => void;
+  gpsCaptured?: boolean;
+  onSubmit: (value: OutletFormValue) => void;
+}) {
+  const merged: Required<OutletFormConfig> = {
+    requireOutletName: true,
+    requireOutletType: true,
+    requireContactPerson: false,
+    requirePhone: false,
+    requireAddress: false,
+    requireGps: true,
+    ...(config ?? {}),
+  };
+
+  const [name, setName] = useState("");
   const [outletType, setOutletType] = useState("");
-  const [territory, setTerritory] = useState("");
-  const [channel, setChannel] = useState("");
+  const [contactPerson, setContactPerson] = useState("");
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
 
   return (
     <form
       className="space-y-4 rounded-3xl border border-border/70 bg-card p-4 shadow-sm"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!outletType || !territory || !channel) {
-          toast.error("Please select outlet type, territory, and sales channel.");
-          return;
-        }
-        toast.success("Outlet saved locally (mock).");
+        onSubmit({
+          name,
+          outletType: outletType || undefined,
+          contactPerson: contactPerson || undefined,
+          phone: phone || undefined,
+          address: address || undefined,
+        });
       }}
     >
       <div className="space-y-2">
         <label className="text-sm font-medium">Outlet Name</label>
-        <Input placeholder="Enter outlet name" required />
+        <Input placeholder="Enter outlet name" value={name} onChange={(e) => setName(e.target.value)} required={merged.requireOutletName} />
       </div>
 
-      <div className="space-y-2">
-        <label className="text-sm font-medium">Outlet Type</label>
-        <Select value={outletType} onValueChange={setOutletType}>
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select outlet type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="supermarket">Supermarket</SelectItem>
-            <SelectItem value="mini-mart">Mini Mart</SelectItem>
-            <SelectItem value="kiosk">Kiosk</SelectItem>
-            <SelectItem value="wholesale">Wholesale</SelectItem>
-            <SelectItem value="pharmacy">Pharmacy</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-2">
-        <label className="text-sm font-medium">Territory / City</label>
-       
-        <Select value={territory} onValueChange={setTerritory}>
-      
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select territory" />
-          </SelectTrigger>
-      
-          <SelectContent>
-            <SelectItem value="lagos-mainland">Lagos Mainland</SelectItem>
-            <SelectItem value="lagos-island">Lagos Island</SelectItem>
-            <SelectItem value="ibadan-north">Ibadan North</SelectItem>
-            <SelectItem value="abuja-central">Abuja Central</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-2">
-        <label className="text-sm font-medium">Sales Channel</label>
-        <Select value={channel} onValueChange={setChannel}>
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select sales channel" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="modern-trade">Modern Trade</SelectItem>
-            <SelectItem value="general-trade">General Trade</SelectItem>
-            <SelectItem value="horeca">HORECA</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      {merged.requireOutletType ? (
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Outlet Type</label>
+          <Select value={outletType} onValueChange={setOutletType}>
+            <SelectTrigger className="w-full"><SelectValue placeholder="Select outlet type" /></SelectTrigger>
+            <SelectContent>
+              {outletTypes.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
 
       <div className="space-y-2">
         <label className="text-sm font-medium">Contact Person</label>
-        <Input placeholder="Enter contact person" />
+        <Input placeholder="Enter contact person" value={contactPerson} onChange={(e) => setContactPerson(e.target.value)} required={merged.requireContactPerson} />
       </div>
 
       <div className="space-y-2">
         <label className="text-sm font-medium">Phone Number</label>
-        <Input placeholder="+234..." />
+        <Input placeholder="+234..." value={phone} onChange={(e) => setPhone(e.target.value)} required={merged.requirePhone} />
       </div>
 
       <div className="space-y-2">
         <label className="text-sm font-medium">Address</label>
-        <Textarea placeholder="Street, city, landmark" />
+        <Textarea placeholder="Street, landmark" value={address} onChange={(e) => setAddress(e.target.value)} required={merged.requireAddress} />
       </div>
 
-      <div className="rounded-2xl border border-border/70 bg-muted/40 p-3">
-        <p className="text-xs text-muted-foreground">GPS Location</p>
-        <p className="mt-1 text-sm font-medium">
-          {gpsCaptured ? "Location captured • Accuracy 8m" : "No location captured yet"}
-        </p>
-        <Button
-          type="button"
-          variant="outline"
-          className="mt-3 h-11 rounded-xl"
-          onClick={() => {
-            setGpsCaptured(true);
-            toast.message("GPS captured (mock).");
-          }}
-        >
-          Capture Location
-        </Button>
-      </div>
+      {merged.requireGps ? (
+        <div className="rounded-2xl border border-border/70 bg-muted/40 p-3">
+          <p className="text-xs text-muted-foreground">GPS Location</p>
+          <p className="mt-1 text-sm font-medium">{gpsCaptured ? "Location captured" : "No location captured yet"}</p>
+          <Button type="button" variant="outline" className="mt-3 h-11 rounded-xl" onClick={onCaptureGps}>Capture Location</Button>
+        </div>
+      ) : null}
 
-      <Button type="submit" className="h-11 w-full rounded-2xl text-sm font-semibold">
-        Save Outlet
+      <Button type="submit" className="h-11 w-full rounded-2xl text-sm font-semibold" disabled={loading}>
+        {loading ? "Saving..." : "Save Outlet"}
       </Button>
     </form>
   );
 }
+

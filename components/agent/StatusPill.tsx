@@ -19,6 +19,15 @@ const styleByStatus: Record<StatusValue, string> = {
 };
 
 export default function StatusPill({ status }: StatusPillProps) {
+  const label =
+    status === "synced"
+      ? "Saved Online"
+      : status === "pending"
+        ? "Waiting for Network"
+        : status === "failed"
+          ? "Sync Failed"
+          : status.replace("_", " ");
+
   return (
     <Badge
       className={cn(
@@ -26,7 +35,7 @@ export default function StatusPill({ status }: StatusPillProps) {
         styleByStatus[status]
       )}
     >
-      {status.replace("_", " ")}
+      {label}
     </Badge>
   );
 }

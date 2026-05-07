@@ -1,59 +1,34 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-
 import { cn } from "@/lib/utils";
 
 type ActionTileProps = {
   title: string;
-  caption: string;
   href: string;
   icon: ReactNode;
-  accent?: "blue" | "green" | "amber" | "rose";
+  accent?: "orange" | "green" | "amber" | "rose";
 };
 
-const tileStyles = {
-  blue: "border-sky-200/80 bg-sky-100 text-sky-950 dark:border-sky-900/60 dark:bg-sky-900/40 dark:text-sky-100",
-  green:
-    "border-emerald-200/80 bg-emerald-100 text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-900/45 dark:text-emerald-100",
-  amber:
-    "border-lime-300/80 bg-lime-300 text-lime-950 dark:border-lime-900/60 dark:bg-lime-900/55 dark:text-lime-100",
-  rose: "border-rose-200/80 bg-rose-100 text-rose-950 dark:border-rose-900/60 dark:bg-rose-900/45 dark:text-rose-100",
+const styles = {
+  orange: "bg-orange-500/5 border-orange-500/10 text-orange-600",
+  green: "bg-emerald-500/5 border-emerald-500/10 text-emerald-600",
+  amber: "bg-amber-500/5 border-amber-500/10 text-amber-600",
+  rose: "bg-rose-500/5 border-rose-500/10 text-rose-600",
 };
 
-const iconStyles = {
-  blue: "bg-white/70 dark:bg-black/30",
-  green: "bg-white/70 dark:bg-black/30",
-  amber: "bg-white/70 dark:bg-black/30",
-  rose: "bg-white/70 dark:bg-black/30",
-};
-
-export default function ActionTile({
-  title,
-  caption,
-  href,
-  icon,
-  accent = "blue",
-}: ActionTileProps) {
+export default function ActionTile({ title, href, icon, accent = "orange" }: ActionTileProps) {
   return (
     <Link
       href={href}
       className={cn(
-        "block rounded-2xl border p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md",
-        tileStyles[accent]
+        "flex flex-col items-center justify-center gap-3 aspect-square rounded-[2rem] border transition-all active:scale-95",
+        styles[accent]
       )}
     >
-      <div className="flex items-center gap-2">
-        <span
-          className={cn(
-            "inline-flex size-8 items-center justify-center rounded-full",
-            iconStyles[accent]
-          )}
-        >
-          {icon}
-        </span>
+      <div className="size-12 rounded-2xl bg-background/80 shadow-sm flex items-center justify-center">
+        {icon}
       </div>
-      <p className="mt-4 text-sm font-semibold">{title}</p>
-      <p className="text-xs opacity-80">{caption}</p>
+      <span className="text-xs font-bold tracking-tight">{title}</span>
     </Link>
   );
 }

@@ -1,36 +1,151 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+﻿# ActivationIQ Platform
 
-## Getting Started
+Mobile-first, offline-first field activation platform for FMCG and distribution operations.
 
-First, run the development server:
+## Problem
+
+Most field campaigns still run on fragmented tools: spreadsheets, chat apps, delayed summaries, and manual slide reports.  
+This makes real-time operational visibility difficult.
+
+Common operational gaps:
+- Which outlets were actually visited?
+- Which reps were active?
+- Where did activities happen?
+- What products were sold or promoted?
+- Was campaign evidence captured correctly?
+- How fast can performance be reviewed?
+
+## Opportunity
+
+ActivationIQ provides a structured system for executing and monitoring campaigns from one platform, instead of stitching reports after the fact.
+
+Core outcomes:
+- Structured field execution
+- Faster reporting
+- Operational visibility
+- Reusable activation infrastructure
+- Simpler campaign management
+
+## Platform Layers
+
+### 1. Super Admin Layer
+- Onboard and manage organizations
+- Platform-level monitoring and support
+- Global policies and governance
+
+### 2. Organization Admin Layer
+- Manage campaigns, reps, products, outlets
+- Monitor execution performance
+- Review campaign dashboards and sync health
+
+### 3. Agent Mobile Layer
+- Register outlets
+- Capture sales/conversions
+- Upload geo-tagged photo evidence
+- Work offline and sync when online
+
+## Product Philosophy
+
+This product is not positioned as surveillance tooling.  
+It is built for operational efficiency, coordination, and timely reporting.  
+Accountability is an outcome of better workflows.
+
+## MVP Scope (Current Build Priority)
+
+Agent mobile MVP first:
+- Secure authentication and role-based route access
+- Outlet registration with GPS capture
+- Sales/conversion capture
+- Mandatory image evidence for outlet and sale records
+- IndexedDB local persistence (Dexie)
+- Sync queue with retry and status transitions
+- Basic admin operational dashboard
+
+## Non-Goals (MVP)
+
+- Advanced commission engine
+- Real-time continuous tracking
+- Push notifications
+- Complex conflict resolution
+- Full BI dashboard suite
+- Native mobile app
+
+## Mandatory Evidence Rule
+
+For this project, photo evidence is required for:
+- Outlet registration
+- Sale/conversion submission
+
+Records without image evidence must fail validation and must not sync as successful records.
+
+## Architecture and Stack
+
+- Framework: Next.js App Router
+- Language: TypeScript
+- Styling: Tailwind CSS
+- UI: shadcn/ui + lucide-react
+- Forms: react-hook-form + zod
+- Offline DB: IndexedDB (Dexie)
+- Backend/Auth: Supabase
+- Storage: Supabase Storage or Cloudflare R2
+- Charts: Recharts
+- Notifications: Sonner
+- Deployment: Vercel
+
+## Local Development
+
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Configure environment
+
+Create `.env.local` in project root:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
+```
+
+### 3. Run the app
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 4. Quality checks
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run lint
+npm run build
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Role Model
 
-## Learn More
+Supported roles:
+- `agent`
+- `admin`
+- `super_admin`
 
-To learn more about Next.js, take a look at the following resources:
+Auth guards expect role metadata in Supabase user metadata (`app_metadata.role` preferred, `user_metadata.role` fallback).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Sprint Plan
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Implementation roadmap is tracked in:
+- [SPRINT-PHASES.md](/c:/Users/victory.balogun/Desktop/project/activationiq/SPRINT-PHASES.md)
 
-## Deploy on Vercel
+Current execution order:
+1. Agent auth and guarded routes
+2. Outlet capture with mandatory photo + GPS + offline save
+3. Sales capture with mandatory photo + GPS + offline save
+4. Queue integrity and reliable sync
+5. Admin dashboard essentials
+6. Super admin platform controls
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Vision
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Build reusable field operations infrastructure that organizations can repeatedly use to launch, monitor, and report campaigns without rebuilding operational processes every cycle.
+

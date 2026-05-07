@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 
 import { cn } from "@/lib/utils";
 
@@ -9,6 +10,7 @@ type ListRowCardProps = {
   trailing?: ReactNode;
   leading?: ReactNode;
   className?: string;
+  href?: string;
 };
 
 export default function ListRowCard({
@@ -18,8 +20,9 @@ export default function ListRowCard({
   trailing,
   leading,
   className,
+  href,
 }: ListRowCardProps) {
-  return (
+  const content = (
     <div
       className={cn(
         "flex items-start justify-between gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-sm",
@@ -42,5 +45,13 @@ export default function ListRowCard({
       </div>
       {trailing ? <div className="shrink-0">{trailing}</div> : null}
     </div>
+  );
+
+  if (!href) return content;
+
+  return (
+    <Link href={href} className="block">
+      {content}
+    </Link>
   );
 }

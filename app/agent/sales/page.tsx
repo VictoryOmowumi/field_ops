@@ -1,63 +1,92 @@
-import { HugeiconsIcon } from "@hugeicons/react";
-import { SaleTag01Icon } from "@hugeicons/core-free-icons";
-import Link from "next/link";
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import ListRowCard from "@/components/agent/ListRowCard";
-import MetricCard from "@/components/agent/MetricCard";
 import SectionHeader from "@/components/agent/SectionHeader";
 import StatusPill from "@/components/agent/StatusPill";
-import { Button } from "@/components/ui/button";
-import { formatNaira, SALE_LIST } from "@/lib/agent-mock-data";
+import { Skeleton } from "@/components/ui/skeleton";
+import { authorizedFetch } from "@/lib/api/client";
 
-const salesMetrics = [
-  { label: "Today's Sales", value: formatNaira(86400), delta: "24 units", tone: "blue" as const },
-  { label: "Converted", value: "5", delta: "Top SKU: Energy 35cl", tone: "green" as const },
-  { label: "Revisit", value: "2", delta: "Needs follow-up", tone: "amber" as const },
-];
+type Submission = {
+  id: string;
+  taskType?: string | null;
+  outcome: string;
+  outcomeLabel?: string | null;
+  notes?: string | null;
+  state?: string | null;
+  lga?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  createdAt: string;
+  outlet: string;
+  campaign: string;
+  syncStatus: "pending" | "synced" | "failed";
+};
 
 export default function SalesPage() {
+  const query = useQuery({
+    queryKey: ["agent-submissions"],
+    queryFn: async () =>
+      (await authorizedFetch<{ success: boolean; submissions: Submission[] }>("/api/agent/submissions")).submissions ?? [],
+  });
+  if (query.error) toast.error((query.error as Error).message);
+
   return (
     <main className="space-y-4 pt-4">
-      <SectionHeader
-        title="Sales"
-        subtitle="Conversions and product movement."
-        actionLabel="New Sale"
-        actionHref="/agent/sales/new"
-      />
-
-      <section className="grid grid-cols-2 grow-0 gap-3">
-        {salesMetrics.map((metric) => (
-          <MetricCard
-            key={metric.label}
-            label={metric.label}
-            value={metric.value}
-            delta={metric.delta}
-            tone={metric.tone}
-          />
-        ))}
-      </section>
-
+      <SectionHeader title="My Activity" subtitle="Recent visit submissions and outcomes." />
       <section className="space-y-2">
-        {SALE_LIST.map((sale) => (
+        {query.isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-20 w-full rounded-2xl" />
+            <Skeleton className="h-20 w-full rounded-2xl" />
+            <Skeleton className="h-20 w-full rounded-2xl" />
+          </div>
+        ) : null}
+        {(query.data ?? []).map((item) => (
           <ListRowCard
-            key={sale.id}
-            title={sale.outletName}
-            subtitle={`${sale.productName} • ${sale.quantity} pcs`}
-            meta={`${sale.capturedAt} • ${formatNaira(sale.amount)}`}
-            trailing={
-              <div className="flex flex-col items-end gap-1">
-                <StatusPill status={sale.conversionStatus} />
-                <StatusPill status={sale.syncStatus} />
-              </div>
-            }
-            leading={<HugeiconsIcon icon={SaleTag01Icon} size={14} strokeWidth={1.8} />}
+            key={item.id}
+            href={`/agent/sales/${item.id}`}
+            title={item.outlet}
+            subtitle={[
+              item.campaign,
+              toTaskLabel(item.taskType),
+              item.outcomeLabel || toOutcomeLabel(item.outcome),
+              [item.lga, item.state].filter(Boolean).join(", "),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+            meta={new Date(item.createdAt).toLocaleString()}
+            trailing={<StatusPill status={item.syncStatus} />}
           />
         ))}
+        {!query.isLoading && (query.data ?? []).length === 0 ? (
+          <p className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">
+            No submissions yet.
+          </p>
+        ) : null}
       </section>
-
-      <Button asChild className="h-11 w-full rounded-2xl text-sm font-semibold">
-        <Link href="/agent/sales/new">Record New Sale</Link>
-      </Button>
     </main>
   );
+}
+
+function toTaskLabel(taskType?: string | null) {
+  if (!taskType) return "Visit";
+  if (taskType === "sell_to_outlet") return "Sales Capture";
+  if (taskType === "revisit_outlet") return "Outlet Revisit";
+  if (taskType === "register_outlet") return "Outlet Registration";
+  if (taskType === "availability_survey") return "Availability Check";
+  if (taskType === "price_survey") return "Price Check";
+  if (taskType === "product_survey") return "Product Audit";
+  return "Visit";
+}
+
+function toOutcomeLabel(outcome: string) {
+  if (outcome === "converted") return "Products sold";
+  if (outcome === "pending") return "Follow-up needed";
+  if (outcome === "revisit") return "Revisit required";
+  if (outcome === "no_sale") return "Customer refused";
+  if (outcome === "registered_only") return "Visit completed";
+  return outcome.replaceAll("_", " ");
 }

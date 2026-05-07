@@ -4,6 +4,7 @@ export type ConversionStatus = "converted" | "pending" | "revisit";
 
 export interface Sale {
   id: string;
+  visitId?: string;
   outletId: string;
   agentId: string;
   productId: string;

@@ -1,9 +1,14 @@
 import type { ReactNode } from "react";
+import RequireRole from "@/components/auth/RequireRole";
+import BackofficeShell from "@/components/backoffice/BackofficeShell";
+import AppQueryProvider from "@/components/providers/AppQueryProvider";
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="mx-auto min-h-screen w-full max-w-7xl bg-background">
-      {children}
-    </div>
+    <RequireRole allowedRoles={["admin", "super_admin"]} allowedOrgRoles={["org_admin", "supervisor"]}>
+      <AppQueryProvider>
+        <BackofficeShell role="admin">{children}</BackofficeShell>
+      </AppQueryProvider>
+    </RequireRole>
   );
 }

@@ -5,8 +5,9 @@ import {
   Home01Icon,
   ReloadIcon,
   SaleTag01Icon,
-  Store01Icon,
+  Task01Icon,
   User03Icon,
+  
 } from "@hugeicons/core-free-icons";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -15,8 +16,8 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/agent/home", label: "Home", icon: Home01Icon },
-  { href: "/agent/outlets", label: "Outlets", icon: Store01Icon },
-  { href: "/agent/sales", label: "Sell", icon: SaleTag01Icon, accent: true },
+  { href: "/agent/sales", label: "Activity", icon: SaleTag01Icon },
+  { href: "/agent/campaigns", label: "Campaigns", icon: Task01Icon, accent: true },
   { href: "/agent/sync", label: "Sync", icon: ReloadIcon },
   { href: "/agent/profile", label: "Profile", icon: User03Icon },
 ];
