@@ -33,19 +33,45 @@ export default function SyncPage() {
     void db.syncQueue.toArray().then((rows) => setItems(rows as SyncRow[]));
   }, []);
 
-  async function manualSync() {
-    if (items.length === 0) {
+  async function runSync(targetItems: SyncRow[]) {
+    if (!isOnline) {
+      toast.error("You are offline. Reconnect and retry.");
+      return;
+    }
+    if (targetItems.length === 0) {
       toast.message("No pending records.");
       return;
     }
     let successCount = 0;
-    for (const item of items) {
+    let failedCount = 0;
+    for (const item of targetItems) {
       const result = await syncRecord(item);
-      if (result.success) successCount += 1;
+      if (result.success) {
+        successCount += 1;
+      } else {
+        failedCount += 1;
+      }
     }
     const remaining = await db.syncQueue.toArray();
     setItems(remaining as SyncRow[]);
-    toast.success(`Synced ${successCount} item(s).`);
+    if (successCount > 0 && failedCount === 0) {
+      toast.success(`Synced ${successCount} item(s).`);
+      return;
+    }
+    if (successCount > 0 && failedCount > 0) {
+      toast.warning(`Synced ${successCount} item(s), ${failedCount} failed.`);
+      return;
+    }
+    toast.error(`Sync failed. ${failedCount} item(s) could not sync.`);
+  }
+
+  async function manualSync() {
+    await runSync(items);
+  }
+
+  async function retryFailed() {
+    const failedItems = items.filter((item) => item.status === "failed_terminal" || item.status === "retrying");
+    await runSync(failedItems);
   }
 
   return (
@@ -67,7 +93,7 @@ export default function SyncPage() {
 
           <section className="grid grid-cols-2 gap-2">
             <Button variant="outline" className="h-10 rounded-2xl" onClick={manualSync}>Manual Sync</Button>
-            <Button className="h-10 rounded-2xl" onClick={manualSync}>Retry Failed</Button>
+            <Button className="h-10 rounded-2xl" onClick={retryFailed}>Retry Failed</Button>
           </section>
 
           <section className="space-y-2">

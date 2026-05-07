@@ -78,7 +78,7 @@ export default function GuidedVisitFlow({
   const hasPriceSurvey = workflow.activities.some((item) => item.id === "price_survey");
   const hasProductSurvey = workflow.activities.some((item) => item.id === "product_survey");
   const hasValidSales = sales.some((row) => row.productName.trim() && row.quantity > 0);
-  const resolvedOutcomeCode = outcomeCode || (hasSalesStep && hasValidSales ? "products_sold" : "follow_up_needed");
+  const resolvedOutcomeCode = outcomeCode || (hasSalesStep ? "products_sold" : "follow_up_needed");
   const isSoldOutcome = resolvedOutcomeCode === "products_sold";
   const gpsRequired = workflow.validationRules.requireGpsBeforeSubmit;
   const hasGps = typeof gps.latitude === "number" && typeof gps.longitude === "number";
@@ -229,7 +229,7 @@ export default function GuidedVisitFlow({
           </div>
         ) : null}
 
-        <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input placeholder="Customer name" value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
           <Input placeholder="Customer phone" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} />
           <Input placeholder="Outlet name" value={outletName} onChange={(event) => setOutletName(event.target.value)} />
