@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 import { isAgentAssignedToCampaign } from "@/lib/auth/agent-access";
@@ -14,6 +14,11 @@ function unauthorized() {
 
 function forbidden() {
   return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
+}
+
+function uuidFromIdempotencyKey(key: string) {
+  const hex = createHash("sha1").update(key).digest("hex").slice(0, 32);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -32,7 +37,7 @@ export async function POST(request: NextRequest) {
   const payload = parsedPayload.data;
   const idempotencyKey = payload.idempotencyKey ?? payload.clientSubmissionMeta?.idempotencyKey;
   const dedupeVisitId =
-    typeof idempotencyKey === "string" && idempotencyKey.length > 0 ? `visit-${idempotencyKey}` : randomUUID();
+    typeof idempotencyKey === "string" && idempotencyKey.length > 0 ? uuidFromIdempotencyKey(idempotencyKey) : randomUUID();
   const assigned = await isAgentAssignedToCampaign(membership.organizationId, payload.campaignId, user.id);
   if (!assigned) return forbidden();
 

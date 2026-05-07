@@ -42,6 +42,17 @@ function clientId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function clientUuid() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  const hex = `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`
+    .replace(/[^a-f0-9]/gi, "")
+    .padEnd(32, "0")
+    .slice(0, 32);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
 export default function AgentVisitStartPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -129,7 +140,7 @@ export default function AgentVisitStartPage() {
     }
 
     const submissionId = `wf-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    const visitId = `visit-${submissionId}`;
+    const visitId = clientUuid();
     const enrichedPayload: WorkflowSubmissionPayload = {
       ...payload,
       idempotencyKey: submissionId,
@@ -175,6 +186,7 @@ export default function AgentVisitStartPage() {
 
       for (const file of photos) {
         const photoQueueId = clientId("photo");
+        const evidenceId = clientUuid();
         await db.evidenceBlobs.put({
           id: clientId("blob"),
           queueId: photoQueueId,
@@ -190,7 +202,7 @@ export default function AgentVisitStartPage() {
           campaignId,
           dependencyIds: [submissionId],
           payload: {
-            id: photoQueueId,
+            id: evidenceId,
             visit_id: visitId,
             file_name: file.name,
             file_type: file.type || null,
