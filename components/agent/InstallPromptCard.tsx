@@ -70,7 +70,10 @@ export default function InstallPromptCard() {
     return () => window.removeEventListener("beforeinstallprompt", handler);
   }, []);
 
-  const shouldShow = useMemo(() => !hidden && (deferredPrompt || showIosHint), [hidden, deferredPrompt, showIosHint]);
+  const shouldShow = useMemo(
+    () => !hidden && Boolean(deferredPrompt || showIosHint),
+    [hidden, deferredPrompt, showIosHint]
+  );
   if (!shouldShow) return null;
 
   async function installNow() {
