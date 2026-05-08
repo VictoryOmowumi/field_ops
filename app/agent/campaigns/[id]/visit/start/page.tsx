@@ -140,7 +140,13 @@ export default function AgentVisitStartPage() {
       throw new Error("GPS capture is required by campaign configuration.");
     }
 
-    const submissionId = `wf-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const submittedKey =
+      typeof payload.idempotencyKey === "string" && payload.idempotencyKey.trim().length > 0
+        ? payload.idempotencyKey.trim()
+        : typeof payload.clientSubmissionMeta?.idempotencyKey === "string" && payload.clientSubmissionMeta.idempotencyKey.trim().length > 0
+          ? payload.clientSubmissionMeta.idempotencyKey.trim()
+          : null;
+    const submissionId = submittedKey ?? `wf-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const visitId = clientUuid();
     const enrichedPayload: WorkflowSubmissionPayload = {
       ...payload,
@@ -227,17 +233,34 @@ export default function AgentVisitStartPage() {
       body: JSON.stringify(enrichedPayload),
     });
 
-    for (const file of photos) {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("idempotencyKey", clientId("photo"));
-      await authorizedFetch(`/api/agent/visits/${visitResponse.visit.id}/evidence`, {
-        method: "POST",
-        body: formData,
-      });
+    if (photos.length > 0) {
+      void (async () => {
+        const uploadResults = await Promise.allSettled(
+          photos.map(async (file) => {
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("idempotencyKey", clientId("photo"));
+            await authorizedFetch(`/api/agent/visits/${visitResponse.visit.id}/evidence`, {
+              method: "POST",
+              body: formData,
+            });
+          })
+        );
+
+        const failedUploads = uploadResults.filter((result) => result.status === "rejected").length;
+        if (failedUploads > 0) {
+          toast.error(
+            `${failedUploads} photo${failedUploads === 1 ? "" : "s"} failed to upload. Open this visit later to retry evidence upload.`
+          );
+        }
+      })();
     }
 
-    toast.success("Visit captured successfully.");
+    toast.success(
+      photos.length > 0
+        ? "Visit captured. Photos are uploading in the background."
+        : "Visit captured successfully."
+    );
     router.push(`/agent/campaigns/${campaignId}`);
   }
 

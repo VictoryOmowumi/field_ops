@@ -48,8 +48,14 @@ export default function InstallPromptCard() {
   useEffect(() => {
     const handler = (event: Event) => {
       event.preventDefault();
-      setDeferredPrompt(event as DeferredBeforeInstallPromptEvent);
+      const deferred = event as DeferredBeforeInstallPromptEvent;
+      (window as Window & { __actiQDeferredInstallPrompt?: DeferredBeforeInstallPromptEvent }).__actiQDeferredInstallPrompt = deferred;
+      setDeferredPrompt(deferred);
     };
+
+    const existing = (window as Window & { __actiQDeferredInstallPrompt?: DeferredBeforeInstallPromptEvent }).__actiQDeferredInstallPrompt;
+    if (existing) setDeferredPrompt(existing);
+
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
   }, []);

@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import InstallAppButton from "@/components/pwa/InstallAppButton";
 import { authorizedFetch } from "@/lib/api/client";
 
 type Settings = {
@@ -96,6 +97,7 @@ export default function SettingsPage() {
           <Button className="rounded-full" asChild>
             <Link href="/admin/users/new">Invite User</Link>
           </Button>
+          <InstallAppButton className="rounded-full" />
         </div>
       </section>
 

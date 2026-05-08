@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -53,6 +53,7 @@ export default function GuidedVisitFlow({
   isOnline,
   onSubmit,
 }: Props) {
+  const stableSubmissionKeyRef = useRef<string | null>(null);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [outletName, setOutletName] = useState("");
@@ -110,6 +111,12 @@ export default function GuidedVisitFlow({
       toast.error("At least one product audit row is required.");
       return;
     }
+    if (!stableSubmissionKeyRef.current) {
+      stableSubmissionKeyRef.current =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? `wf-${crypto.randomUUID()}`
+          : `wf-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
 
     const outcomeLabel = workflow.agentCopy.outcomes.find((item) => item.code === resolvedOutcomeCode)?.label ?? "Follow-up needed";
 
@@ -163,6 +170,7 @@ export default function GuidedVisitFlow({
 
     const payload: WorkflowSubmissionPayload = {
       campaignId,
+      idempotencyKey: stableSubmissionKeyRef.current ?? undefined,
       selectedOutletRef: {
         mode: "new",
         outlet: {
@@ -210,6 +218,12 @@ export default function GuidedVisitFlow({
     if (hasSalesStep && resolvedOutcomeCode === "products_sold" && !hasValidSales) {
       return toast.error("Add at least one valid sale row.");
     }
+    if (!stableSubmissionKeyRef.current) {
+      stableSubmissionKeyRef.current =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? `wf-${crypto.randomUUID()}`
+          : `wf-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
     setConfirmOpen(true);
   }
 
@@ -227,9 +241,17 @@ export default function GuidedVisitFlow({
           </div>
         ) : null}
 
-        <div className="flex flex-col md:flex-row gap-3">
+        <div className="flex flex-col gap-3">
           <Input placeholder="Customer name" value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
-          <Input placeholder="Customer phone" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} />
+          <Input
+            type="tel"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={15}
+            placeholder="Customer phone"
+            value={customerPhone}
+            onChange={(event) => setCustomerPhone(event.target.value.replace(/\D/g, ""))}
+          />
           <Input placeholder="Outlet name" value={outletName} onChange={(event) => setOutletName(event.target.value)} />
           <Select value={areaLga} onValueChange={setAreaLga}>
             <SelectTrigger><SelectValue placeholder="Select LGA" /></SelectTrigger>

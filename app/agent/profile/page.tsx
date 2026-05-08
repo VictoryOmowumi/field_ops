@@ -7,6 +7,7 @@ import MetricCard from "@/components/agent/MetricCard";
 import SectionHeader from "@/components/agent/SectionHeader";
 import StatusPill from "@/components/agent/StatusPill";
 import LogoutButton from "@/components/auth/LogoutButton";
+import InstallAppButton from "@/components/pwa/InstallAppButton";
 import { authorizedFetch } from "@/lib/api/client";
 
 type Bootstrap = {
@@ -50,6 +51,9 @@ export default function ProfilePage() {
         <div className="mt-4">
           <LogoutButton />
         </div>
+        <div className="mt-2">
+          <InstallAppButton className="rounded-full" />
+        </div>
       </section>
 
       <section className="grid grid-cols-3 gap-3">
@@ -60,4 +64,3 @@ export default function ProfilePage() {
     </main>
   );
 }
-

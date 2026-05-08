@@ -148,6 +148,17 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (visitError || !visit) {
+    if (visitError?.code === "23505") {
+      const { data: duplicateVisit } = await supabase
+        .from("visits")
+        .select("id, outlet_id, outcome")
+        .eq("id", visitId)
+        .eq("organization_id", membership.organizationId)
+        .maybeSingle();
+      if (duplicateVisit) {
+        return NextResponse.json({ success: true, visit: duplicateVisit, duplicate: true }, { status: 200 });
+      }
+    }
     return NextResponse.json({ success: false, message: visitError?.message ?? "Failed to create visit." }, { status: 500 });
   }
 
