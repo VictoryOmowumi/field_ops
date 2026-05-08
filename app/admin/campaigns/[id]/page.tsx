@@ -81,6 +81,7 @@ export default function CampaignDetailsPage() {
   const [activities, setActivities] = useState<CampaignActivity[]>([]);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [savingAssignments, setSavingAssignments] = useState(false);
+  const [exportingActivities, setExportingActivities] = useState(false);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [supervisorUserId, setSupervisorUserId] = useState<string>("none");
 
@@ -199,6 +200,42 @@ export default function CampaignDetailsPage() {
 
     setCampaign(result.campaign);
     toast.success("Campaign is now live.");
+  }
+
+  async function downloadCampaignActivitiesExport() {
+    if (!campaign?.id) return;
+
+    setExportingActivities(true);
+    try {
+      const { data } = await supabaseClient.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Session expired. Please sign in again.");
+
+      const response = await fetch(
+        `/api/admin/reports/export?type=campaign-activities&campaignId=${campaign.id}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(payload?.message ?? "Failed to export campaign activities.");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "campaign-activities.csv";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Export downloaded.");
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setExportingActivities(false);
+    }
   }
 
   function resetAssignDialogFromCurrent() {
@@ -336,10 +373,13 @@ export default function CampaignDetailsPage() {
           <Button variant="outline" className="rounded-full" asChild>
             <Link href="/admin/campaigns">Back</Link>
           </Button>
-          <Button variant="outline" className="rounded-full px-5" asChild>
-            <a href={`/api/admin/reports/export?type=campaign-activities&campaignId=${campaign.id}`} target="_blank" rel="noreferrer">
-              Export Activities
-            </a>
+          <Button
+            variant="outline"
+            className="rounded-full px-5"
+            disabled={exportingActivities}
+            onClick={() => void downloadCampaignActivitiesExport()}
+          >
+            {exportingActivities ? "Exporting..." : "Export Activities"}
           </Button>
           {campaign.status === "draft" && (
             <Button className="rounded-full px-5" disabled={launching} onClick={launchCampaign}>
