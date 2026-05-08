@@ -217,8 +217,6 @@ export default function GuidedVisitFlow({
     <div className="space-y-4 pb-6">
       <section className="space-y-3 rounded-3xl border border-border/70 bg-card p-4">
         <h3 className="text-base font-medium">Outlet Information</h3>
-        <p className="text-sm text-muted-foreground">Nearby outlets are shown first to reduce duplicates.</p>
-
         {nearbyOutlets.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {nearbyOutlets.slice(0, 8).map((outlet) => (
@@ -229,7 +227,7 @@ export default function GuidedVisitFlow({
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3">
           <Input placeholder="Customer name" value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
           <Input placeholder="Customer phone" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} />
           <Input placeholder="Outlet name" value={outletName} onChange={(event) => setOutletName(event.target.value)} />
