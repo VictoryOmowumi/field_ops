@@ -1,66 +1,54 @@
-﻿import Link from "next/link";
-import { notFound } from "next/navigation";
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import { toast } from "sonner";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { supabaseClient } from "@/lib/supabase/client";
+import type { PlatformCampaignDetail } from "@/types/platform";
 
-const campaigns = [
-  {
-    id: "CAM001",
-    organizationId: "org-001",
-    organization: "Acme Beverages",
-    name: "Lagos Retail Activation",
-    status: "Active",
-    sync: "98.8%",
-    description: "Field sales activation focused on outlet conversion and retail visibility across Lagos.",
-    startDate: "Apr 21, 2026",
-    endDate: "May 12, 2026",
-    reps: 57,
-    outlets: 386,
-    conversions: 842,
-    pendingUploads: 23,
-  },
-  {
-    id: "CAM002",
-    organizationId: "org-002",
-    organization: "Golden Basket",
-    name: "Abuja Market Storm",
-    status: "Active",
-    sync: "96.2%",
-    description: "Market-wide retail push for outlet activation and SKU conversion in Abuja.",
-    startDate: "Apr 15, 2026",
-    endDate: "May 10, 2026",
-    reps: 34,
-    outlets: 211,
-    conversions: 503,
-    pendingUploads: 17,
-  },
-  {
-    id: "CAM003",
-    organizationId: "org-003",
-    organization: "Nova Distribution",
-    name: "Kano Route Launch",
-    status: "Draft",
-    sync: "-",
-    description: "Pre-launch setup for territory rollout and field onboarding.",
-    startDate: "May 10, 2026",
-    endDate: "May 30, 2026",
-    reps: 0,
-    outlets: 0,
-    conversions: 0,
-    pendingUploads: 0,
-  },
-];
+export default function SuperAdminCampaignDetailPage() {
+  const params = useParams<{ id: string }>();
+  const campaignId = params.id;
+  const [campaign, setCampaign] = useState<PlatformCampaignDetail | null>(null);
+  const [loading, setLoading] = useState(true);
 
-const recentActivity = [
-  { rep: "Ada James", outlet: "Jolly Mart", status: "Converted", time: "12 mins ago" },
-  { rep: "Tunde Bello", outlet: "Prime Stores", status: "Pending", time: "21 mins ago" },
-  { rep: "Mary Okon", outlet: "City Retail", status: "Revisit", time: "34 mins ago" },
-];
+  useEffect(() => {
+    async function loadCampaign() {
+      const { data } = await supabaseClient.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) {
+        setLoading(false);
+        toast.error("Session expired. Please sign in again.");
+        return;
+      }
+      const response = await fetch(`/api/platform/campaigns/${campaignId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const result = (await response.json()) as {
+        success: boolean;
+        message?: string;
+        campaign?: PlatformCampaignDetail;
+      };
+      setLoading(false);
+      if (!response.ok || !result.success || !result.campaign) {
+        toast.error(result.message ?? "Failed to load campaign.");
+        return;
+      }
+      setCampaign(result.campaign);
+    }
+    void loadCampaign();
+  }, [campaignId]);
 
-export default async function SuperAdminCampaignDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const campaign = campaigns.find((item) => item.id === id);
-  if (!campaign) return notFound();
+  if (loading) {
+    return <div className="rounded-3xl border border-border p-4 text-sm text-muted-foreground">Loading campaign...</div>;
+  }
+  if (!campaign) {
+    return <div className="rounded-3xl border border-border p-4 text-sm text-muted-foreground">Campaign not found.</div>;
+  }
 
   return (
     <div className="space-y-6 pb-10">
@@ -105,8 +93,8 @@ export default async function SuperAdminCampaignDetailPage({ params }: { params:
           <h2 className="font-semibold">Governance Health</h2>
           <p className="mt-1 text-sm opacity-70">Super admin monitoring indicators.</p>
           <div className="mt-6 space-y-4">
-            <Health label="Photo compliance" value="92%" />
-            <Health label="GPS capture rate" value="96%" />
+            <Health label="Photo compliance" value={campaign.sync} />
+            <Health label="GPS capture rate" value={campaign.sync} />
             <Health label="Upload success rate" value={campaign.sync} />
           </div>
         </section>
@@ -126,7 +114,7 @@ export default async function SuperAdminCampaignDetailPage({ params }: { params:
               </tr>
             </thead>
             <tbody>
-              {recentActivity.map((item) => (
+              {campaign.recentActivity.map((item) => (
                 <tr key={`${item.rep}-${item.time}`} className="border-t border-border">
                   <td className="px-4 py-4 font-medium">{item.rep}</td>
                   <td className="px-4 py-4 text-muted-foreground">{item.outlet}</td>
@@ -134,6 +122,9 @@ export default async function SuperAdminCampaignDetailPage({ params }: { params:
                   <td className="px-4 py-4 text-muted-foreground">{item.time}</td>
                 </tr>
               ))}
+              {campaign.recentActivity.length === 0 ? (
+                <tr className="border-t border-border"><td className="px-4 py-4 text-muted-foreground" colSpan={4}>No recent activity.</td></tr>
+              ) : null}
             </tbody>
           </table>
         </div>
@@ -174,3 +165,4 @@ function Health({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+

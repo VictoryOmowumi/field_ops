@@ -7,6 +7,7 @@ import ListRowCard from "@/components/agent/ListRowCard";
 import MetricCard from "@/components/agent/MetricCard";
 import SectionHeader from "@/components/agent/SectionHeader";
 import StatusPill from "@/components/agent/StatusPill";
+import AgentBackButton from "@/components/agent/AgentBackButton";
 import { Button } from "@/components/ui/button";
 import { db } from "@/lib/offline/db";
 import { syncRecord } from "@/lib/offline/sync";
@@ -76,6 +77,7 @@ export default function SyncPage() {
 
   return (
     <main className="space-y-4 pt-4">
+      <AgentBackButton href="/agent/home" />
       <SectionHeader title="Sync Queue" subtitle="Review pending records and trigger retries." />
 
       {isOnline && pending === 0 ? (

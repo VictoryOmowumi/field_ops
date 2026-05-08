@@ -3,12 +3,11 @@ import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { organizations } from "@/data/organizations";
 import { getOrganizationViewById } from "@/lib/data/organization-server";
 
 export default async function EditOrganizationPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const org = (await getOrganizationViewById(id)) ?? organizations.find((item) => item.id === id);
+  const org = await getOrganizationViewById(id);
   if (!org) return notFound();
 
   return (

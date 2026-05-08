@@ -46,9 +46,11 @@ export async function getOrganizationViewById(id: string): Promise<OrganizationV
 
   if (error || !organization) return null;
 
-  const [{ count: totalCampaigns }, { count: totalReps }] = await Promise.all([
+  const [{ count: totalCampaigns }, { count: totalReps }, { count: totalOutlets }, { count: totalSales }] = await Promise.all([
     supabase.from("campaigns").select("id", { count: "exact", head: true }).eq("organization_id", id),
-    supabase.from("organization_users").select("id", { count: "exact", head: true }).eq("organization_id", id),
+    supabase.from("organization_users").select("id", { count: "exact", head: true }).eq("organization_id", id).eq("role", "agent"),
+    supabase.from("outlets").select("id", { count: "exact", head: true }).eq("organization_id", id),
+    supabase.from("sales").select("id", { count: "exact", head: true }).eq("organization_id", id),
   ]);
 
   const { data: orgAdminMembership } = await supabase
@@ -105,9 +107,9 @@ export async function getOrganizationViewById(id: string): Promise<OrganizationV
     }),
     totalCampaigns: totalCampaigns ?? 0,
     totalReps: totalReps ?? 0,
-    totalOutlets: 0,
-    totalSales: 0,
+    totalOutlets: totalOutlets ?? 0,
+    totalSales: totalSales ?? 0,
     storageUsage: "0 GB",
-    monthlyActivity: "Low",
+    monthlyActivity: (totalSales ?? 0) > 500 ? "High" : (totalSales ?? 0) > 100 ? "Medium" : "Low",
   };
 }

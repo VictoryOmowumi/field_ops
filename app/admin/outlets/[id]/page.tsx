@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -9,6 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { authorizedFetch } from "@/lib/api/client";
+
+const OutletLocationPreviewMap = dynamic(() => import("@/components/admin/OutletLocationPreviewMap"), {
+  ssr: false,
+});
 
 type OutletVisit = {
   id: string;
@@ -163,17 +168,18 @@ export default function OutletDetailsPage() {
           </p>
 
           <div className="relative mt-5 h-72 overflow-hidden rounded-3xl border border-border bg-background">
-            <div className="absolute inset-0 opacity-60 [background-image:linear-gradient(var(--color-border)_1px,transparent_1px),linear-gradient(90deg,var(--color-border)_1px,transparent_1px)] [background-size:34px_34px]" />
-            <div className="absolute left-1/2 top-1/2 size-24 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/10" />
-            <div className="absolute left-1/2 top-1/2 size-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/20" />
-            <div className="absolute left-1/2 top-1/2 size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-primary shadow-sm" />
-
-            <div className="absolute bottom-4 left-4 rounded-2xl border border-border bg-popover/90 p-3 text-xs shadow-sm backdrop-blur">
-              <p className="font-medium">{outlet.name ?? "Outlet"}</p>
-              <p className="mt-1 text-muted-foreground">
-                {(lat !== null && lng !== null) ? `${lat}, ${lng}` : "Coordinates pending"}
-              </p>
-            </div>
+            {lat !== null && lng !== null ? (
+              <OutletLocationPreviewMap
+                name={outlet.name ?? "Outlet"}
+                latitude={lat}
+                longitude={lng}
+                accuracyMeters={outlet.location_accuracy ?? latestVisit?.location_accuracy ?? 18}
+              />
+            ) : (
+              <div className="grid h-full place-items-center text-sm text-muted-foreground">
+                Coordinates pending
+              </div>
+            )}
           </div>
         </section>
 
@@ -296,4 +302,3 @@ function formatStatus(status?: string | null) {
   if (status === "no_interest") return "No Interest";
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
-

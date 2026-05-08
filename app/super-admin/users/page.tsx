@@ -1,13 +1,41 @@
-﻿import Link from "next/link";
-import { Button } from "@/components/ui/button";
+"use client";
 
-const users = [
-  { id: "usr-001", name: "Platform Owner", role: "super_admin", scope: "All organizations", status: "Active" },
-  { id: "usr-002", name: "Tolu Balogun", role: "org_admin", scope: "Acme Beverages", status: "Active" },
-  { id: "usr-003", name: "Ada James", role: "supervisor", scope: "Golden Basket", status: "Active" },
-];
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+
+import { Button } from "@/components/ui/button";
+import { supabaseClient } from "@/lib/supabase/client";
+import type { PlatformUserRow } from "@/types/platform";
 
 export default function SuperAdminUsersPage() {
+  const [users, setUsers] = useState<PlatformUserRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadUsers() {
+      const { data } = await supabaseClient.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) {
+        setLoading(false);
+        toast.error("Session expired. Please sign in again.");
+        return;
+      }
+
+      const response = await fetch("/api/platform/users", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const result = (await response.json()) as { success: boolean; message?: string; users?: PlatformUserRow[] };
+      setLoading(false);
+      if (!response.ok || !result.success) {
+        toast.error(result.message ?? "Failed to load users.");
+        return;
+      }
+      setUsers(result.users ?? []);
+    }
+    void loadUsers();
+  }, []);
+
   return (
     <div className="space-y-6 pb-10">
       <div>
@@ -27,8 +55,12 @@ export default function SuperAdminUsersPage() {
             </tr>
           </thead>
           <tbody>
-            {users.map((item) => (
-              <tr key={item.id} className="border-t border-border">
+            {loading ? (
+              <tr className="border-t border-border"><td className="px-4 py-4 text-muted-foreground" colSpan={5}>Loading users...</td></tr>
+            ) : users.length === 0 ? (
+              <tr className="border-t border-border"><td className="px-4 py-4 text-muted-foreground" colSpan={5}>No users found.</td></tr>
+            ) : users.map((item, index) => (
+              <tr key={`${item.id}-${index}`} className="border-t border-border">
                 <td className="px-4 py-4 font-medium">{item.name}</td>
                 <td className="px-4 py-4">{item.role}</td>
                 <td className="px-4 py-4">{item.scope}</td>
@@ -46,3 +78,4 @@ export default function SuperAdminUsersPage() {
     </div>
   );
 }
+

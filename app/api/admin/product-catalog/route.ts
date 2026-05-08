@@ -73,7 +73,10 @@ export async function POST(request: NextRequest) {
 
   const membership = await getOrgMembershipForUser(user.id);
   if (!membership || !hasAllowedOrgRole(membership.role, ["org_admin"])) {
-    return forbidden();
+    return NextResponse.json(
+      { success: false, message: "Only organization admins can create products." },
+      { status: 403 }
+    );
   }
 
   const payload = (await request.json()) as CreateProductPayload;
@@ -117,4 +120,3 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ success: true, product: data }, { status: 201 });
 }
-

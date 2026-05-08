@@ -34,14 +34,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
       .eq("organization_id", membership.organizationId)
       .eq("campaign_id", id)
       .order("created_at", { ascending: false })
-      .limit(50),
+      .limit(100),
     supabase
       .from("sales")
-      .select("id, conversion_status, created_at, outlet_id, agent_id")
+      .select("id, visit_id, product_name, quantity, conversion_status, created_at, outlet_id, agent_id")
       .eq("organization_id", membership.organizationId)
       .eq("campaign_id", id)
       .order("created_at", { ascending: false })
-      .limit(50),
+      .limit(200),
   ]);
 
   const outletIds = [
@@ -59,27 +59,59 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const outletMap = new Map((outlets ?? []).map((x) => [x.id, x.name]));
   const profileMap = new Map((profiles ?? []).map((x) => [x.user_id, x.full_name ?? "Unknown"]));
 
-  const activities = [
-    ...(visitsRes.data ?? []).map((item) => ({
+  const salesByVisitId = new Map<
+    string,
+    Array<{ id: string; product_name: string | null; quantity: number | null; conversion_status: string | null }>
+  >();
+  for (const sale of salesRes.data ?? []) {
+    if (!sale.visit_id) continue;
+    const list = salesByVisitId.get(sale.visit_id) ?? [];
+    list.push({
+      id: sale.id,
+      product_name: sale.product_name ?? null,
+      quantity: sale.quantity ?? null,
+      conversion_status: sale.conversion_status ?? null,
+    });
+    salesByVisitId.set(sale.visit_id, list);
+  }
+
+  const visitActivities = (visitsRes.data ?? []).map((item) => {
+    const saleLines = salesByVisitId.get(item.id) ?? [];
+    return {
       id: `visit-${item.id}`,
       type: "visit",
       status: item.outcome,
       createdAt: item.created_at,
       outlet: item.outlet_id ? outletMap.get(item.outlet_id) ?? "-" : "-",
       actor: item.agent_id ? profileMap.get(item.agent_id) ?? "-" : "-",
-    })),
-    ...(salesRes.data ?? []).map((item) => ({
+      saleCount: saleLines.length,
+      saleLines,
+    };
+  });
+
+  const orphanSales = (salesRes.data ?? [])
+    .filter((sale) => !sale.visit_id)
+    .map((item) => ({
       id: `sale-${item.id}`,
-      type: "sale",
+      type: "sale" as const,
       status: item.conversion_status,
       createdAt: item.created_at,
       outlet: item.outlet_id ? outletMap.get(item.outlet_id) ?? "-" : "-",
       actor: item.agent_id ? profileMap.get(item.agent_id) ?? "-" : "-",
-    })),
-  ]
+      saleCount: 1,
+      saleLines: [
+        {
+          id: item.id,
+          product_name: item.product_name ?? null,
+          quantity: item.quantity ?? null,
+          conversion_status: item.conversion_status ?? null,
+        },
+      ],
+    }));
+
+  const activities = [...visitActivities, ...orphanSales]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 100);
 
   return NextResponse.json({ success: true, activities });
 }
-

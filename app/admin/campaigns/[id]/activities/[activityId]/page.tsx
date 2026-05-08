@@ -20,6 +20,14 @@ type ActivityDetail = {
   status: string;
   createdAt: string;
   details: Record<string, unknown>;
+  sales?: Array<{
+    id: string;
+    product_name?: string | null;
+    quantity?: number | null;
+    sales_value?: number | null;
+    conversion_status?: string | null;
+    created_at?: string | null;
+  }>;
   evidence?: Array<{ id: string; file_url: string; created_at: string; signed_url?: string | null }>;
 };
 
@@ -127,6 +135,35 @@ export default function AdminCampaignActivityDetailPage() {
           <div className="mt-4">
             <ReadableActivityPayload details={details} />
           </div>
+          {(activity.sales?.length ?? 0) > 0 ? (
+            <div className="mt-5 rounded-2xl border border-border p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Sales Lines ({activity.sales?.length ?? 0})
+              </p>
+              <div className="mt-2 overflow-hidden rounded-lg border border-border/70">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/40">
+                    <tr>
+                      <th className="px-2 py-1 text-left font-medium">Product</th>
+                      <th className="px-2 py-1 text-left font-medium">Qty</th>
+                      <th className="px-2 py-1 text-left font-medium">Value</th>
+                      <th className="px-2 py-1 text-left font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activity.sales?.map((sale) => (
+                      <tr key={sale.id} className="border-t border-border/60">
+                        <td className="px-2 py-1">{sale.product_name ?? "-"}</td>
+                        <td className="px-2 py-1">{sale.quantity ?? "-"}</td>
+                        <td className="px-2 py-1">{sale.sales_value ?? "-"}</td>
+                        <td className="px-2 py-1">{sale.conversion_status?.replaceAll("_", " ") ?? "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
         </section>
       </div>
 

@@ -1,21 +1,45 @@
-﻿import { notFound } from "next/navigation";
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import { toast } from "sonner";
+
 import { Badge } from "@/components/ui/badge";
-import { organizations } from "@/data/organizations";
-import { getOrganizationViewById } from "@/lib/data/organization-server";
+import { supabaseClient } from "@/lib/supabase/client";
 
-export default async function OrganizationUsagePage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const org = (await getOrganizationViewById(id)) ?? organizations.find((item) => item.id === id);
-  if (!org) return notFound();
+type Org = { id: string; name: string; status: string };
+type UsageRow = { metric: string; value: string };
 
-  const usage = [
-    { metric: "Total campaigns", value: org.totalCampaigns.toString() },
-    { metric: "Total reps", value: org.totalReps.toString() },
-    { metric: "Total outlets", value: org.totalOutlets.toString() },
-    { metric: "Total sales", value: org.totalSales.toString() },
-    { metric: "Storage usage", value: org.storageUsage },
-    { metric: "Monthly activity", value: org.monthlyActivity },
-  ];
+export default function OrganizationUsagePage() {
+  const params = useParams<{ id: string }>();
+  const orgId = params.id;
+  const [org, setOrg] = useState<Org | null>(null);
+  const [usage, setUsage] = useState<UsageRow[]>([]);
+
+  useEffect(() => {
+    async function load() {
+      const { data } = await supabaseClient.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+      const [orgRes, usageRes] = await Promise.all([
+        fetch(`/api/platform/organizations/${orgId}`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`/api/platform/organizations/${orgId}/usage`, { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      const orgJson = (await orgRes.json()) as { success: boolean; organization?: { id: string; name: string; status: string } };
+      const usageJson = (await usageRes.json()) as { success: boolean; usage?: UsageRow[]; message?: string };
+      if (orgRes.ok && orgJson.success && orgJson.organization) {
+        setOrg({ id: orgJson.organization.id, name: orgJson.organization.name, status: orgJson.organization.status });
+      }
+      if (usageRes.ok && usageJson.success) {
+        setUsage(usageJson.usage ?? []);
+      } else {
+        toast.error(usageJson.message ?? "Failed to load usage.");
+      }
+    }
+    void load();
+  }, [orgId]);
+
+  if (!org) return <div className="rounded-3xl border border-border p-4 text-sm text-muted-foreground">Loading organization usage...</div>;
 
   return (
     <div className="space-y-6 pb-10">
@@ -29,3 +53,4 @@ export default async function OrganizationUsagePage({ params }: { params: Promis
     </div>
   );
 }
+

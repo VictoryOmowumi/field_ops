@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import AgentBackButton from "@/components/agent/AgentBackButton";
 import SectionHeader from "@/components/agent/SectionHeader";
 import { Button } from "@/components/ui/button";
 import { authorizedFetch } from "@/lib/api/client";
@@ -57,6 +58,7 @@ export default function AgentCampaignWorkspacePage() {
 
   return (
     <main className="space-y-4 pt-4">
+      <AgentBackButton href="/agent/campaigns" />
       <SectionHeader title={campaign?.name ?? "Campaign"} subtitle="Campaign workspace" />
       <section className="grid grid-cols-3 gap-3">
         <Stat label="Visits Today" value={String(campaign?.stats.visitsToday ?? 0)} />

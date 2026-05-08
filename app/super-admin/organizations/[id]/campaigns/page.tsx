@@ -1,17 +1,48 @@
-﻿import { notFound } from "next/navigation";
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import { toast } from "sonner";
+
 import { Badge } from "@/components/ui/badge";
-import { organizations } from "@/data/organizations";
-import { getOrganizationViewById } from "@/lib/data/organization-server";
+import { supabaseClient } from "@/lib/supabase/client";
 
-export default async function OrganizationCampaignsPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const org = (await getOrganizationViewById(id)) ?? organizations.find((item) => item.id === id);
-  if (!org) return notFound();
+type Row = { id: string; name: string; status: string; reps: number; conversions: number };
+type Org = { id: string; name: string; status: string };
 
-  const campaigns = [
-    { id: `${org.id}-camp-001`, name: `${org.name} Flagship Activation`, status: org.totalCampaigns > 0 ? "Active" : "Draft", reps: Math.max(0, Math.round(org.totalReps * 0.45)), conversions: Math.max(0, Math.round(org.totalSales * 0.4)) },
-    { id: `${org.id}-camp-002`, name: `${org.name} Expansion Drive`, status: org.totalCampaigns > 1 ? "Active" : "Draft", reps: Math.max(0, Math.round(org.totalReps * 0.3)), conversions: Math.max(0, Math.round(org.totalSales * 0.25)) },
-  ];
+export default function OrganizationCampaignsPage() {
+  const params = useParams<{ id: string }>();
+  const orgId = params.id;
+  const [org, setOrg] = useState<Org | null>(null);
+  const [campaigns, setCampaigns] = useState<Row[]>([]);
+
+  useEffect(() => {
+    async function load() {
+      const { data } = await supabaseClient.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+
+      const [orgRes, listRes] = await Promise.all([
+        fetch(`/api/platform/organizations/${orgId}`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`/api/platform/organizations/${orgId}/campaigns`, { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+
+      const orgJson = (await orgRes.json()) as { success: boolean; organization?: { id: string; name: string; status: string } };
+      const listJson = (await listRes.json()) as { success: boolean; campaigns?: Row[]; message?: string };
+
+      if (orgRes.ok && orgJson.success && orgJson.organization) {
+        setOrg({ id: orgJson.organization.id, name: orgJson.organization.name, status: orgJson.organization.status });
+      }
+      if (listRes.ok && listJson.success) {
+        setCampaigns(listJson.campaigns ?? []);
+      } else {
+        toast.error(listJson.message ?? "Failed to load organization campaigns.");
+      }
+    }
+    void load();
+  }, [orgId]);
+
+  if (!org) return <div className="rounded-3xl border border-border p-4 text-sm text-muted-foreground">Loading organization campaigns...</div>;
 
   return (
     <div className="space-y-6 pb-10">
@@ -22,12 +53,20 @@ export default async function OrganizationCampaignsPage({ params }: { params: Pr
         </div>
         <h1 className="text-2xl font-semibold tracking-tight">{org.name} Campaigns</h1>
       </div>
-      <section className="rounded-3xl bg-card p-5 shadow-sm ring-1 ring-border/60 overflow-hidden">
+      <section className="overflow-hidden rounded-3xl bg-card p-5 shadow-sm ring-1 ring-border/60">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-muted-foreground"><tr><th className="px-4 py-3 text-left">Campaign</th><th className="px-4 py-3 text-left">Status</th><th className="px-4 py-3 text-left">Assigned Reps</th><th className="px-4 py-3 text-left">Conversions</th></tr></thead>
-          <tbody>{campaigns.map((item) => (<tr key={item.id} className="border-t border-border"><td className="px-4 py-4 font-medium">{item.name}</td><td className="px-4 py-4">{item.status}</td><td className="px-4 py-4">{item.reps}</td><td className="px-4 py-4">{item.conversions}</td></tr>))}</tbody>
+          <tbody>
+            {campaigns.map((item) => (
+              <tr key={item.id} className="border-t border-border"><td className="px-4 py-4 font-medium">{item.name}</td><td className="px-4 py-4">{item.status}</td><td className="px-4 py-4">{item.reps}</td><td className="px-4 py-4">{item.conversions}</td></tr>
+            ))}
+            {campaigns.length === 0 ? (
+              <tr className="border-t border-border"><td className="px-4 py-4 text-muted-foreground" colSpan={4}>No campaigns found.</td></tr>
+            ) : null}
+          </tbody>
         </table>
       </section>
     </div>
   );
 }
+

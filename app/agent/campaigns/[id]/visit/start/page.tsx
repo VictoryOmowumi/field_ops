@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import AgentBackButton from "@/components/agent/AgentBackButton";
 import GuidedVisitFlow from "@/components/agent/workflow/GuidedVisitFlow";
 import SectionHeader from "@/components/agent/SectionHeader";
 import { Badge } from "@/components/ui/badge";
@@ -243,6 +244,7 @@ export default function AgentVisitStartPage() {
   if (campaignQuery.isLoading || !gpsReady) {
     return (
       <main className="space-y-4 pt-4">
+        <AgentBackButton href={`/agent/campaigns/${campaignId}`} />
         <SectionHeader title="Start Visit" subtitle="Loading guided visit flow..." />
         <section className="rounded-2xl border border-border/70 bg-card p-4 space-y-3">
           <Skeleton className="h-5 w-56" />
@@ -256,6 +258,7 @@ export default function AgentVisitStartPage() {
   if (campaignQuery.error || !campaignQuery.data?.workflow) {
     return (
       <main className="space-y-4 pt-4">
+        <AgentBackButton href={`/agent/campaigns/${campaignId}`} />
         <SectionHeader title="Start Visit" subtitle="Campaign workflow" />
         <section className="rounded-2xl border border-border/70 bg-card p-4 space-y-3">
           <p className="text-sm text-muted-foreground">
@@ -279,6 +282,7 @@ export default function AgentVisitStartPage() {
 
   return (
     <main className="space-y-4 pt-4">
+      <AgentBackButton href={`/agent/campaigns/${campaignId}`} />
       <section>
         <div className="flex items-start justify-between gap-3">
           <SectionHeader title="Start Visit" subtitle={campaignQuery.data.name} />

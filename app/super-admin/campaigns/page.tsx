@@ -1,43 +1,38 @@
-﻿import Link from "next/link";
-import { Button } from "@/components/ui/button";
+"use client";
 
-const campaigns = [
-  {
-    id: "CAM001",
-    organizationId: "org-001",
-    organization: "Acme Beverages",
-    campaign: "Lagos Retail Activation",
-    status: "Active",
-    sync: "98.8%",
-    reps: 57,
-    outlets: 386,
-    conversions: 842,
-  },
-  {
-    id: "CAM002",
-    organizationId: "org-002",
-    organization: "Golden Basket",
-    campaign: "Abuja Market Storm",
-    status: "Active",
-    sync: "96.2%",
-    reps: 34,
-    outlets: 211,
-    conversions: 503,
-  },
-  {
-    id: "CAM003",
-    organizationId: "org-003",
-    organization: "Nova Distribution",
-    campaign: "Kano Route Launch",
-    status: "Draft",
-    sync: "-",
-    reps: 0,
-    outlets: 0,
-    conversions: 0,
-  },
-];
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+
+import { Button } from "@/components/ui/button";
+import { supabaseClient } from "@/lib/supabase/client";
+import type { PlatformCampaignRow } from "@/types/platform";
 
 export default function SuperAdminCampaignsPage() {
+  const [campaigns, setCampaigns] = useState<PlatformCampaignRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadCampaigns() {
+      const { data } = await supabaseClient.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) {
+        setLoading(false);
+        toast.error("Session expired. Please sign in again.");
+        return;
+      }
+      const response = await fetch("/api/platform/campaigns", { headers: { Authorization: `Bearer ${token}` } });
+      const result = (await response.json()) as { success: boolean; message?: string; campaigns?: PlatformCampaignRow[] };
+      setLoading(false);
+      if (!response.ok || !result.success) {
+        toast.error(result.message ?? "Failed to load campaigns.");
+        return;
+      }
+      setCampaigns(result.campaigns ?? []);
+    }
+    void loadCampaigns();
+  }, []);
+
   return (
     <div className="space-y-6 pb-10">
       <div className="flex items-start justify-between gap-3">
@@ -60,9 +55,13 @@ export default function SuperAdminCampaignsPage() {
             </tr>
           </thead>
           <tbody>
-            {campaigns.map((item) => (
+            {loading ? (
+              <tr className="border-t border-border"><td className="px-4 py-4 text-muted-foreground" colSpan={6}>Loading campaigns...</td></tr>
+            ) : campaigns.length === 0 ? (
+              <tr className="border-t border-border"><td className="px-4 py-4 text-muted-foreground" colSpan={6}>No campaigns found.</td></tr>
+            ) : campaigns.map((item) => (
               <tr key={item.id} className="border-t border-border">
-                <td className="px-4 py-4 text-muted-foreground">#{item.id}</td>
+                <td className="px-4 py-4 text-muted-foreground">#{item.id.slice(0, 8)}</td>
                 <td className="px-4 py-4 font-medium">{item.organization}</td>
                 <td className="px-4 py-4">{item.campaign}</td>
                 <td className="px-4 py-4">{item.status}</td>
@@ -80,3 +79,4 @@ export default function SuperAdminCampaignsPage() {
     </div>
   );
 }
+

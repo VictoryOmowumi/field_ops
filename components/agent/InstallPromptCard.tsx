@@ -34,45 +34,29 @@ function isiOS() {
 
 export default function InstallPromptCard() {
   const [deferredPrompt, setDeferredPrompt] = useState<DeferredBeforeInstallPromptEvent | null>(null);
-  const [showIosHint, setShowIosHint] = useState(false);
-  const [hidden, setHidden] = useState(true);
+  const [showIosHint] = useState(() => isiOS());
+  const [installPromptEligible, setInstallPromptEligible] = useState(() => {
+    if (!pwaFlags.installPromptEnabled) return false;
+    if (typeof window === "undefined") return false;
+    if (isStandaloneMode()) return false;
+    const raw = localStorage.getItem(DISMISS_KEY);
+    if (!raw) return true;
+    const dismissedAt = Number(raw);
+    return Number.isFinite(dismissedAt) ? Date.now() - dismissedAt >= 1000 * 60 * 60 * 24 * 7 : true;
+  });
 
   useEffect(() => {
-    if (!pwaFlags.installPromptEnabled) {
-      setHidden(true);
-      return;
-    }
-    if (isStandaloneMode()) {
-      setHidden(true);
-      return;
-    }
-
-    const lastDismissed = localStorage.getItem(DISMISS_KEY);
-    if (lastDismissed) {
-      const age = Date.now() - Number(lastDismissed);
-      if (age < 1000 * 60 * 60 * 24 * 7) {
-        setHidden(true);
-        return;
-      }
-    }
-    setHidden(false);
-
     const handler = (event: Event) => {
       event.preventDefault();
       setDeferredPrompt(event as DeferredBeforeInstallPromptEvent);
     };
     window.addEventListener("beforeinstallprompt", handler);
-
-    if (isiOS()) {
-      setShowIosHint(true);
-    }
-
     return () => window.removeEventListener("beforeinstallprompt", handler);
   }, []);
 
   const shouldShow = useMemo(
-    () => !hidden && Boolean(deferredPrompt || showIosHint),
-    [hidden, deferredPrompt, showIosHint]
+    () => installPromptEligible && Boolean(deferredPrompt || showIosHint),
+    [installPromptEligible, deferredPrompt, showIosHint]
   );
   if (!shouldShow) return null;
 
@@ -81,17 +65,21 @@ export default function InstallPromptCard() {
     await deferredPrompt.prompt();
     const choice = await deferredPrompt.userChoice;
     if (choice.outcome === "accepted") {
-      setHidden(true);
+      const now = Date.now();
+      localStorage.setItem(DISMISS_KEY, String(now));
+      setInstallPromptEligible(false);
     } else {
-      localStorage.setItem(DISMISS_KEY, String(Date.now()));
-      setHidden(true);
+      const now = Date.now();
+      localStorage.setItem(DISMISS_KEY, String(now));
+      setInstallPromptEligible(false);
     }
     setDeferredPrompt(null);
   }
 
   function dismiss() {
-    localStorage.setItem(DISMISS_KEY, String(Date.now()));
-    setHidden(true);
+    const now = Date.now();
+    localStorage.setItem(DISMISS_KEY, String(now));
+    setInstallPromptEligible(false);
   }
 
   return (
@@ -104,7 +92,7 @@ export default function InstallPromptCard() {
           </AlertDialogDescription>
           {showIosHint && !deferredPrompt ? (
             <p className="text-xs text-muted-foreground">
-              On iPhone: tap Share, then choose "Add to Home Screen".
+              On iPhone: tap Share, then choose &quot;Add to Home Screen&quot;.
             </p>
           ) : null}
         </AlertDialogHeader>

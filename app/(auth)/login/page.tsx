@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 
 import { extractAppRole, getDefaultRouteForRole } from "@/lib/auth/roles";
 import AuthSplitLayout from "@/components/auth/AuthSplitLayout";
@@ -25,6 +26,7 @@ function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [checkingSession, setCheckingSession] = useState(true);
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const nextPath = useMemo(() => searchParams.get("next") || "/agent/home", [searchParams]);
 
   const {
@@ -71,12 +73,14 @@ function LoginPageContent() {
   }, [searchParams]);
 
   const onSubmit = handleSubmit(async (values) => {
+    setPendingMessage("Signing you in...");
     const { data, error } = await supabaseClient.auth.signInWithPassword({
       email: values.email,
       password: values.password,
     });
 
     if (error || !data.user) {
+      setPendingMessage(null);
       toast.error(error?.message ?? "Login failed. Check credentials and try again.");
       return;
     }
@@ -84,14 +88,17 @@ function LoginPageContent() {
     const role = extractAppRole(data.user);
     if (role) {
       if (nextPath.startsWith("/agent") && role !== "agent") {
+        setPendingMessage("Redirecting to your workspace...");
         router.replace(getDefaultRouteForRole(role));
         return;
       }
+      setPendingMessage("Redirecting to your workspace...");
       router.replace(nextPath.startsWith("/") ? nextPath : getDefaultRouteForRole(role));
       return;
     }
 
     await supabaseClient.auth.signOut();
+    setPendingMessage(null);
     toast.error("Your user role is missing. Contact an administrator.");
   });
 
@@ -142,6 +149,12 @@ function LoginPageContent() {
         <Button type="submit" className="h-11 w-full rounded-xl text-sm font-semibold shadow-sm" disabled={isSubmitting}>
           {isSubmitting ? "Signing in..." : "Sign In"}
         </Button>
+        {pendingMessage ? (
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            <span>{pendingMessage}</span>
+          </div>
+        ) : null}
       </form>
     </AuthSplitLayout>
   );

@@ -6,8 +6,7 @@ import { usePathname } from "next/navigation";
 import BackofficeBrand from "./BackofficeBrand";
 import BackofficeTopNav from "./BackofficeTopNav";
 import BackofficeSessionActions from "./BackofficeSessionActions";
-import BackofficeUtilityRail from "./BackofficeUtilityRail";
-import { getBackofficeHomeHref, getBackofficeNav, getContextUtilityActions } from "./config";
+import { getBackofficeHomeHref, getBackofficeNav } from "./config";
 import type { BackofficeRole } from "./types";
 
 export default function BackofficeShell({
@@ -20,7 +19,6 @@ export default function BackofficeShell({
   const pathname = usePathname();
   const nav = getBackofficeNav(role);
   const homeHref = getBackofficeHomeHref(role);
-  const utilityActions = getContextUtilityActions(role, pathname);
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -33,7 +31,6 @@ export default function BackofficeShell({
       </header>
 
       <div className="mx-auto flex max-w-450 gap-5 px-5 py-6">
-        <BackofficeUtilityRail pathname={pathname} actions={utilityActions} />
         <section className="min-w-0 flex-1 px-1">{children}</section>
       </div>
     </main>

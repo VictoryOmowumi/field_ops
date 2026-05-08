@@ -1,17 +1,47 @@
-﻿import Link from "next/link";
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { organizations } from "@/data/organizations";
-
-const incidents = [
-  { organization: "Golden Basket", issue: "Upload success dropped below 95%", severity: "Medium", time: "18 mins ago" },
-  { organization: "Acme Beverages", issue: "Pending queue spike in Ikeja", severity: "Low", time: "32 mins ago" },
-  { organization: "Prime Consumer Goods", issue: "Admin invite not accepted", severity: "Low", time: "1 hr ago" },
-];
+import { supabaseClient } from "@/lib/supabase/client";
+import type { PlatformDashboardSummary } from "@/types/platform";
 
 export default function SuperAdminDashboardPage() {
-  const totalCampaigns = organizations.reduce((sum, org) => sum + org.totalCampaigns, 0);
-  const totalReps = organizations.reduce((sum, org) => sum + org.totalReps, 0);
+  const [summary, setSummary] = useState<PlatformDashboardSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadSummary() {
+      const { data } = await supabaseClient.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) {
+        setLoading(false);
+        toast.error("Session expired. Please sign in again.");
+        return;
+      }
+
+      const response = await fetch("/api/platform/dashboard/summary", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const result = (await response.json()) as {
+        success: boolean;
+        message?: string;
+        summary?: PlatformDashboardSummary;
+      };
+
+      setLoading(false);
+      if (!response.ok || !result.success || !result.summary) {
+        toast.error(result.message ?? "Failed to load dashboard summary.");
+        return;
+      }
+      setSummary(result.summary);
+    }
+
+    void loadSummary();
+  }, []);
 
   return (
     <div className="flex flex-col gap-6 pb-10">
@@ -37,10 +67,10 @@ export default function SuperAdminDashboardPage() {
           <p className="text-sm font-light text-muted-foreground">Rollup of active organizations and campaign load.</p>
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            <Metric label="Organizations" value={organizations.length.toString()} note="All tenants" />
-            <Metric label="Active organizations" value={organizations.filter((o) => o.status === "Active").length.toString()} note="Currently operating" />
-            <Metric label="Total campaigns" value={totalCampaigns.toString()} note="Across tenants" />
-            <Metric label="Total reps" value={totalReps.toString()} note="Assigned field agents" />
+            <Metric label="Organizations" value={loading ? "..." : String(summary?.organizations ?? 0)} note="All tenants" />
+            <Metric label="Active organizations" value={loading ? "..." : String(summary?.activeOrganizations ?? 0)} note="Currently operating" />
+            <Metric label="Total campaigns" value={loading ? "..." : String(summary?.totalCampaigns ?? 0)} note="Across tenants" />
+            <Metric label="Total reps" value={loading ? "..." : String(summary?.totalReps ?? 0)} note="Assigned field agents" />
           </div>
         </div>
 
@@ -48,9 +78,9 @@ export default function SuperAdminDashboardPage() {
           <h2 className="font-medium">Platform Health</h2>
           <p className="text-sm opacity-70">Operational reliability across sync and onboarding.</p>
           <div className="mt-6 space-y-3">
-            <Health label="Sync success rate" value="97.9%" />
-            <Health label="Freshness under 5 min" value="96.4%" />
-            <Health label="Invite completion" value="91.0%" />
+            <Health label="Sync success rate" value={summary?.syncSuccessRate ?? "0.0%"} />
+            <Health label="Freshness under 5 min" value={summary?.freshnessUnder5Min ?? "0.0%"} />
+            <Health label="Invite completion" value={summary?.inviteCompletionRate ?? "0.0%"} />
           </div>
         </div>
       </section>
@@ -70,7 +100,7 @@ export default function SuperAdminDashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {organizations.map((org) => (
+                {(summary?.organizationSnapshot ?? []).map((org) => (
                   <tr key={org.id} className="border-t border-border">
                     <td className="px-4 py-4 font-medium"><Link href={`/super-admin/organizations/${org.id}`} className="hover:underline">{org.name}</Link></td>
                     <td className="px-4 py-4 text-muted-foreground">{org.id}</td>
@@ -78,6 +108,9 @@ export default function SuperAdminDashboardPage() {
                     <td className="px-4 py-4">{org.totalCampaigns}</td>
                   </tr>
                 ))}
+                {!loading && (summary?.organizationSnapshot.length ?? 0) === 0 ? (
+                  <tr className="border-t border-border"><td className="px-4 py-4 text-muted-foreground" colSpan={4}>No organizations found.</td></tr>
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -87,13 +120,16 @@ export default function SuperAdminDashboardPage() {
           <h2 className="font-semibold">Incidents & Attention</h2>
           <p className="text-sm text-muted-foreground">Recent cross-tenant issues requiring follow-up.</p>
           <div className="mt-4 space-y-3">
-            {incidents.map((item) => (
-              <div key={`${item.organization}-${item.time}`} className="rounded-3xl bg-muted/35 p-4">
+            {(summary?.incidents ?? []).map((item) => (
+              <div key={`${item.organization}-${item.issue}-${item.time}`} className="rounded-3xl bg-muted/35 p-4">
                 <p className="font-medium">{item.organization}</p>
                 <p className="mt-1 text-sm text-muted-foreground">{item.issue}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{item.severity} · {item.time}</p>
               </div>
             ))}
+            {!loading && (summary?.incidents.length ?? 0) === 0 ? (
+              <div className="rounded-3xl bg-muted/35 p-4 text-sm text-muted-foreground">No active incidents.</div>
+            ) : null}
           </div>
         </div>
       </section>
@@ -112,11 +148,13 @@ function Metric({ label, value, note }: { label: string; value: string; note: st
 }
 
 function Health({ label, value }: { label: string; value: string }) {
+  const parsed = Number.parseFloat(value.replace("%", ""));
+  const safe = Number.isFinite(parsed) ? Math.min(100, Math.max(0, parsed)) : 0;
   return (
     <div>
       <div className="flex justify-between text-sm"><span className="opacity-80">{label}</span><span>{value}</span></div>
-      <div className="mt-2 h-2 rounded-full bg-background/20">
-        <div className="h-full rounded-full bg-primary" style={{ width: value }} />
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-background/20">
+        <div className="h-full rounded-full bg-primary" style={{ width: `${safe}%` }} />
       </div>
     </div>
   );

@@ -65,6 +65,8 @@ type CampaignActivity = {
   outlet: string;
   actor: string;
   createdAt: string;
+  saleCount?: number;
+  saleLines?: Array<{ id: string; product_name: string | null; quantity: number | null }>;
 };
 
 export default function CampaignDetailsPage() {
@@ -478,15 +480,16 @@ export default function CampaignDetailsPage() {
 
       <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60">
         <h2 className="font-semibold">Campaign Activities</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Latest visits and sales tied to this campaign.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Latest visit events grouped with related sales lines.</p>
         <div className="mt-4 overflow-hidden rounded-3xl border border-border">
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-muted-foreground">
               <tr>
-                <th className="px-4 py-3 text-left font-medium">Type</th>
+                <th className="px-4 py-3 text-left font-medium">Activity</th>
                 <th className="px-4 py-3 text-left font-medium">Outlet</th>
                 <th className="px-4 py-3 text-left font-medium">Actor</th>
                 <th className="px-4 py-3 text-left font-medium">Status</th>
+                <th className="px-4 py-3 text-left font-medium">Sales</th>
                 <th className="px-4 py-3 text-left font-medium">Time</th>
                 <th className="px-4 py-3 text-left font-medium">Actions</th>
               </tr>
@@ -494,7 +497,7 @@ export default function CampaignDetailsPage() {
             <tbody>
               {activities.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td className="px-4 py-6 text-muted-foreground" colSpan={5}>
+                  <td className="px-4 py-6 text-muted-foreground" colSpan={7}>
                     No activities yet for this campaign.
                   </td>
                 </tr>
@@ -502,12 +505,15 @@ export default function CampaignDetailsPage() {
                 activities.map((item) => (
                   <tr key={item.id} className="border-t border-border hover:bg-muted/30">
                     <td className="px-4 py-4 capitalize">
-                      {item.type}
+                      {item.type === "visit" ? "Visit" : "Sale"}
                     </td>
                     <td className="px-4 py-4">{item.outlet}</td>
                     <td className="px-4 py-4">{item.actor}</td>
                     <td className="px-4 py-4">
                       <Badge className="rounded-full capitalize">{item.status}</Badge>
+                    </td>
+                    <td className="px-4 py-4 text-muted-foreground">
+                      {item.type === "visit" ? `${item.saleCount ?? 0} line(s)` : "1 line"}
                     </td>
                     <td className="px-4 py-4 text-muted-foreground">
                       {new Date(item.createdAt).toLocaleString()}

@@ -152,7 +152,12 @@ export async function POST(request: NextRequest) {
   if (!hasRequiredRole(user, ["admin", "super_admin"])) return forbidden();
 
   const membership = await getOrgMembershipForUser(user.id);
-  if (!membership || !hasAllowedOrgRole(membership.role, ["org_admin"])) return forbidden();
+  if (!membership || !hasAllowedOrgRole(membership.role, ["org_admin"])) {
+    return NextResponse.json(
+      { success: false, message: "Only organization admins can create reps." },
+      { status: 403 }
+    );
+  }
 
   const payload = (await request.json()) as Partial<CreateRepPayload>;
   if (!payload.fullName?.trim()) return badRequest("Full name is required.");

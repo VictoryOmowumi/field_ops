@@ -56,6 +56,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
       .eq("organization_id", membership.organizationId)
       .eq("visit_id", visitId)
       .order("created_at", { ascending: false });
+    const { data: salesRows } = await supabase
+      .from("sales")
+      .select("id, product_name, quantity, sales_value, conversion_status, created_at")
+      .eq("organization_id", membership.organizationId)
+      .eq("campaign_id", campaignId)
+      .eq("visit_id", visitId)
+      .order("created_at", { ascending: false });
     const evidenceRows = evidence ?? [];
     const evidencePaths = evidenceRows.map((row) => row.file_url);
     const signed =
@@ -74,6 +81,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         status: visit.outcome,
         createdAt: visit.created_at,
         details: visit,
+        sales: salesRows ?? [],
         evidence: evidenceRows.map((row) => ({
           ...row,
           signed_url: signedUrlMap.get(row.file_url) ?? null,

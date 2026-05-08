@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import AgentBackButton from "@/components/agent/AgentBackButton";
 import SectionHeader from "@/components/agent/SectionHeader";
 import StatusPill from "@/components/agent/StatusPill";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -43,6 +44,7 @@ export default function AgentSubmissionDetailPage() {
   if (query.isLoading) {
     return (
       <main className="space-y-3 pt-4">
+        <AgentBackButton href="/agent/campaigns" />
         <Skeleton className="h-8 w-44" />
         <Skeleton className="h-28 w-full rounded-2xl" />
         <Skeleton className="h-32 w-full rounded-2xl" />
@@ -54,6 +56,7 @@ export default function AgentSubmissionDetailPage() {
   if (!item) {
     return (
       <main className="space-y-4 pt-4">
+        <AgentBackButton href="/agent/campaigns" />
         <SectionHeader title="Activity Details" subtitle="Submission not found." />
       </main>
     );
@@ -61,6 +64,7 @@ export default function AgentSubmissionDetailPage() {
 
   return (
     <main className="space-y-4 pt-4">
+      <AgentBackButton href="/agent/campaigns" />
       <SectionHeader title="Activity Details" subtitle={item.outlet} />
 
       <section className="space-y-2 rounded-2xl border border-border/70 bg-card p-4">

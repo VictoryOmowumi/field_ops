@@ -35,7 +35,7 @@ export async function GET(
     return NextResponse.json({ success: false, message: "Organization not found." }, { status: 404 });
   }
 
-  const [{ count: userCount }, { count: campaignCount }] = await Promise.all([
+  const [{ count: userCount }, { count: campaignCount }, { count: outletCount }, { count: salesCount }, { data: evidenceRows }, { count: monthlyVisits }, { count: monthlySales }] = await Promise.all([
     supabase
       .from("organization_users")
       .select("id", { count: "exact", head: true })
@@ -44,7 +44,60 @@ export async function GET(
       .from("campaigns")
       .select("id", { count: "exact", head: true })
       .eq("organization_id", id),
+    supabase
+      .from("outlets")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", id),
+    supabase
+      .from("sales")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", id),
+    supabase
+      .from("visit_evidence")
+      .select("file_size")
+      .eq("organization_id", id),
+    supabase
+      .from("visits")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", id)
+      .gte("created_at", new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()),
+    supabase
+      .from("sales")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", id)
+      .gte("created_at", new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()),
   ]);
+
+  const { data: orgAdminMembership } = await supabase
+    .from("organization_users")
+    .select("user_id")
+    .eq("organization_id", id)
+    .eq("role", "org_admin")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  let primaryAdminName = "Organization Admin";
+  let primaryAdminEmail = organization.primary_contact_email ?? "-";
+  let primaryAdminPhone = "-";
+  if (orgAdminMembership?.user_id) {
+    const { data: adminProfile } = await supabase
+      .from("profiles")
+      .select("full_name, email, phone")
+      .eq("user_id", orgAdminMembership.user_id)
+      .maybeSingle();
+    if (adminProfile) {
+      primaryAdminName = adminProfile.full_name ?? primaryAdminName;
+      primaryAdminEmail = adminProfile.email ?? primaryAdminEmail;
+      primaryAdminPhone = adminProfile.phone ?? primaryAdminPhone;
+    }
+  }
+
+  const storageBytes = (evidenceRows ?? []).reduce((sum, row) => sum + (Number(row.file_size ?? 0) || 0), 0);
+  const storageGb = storageBytes / (1024 * 1024 * 1024);
+  const storageUsage = storageGb >= 1 ? `${storageGb.toFixed(2)} GB` : `${(storageBytes / (1024 * 1024)).toFixed(2)} MB`;
+  const monthlyEvents = (monthlyVisits ?? 0) + (monthlySales ?? 0);
+  const monthlyActivity = monthlyEvents > 2000 ? "High" : monthlyEvents > 500 ? "Medium" : "Low";
 
   return NextResponse.json({
     success: true,
@@ -52,6 +105,13 @@ export async function GET(
       ...organization,
       userCount: userCount ?? 0,
       campaignCount: campaignCount ?? 0,
+      outletCount: outletCount ?? 0,
+      salesCount: salesCount ?? 0,
+      primaryAdminName,
+      primaryAdminEmail,
+      primaryAdminPhone,
+      storageUsage,
+      monthlyActivity,
     },
   });
 }
