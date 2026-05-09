@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   if (!membership) return forbidden();
 
   const supabase = createServerSupabaseClient();
-  const [{ data: assignments }, { data: campaigns }] = await Promise.all([
+  const [{ data: assignments }, { data: campaigns }, { data: visits }] = await Promise.all([
     supabase
       .from("campaign_assignments")
       .select("campaign_id, status")
@@ -30,15 +30,36 @@ export async function GET(request: NextRequest) {
       .eq("status", "active"),
     supabase
       .from("campaigns")
-      .select("id, name, status, start_date, end_date, state, lga")
+      .select("id, name, status, start_date, end_date, state, lga, target_outlets")
       .eq("organization_id", membership.organizationId)
       .in("status", ["active", "draft"])
       .order("created_at", { ascending: false }),
+    supabase
+      .from("visits")
+      .select("campaign_id")
+      .eq("organization_id", membership.organizationId)
+      .eq("agent_id", user.id),
   ]);
 
   const assignedCampaignIds = new Set((assignments ?? []).map((x) => x.campaign_id));
-  const items = (campaigns ?? []).filter((campaign) => assignedCampaignIds.has(campaign.id));
+  const visitCounts = new Map<string, number>();
+  for (const row of visits ?? []) {
+    const current = visitCounts.get(row.campaign_id) ?? 0;
+    visitCounts.set(row.campaign_id, current + 1);
+  }
+
+  const items = (campaigns ?? [])
+    .filter((campaign) => assignedCampaignIds.has(campaign.id))
+    .map((campaign) => {
+      const completedVisits = visitCounts.get(campaign.id) ?? 0;
+      const targetOutlets = Number(campaign.target_outlets ?? 0);
+      const progressPercent = targetOutlets > 0 ? Math.min(100, (completedVisits / targetOutlets) * 100) : 0;
+      return {
+        ...campaign,
+        completedVisits,
+        progressPercent,
+      };
+    });
 
   return NextResponse.json({ success: true, campaigns: items });
 }
-

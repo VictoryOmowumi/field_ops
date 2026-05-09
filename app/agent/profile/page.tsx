@@ -88,7 +88,7 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        <div className="relative mt-6 grid grid-cols-3 gap-2">
+        <div className="relative mt-6 grid grid-cols-3 gap-2 bg-primary/50 p-4 rounded-2xl">
           <HeroMetric label="Campaigns" value={query.isLoading ? "—" : activeCampaigns} />
           <HeroMetric label="Pending" value={query.isLoading ? "—" : pendingSync} />
           <HeroMetric label="Failed" value={query.isLoading ? "—" : failedSync} />
@@ -193,8 +193,8 @@ function HeroMetric({
   value: string | number;
 }) {
   return (
-    <div className="rounded-2xl bg-white/8 p-3 ring-1 ring-white/10">
-      <p className="text-[11px] text-white/50">{label}</p>
+    <div className="">
+      <p className="text-[11px] text-taupe-800">{label}</p>
       <p className="mt-1 text-xl font-semibold">{value}</p>
     </div>
   );

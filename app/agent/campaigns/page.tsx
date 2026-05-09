@@ -18,6 +18,9 @@ type Campaign = {
   end_date?: string | null;
   state?: string | null;
   lga?: string | null;
+  progressPercent?: number;
+  completedVisits?: number;
+  target_outlets?: number | null;
 };
 
 function formatCampaignDateRange(startDate?: string | null, endDate?: string | null) {
@@ -52,9 +55,9 @@ function getExecutionStatus(campaign: Campaign) {
 }
 
 function getTimelineProgress(campaign: Campaign) {
+  if (typeof campaign.progressPercent === "number") return Math.max(0, Math.min(100, campaign.progressPercent));
   const normalized = campaign.status?.toLowerCase();
   if (normalized === "completed") return 100;
-  if (normalized === "active") return 60;
   return 0;
 }
 
@@ -94,7 +97,10 @@ export default function AgentCampaignsPage() {
                 <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${executionStatus.tone}`}>
                   {executionStatus.label}
                 </span>
-                <p className="mt-1 text-[11px] text-muted-foreground">{Math.round(progress)}% done</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {campaign.completedVisits ?? 0}
+                  {campaign.target_outlets ? `/${campaign.target_outlets}` : ""} visits • {Math.round(progress)}% done
+                </p>
               </div>
             </div>
             <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted">

@@ -19,6 +19,9 @@ type Campaign = {
   status: string;
   start_date?: string | null;
   end_date?: string | null;
+  progressPercent?: number;
+  completedVisits?: number;
+  target_outlets?: number | null;
 };
 
 type Submission = {
@@ -247,7 +250,12 @@ function HeroStat({
 
 function CampaignCard({ campaign }: { campaign: Campaign }) {
   const started = campaign.status?.toLowerCase() === "active" || campaign.status?.toLowerCase() === "completed";
-  const progress = campaign.status?.toLowerCase() === "completed" ? 100 : started ? 60 : 0;
+  const progress =
+    typeof campaign.progressPercent === "number"
+      ? Math.max(0, Math.min(100, campaign.progressPercent))
+      : campaign.status?.toLowerCase() === "completed"
+        ? 100
+        : 0;
   const statusText = started ? "Started" : "Not started";
 
   return (
@@ -258,7 +266,10 @@ function CampaignCard({ campaign }: { campaign: Campaign }) {
           <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
             <span>{statusText}</span>
             <span>•</span>
-            <span>{Math.round(progress)}% done</span>
+            <span>
+              {campaign.completedVisits ?? 0}
+              {campaign.target_outlets ? `/${campaign.target_outlets}` : ""} visits • {Math.round(progress)}% done
+            </span>
           </div>
         </div>
         <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold", started ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700")}>

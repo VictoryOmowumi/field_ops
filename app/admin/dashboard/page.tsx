@@ -32,7 +32,7 @@ type DashboardSummary = {
   posmDeploymentRate: number;
 };
 
-type RecentActivity = { id: string; rep: string; outlet: string; status: string; time: string };
+type RecentActivity = { id: string; campaignId: string | null; rep: string; outlet: string; status: string; time: string };
 type TrendPoint = { day: string; visits: number; conversions: number };
 type TerritoryPoint = {
   label: string;
@@ -250,7 +250,10 @@ export default function AdminDashboardPage() {
                     <td className="px-4 py-4"><StatusBadge status={item.status} /></td>
                     <td className="px-4 py-4 text-muted-foreground">{new Date(item.time).toLocaleString()}</td>
                     <td className="px-4 py-4">
-                      <Link href={`/admin/sales/${item.id}`} className="text-xs font-medium text-primary underline">
+                      <Link
+                        href={item.campaignId ? `/admin/campaigns/${item.campaignId}/activities/visit-${item.id}` : "/admin/campaigns"}
+                        className="text-xs font-medium text-primary underline"
+                      >
                         View details
                       </Link>
                     </td>

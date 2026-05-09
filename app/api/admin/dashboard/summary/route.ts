@@ -214,6 +214,7 @@ export async function GET(request: NextRequest) {
     territoryPerformance,
     recentActivity: recent.map((item) => ({
       id: item.id,
+      campaignId: item.campaign_id ?? null,
       status: item.conversion_status,
       time: item.created_at,
       outlet: item.outlet_id ? outletMap.get(item.outlet_id) ?? "-" : "-",

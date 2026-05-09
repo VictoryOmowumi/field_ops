@@ -34,7 +34,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const [campaignRes, visitStatsRes] = await Promise.all([
     supabase
       .from("campaigns")
-      .select("id, name, description, status, start_date, end_date, state, lga, products, outlet_types, campaign_workflow_template, campaign_workflow")
+      .select("id, name, description, status, start_date, end_date, state, lga, products, outlet_types, form_requirements, runtime_form_config, campaign_workflow_template, campaign_workflow")
       .eq("organization_id", membership.organizationId)
       .eq("id", id)
       .maybeSingle(),
@@ -58,6 +58,29 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   const parsed = campaignWorkflowConfigV1Schema.safeParse(campaignRes.data.campaign_workflow);
   const workflow = parsed.success ? parsed.data : buildWorkflowConfigFromTemplate(fallbackTemplate);
+  const runtimeFormConfig = (campaignRes.data.runtime_form_config ?? {}) as {
+    tasks?: Record<string, Record<string, unknown>>;
+  };
+  const formRequirements = (campaignRes.data.form_requirements ?? {}) as {
+    allowNotes?: boolean;
+    requirePosmDeployment?: boolean;
+  };
+
+  workflow.activities = workflow.activities.filter((activity) => {
+    if (activity.id === "notes" && formRequirements.allowNotes === false) return false;
+    if (activity.id === "posm_deployment" && formRequirements.requirePosmDeployment === false) return false;
+    if (activity.id === "posm_deployment") {
+      const enabled = runtimeFormConfig.tasks?.posm_deployment?.enabled;
+      if (enabled === false) return false;
+    }
+    return true;
+  });
+
+  workflow.activities = workflow.activities.map((activity) => {
+    const settings = runtimeFormConfig.tasks?.[activity.id] ?? {};
+    return { ...activity, settings: { ...(activity.settings ?? {}), ...settings } };
+  });
+
   const stepSequence = deriveGuidedSteps(workflow);
 
   const outcomes = visitStatsRes.data ?? [];

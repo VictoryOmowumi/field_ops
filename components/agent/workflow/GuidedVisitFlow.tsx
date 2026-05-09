@@ -41,6 +41,7 @@ type ProductAuditRow = {
   buyingPrice?: number;
   sellingPrice?: number;
 };
+type AvailabilityAnswer = { question: string; answer: "yes" | "no" | "" };
 
 export default function GuidedVisitFlow({
   campaignId,
@@ -68,6 +69,7 @@ export default function GuidedVisitFlow({
   const [notes, setNotes] = useState("");
   const [posmDeployed, setPosmDeployed] = useState<"yes" | "no" | "">("");
   const [posmQuantity, setPosmQuantity] = useState<number | undefined>(undefined);
+  const [availabilityAnswers, setAvailabilityAnswers] = useState<AvailabilityAnswer[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -78,8 +80,14 @@ export default function GuidedVisitFlow({
 
   const hasSalesStep = workflow.activities.some((item) => item.id === "sell_to_outlet");
   const hasAvailability = workflow.activities.some((item) => item.id === "availability_survey");
+  const hasNotesStep = workflow.activities.some((item) => item.id === "notes");
   const hasPriceSurvey = workflow.activities.some((item) => item.id === "price_survey");
   const hasProductSurvey = workflow.activities.some((item) => item.id === "product_survey");
+  const availabilityQuestions = useMemo(() => {
+    const activity = workflow.activities.find((item) => item.id === "availability_survey");
+    const questions = activity?.settings?.questions;
+    return Array.isArray(questions) ? questions.map((item) => String(item)).filter(Boolean) : [];
+  }, [workflow.activities]);
   const posmActivity = workflow.activities.find((item) => item.id === "posm_deployment");
   const hasPosmDeployment = Boolean(posmActivity);
   const requirePosmQuantityWhenDeployed = Boolean(posmActivity?.settings?.requireQuantityWhenDeployed);
@@ -116,6 +124,16 @@ export default function GuidedVisitFlow({
       toast.error("At least one product audit row is required.");
       return;
     }
+    if (hasAvailability && availabilityQuestions.length > 0) {
+      const allAnswered = availabilityQuestions.every((question, index) => {
+        const answer = availabilityAnswers[index]?.answer ?? "";
+        return (availabilityAnswers[index]?.question ?? question) === question && (answer === "yes" || answer === "no");
+      });
+      if (!allAnswered) {
+        toast.error("Answer all availability questions with Yes or No.");
+        return;
+      }
+    }
     if (hasPosmDeployment && !posmDeployed) {
       toast.error("Please select whether POSM was deployed.");
       return;
@@ -147,6 +165,7 @@ export default function GuidedVisitFlow({
         activityId: "availability_survey",
         payload: {
           products: productAudit.map((row) => ({ productName: row.productName, available: row.available === "yes" })),
+          questions: availabilityAnswers.filter((item) => item.question.trim() && item.answer.trim()),
         },
       });
     }
@@ -177,7 +196,7 @@ export default function GuidedVisitFlow({
       });
     }
 
-    if (notes.trim()) {
+    if (hasNotesStep && notes.trim()) {
       activityPayloads.push({ activityId: "notes", payload: { notes: notes.trim() } });
     }
     if (hasPosmDeployment) {
@@ -242,6 +261,15 @@ export default function GuidedVisitFlow({
     }
     if (hasPosmDeployment && !posmDeployed) {
       return toast.error("Please select whether POSM was deployed.");
+    }
+    if (hasAvailability && availabilityQuestions.length > 0) {
+      const allAnswered = availabilityQuestions.every((question, index) => {
+        const answer = availabilityAnswers[index]?.answer ?? "";
+        return (availabilityAnswers[index]?.question ?? question) === question && (answer === "yes" || answer === "no");
+      });
+      if (!allAnswered) {
+        return toast.error("Answer all availability questions with Yes or No.");
+      }
     }
     if (hasPosmDeployment && posmDeployed === "yes" && requirePosmQuantityWhenDeployed && (!posmQuantity || posmQuantity < 1)) {
       return toast.error("Enter POSM quantity when deployment is marked yes.");
@@ -350,6 +378,38 @@ export default function GuidedVisitFlow({
         </section>
       ) : null}
 
+      {hasAvailability && availabilityQuestions.length > 0 ? (
+        <section className="space-y-3 rounded-3xl border border-border/70 bg-card p-4">
+          <h3 className="text-base font-medium">Availability Questions</h3>
+          <div className="space-y-2">
+            {availabilityQuestions.map((question, index) => {
+              const current = availabilityAnswers[index]?.answer ?? "";
+              return (
+                <div key={`${question}-${index}`} className="space-y-1">
+                  <p className="text-sm">{question}</p>
+                  <Select
+                    value={current}
+                    onValueChange={(value: "yes" | "no") =>
+                      setAvailabilityAnswers((prev) => {
+                        const next = [...prev];
+                        next[index] = { question, answer: value };
+                        return next;
+                      })
+                    }
+                  >
+                    <SelectTrigger><SelectValue placeholder="Select Yes or No" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="yes">Yes</SelectItem>
+                      <SelectItem value="no">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
       {hasSalesStep && isSoldOutcome ? (
         <section className="space-y-3 rounded-3xl border border-border/70 bg-card p-4">
           <h3 className="text-base font-medium">Sales Capture</h3>
@@ -416,10 +476,12 @@ export default function GuidedVisitFlow({
         </Select>
       </section>
 
-      <section className="space-y-2 rounded-3xl border border-border/70 bg-card p-4">
-        <h3 className="text-base font-medium">Notes</h3>
-        <Textarea placeholder="Notes (optional)" value={notes} onChange={(event) => setNotes(event.target.value)} />
-      </section>
+      {hasNotesStep ? (
+        <section className="space-y-2 rounded-3xl border border-border/70 bg-card p-4">
+          <h3 className="text-base font-medium">Notes</h3>
+          <Textarea placeholder="Notes (optional)" value={notes} onChange={(event) => setNotes(event.target.value)} />
+        </section>
+      ) : null}
 
       {hasPosmDeployment ? (
         <section className="space-y-3 rounded-3xl border border-border/70 bg-card p-4">
