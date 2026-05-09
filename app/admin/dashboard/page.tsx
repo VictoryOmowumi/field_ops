@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -189,8 +190,6 @@ export default function AdminDashboardPage() {
           <SmallStat icon={CloudUploadIcon} label="Field sync health" value={`${summary?.syncHealth.toFixed(1) ?? "100"}%`} trend="Live" />
           <SmallStat icon={Alert01Icon} label="Pending uploads" value={String(pendingUploads)} trend="Derived" />
           <SmallStat icon={Store01Icon} label="Active campaigns" value={String(summary?.activeCampaigns ?? 0)} trend={`${summary?.totalCampaigns ?? 0} total`} />
-          <SmallStat icon={Store01Icon} label="POSM deployed" value={String(summary?.posmDeployed ?? 0)} trend={`${summary?.posmDeploymentRate?.toFixed(1) ?? "0"}%`} />
-          <SmallStat icon={Store01Icon} label="POSM units" value={String(summary?.posmUnits ?? 0)} trend={`${summary?.posmChecks ?? 0} checks`} />
         </div>
 
         <div className="rounded-[2rem] bg-card p-5 shadow-sm ring-1 ring-border/60 lg:col-span-7">
@@ -235,13 +234,14 @@ export default function AdminDashboardPage() {
                 <th className="px-4 py-3 text-left font-medium">Outlet</th>
                 <th className="px-4 py-3 text-left font-medium">Status</th>
                 <th className="px-4 py-3 text-left font-medium">Time</th>
+                <th className="px-4 py-3 text-left font-medium">Action</th>
               </tr>
             </thead>
             <tbody>
               {query.isLoading ? (
-                <TableLoadingState colSpan={4} title="Loading activity..." description="Fetching latest submissions." />
+                <TableLoadingState colSpan={5} title="Loading activity..." description="Fetching latest submissions." />
               ) : (query.data?.recentActivity ?? []).length === 0 ? (
-                <TableEmptyStateRow colSpan={4} title="No recent activity" description="Field activity will appear here after submissions." />
+                <TableEmptyStateRow colSpan={5} title="No recent activity" description="Field activity will appear here after submissions." />
               ) : (
                 (query.data?.recentActivity ?? []).map((item) => (
                   <tr key={item.id} className="border-t border-border">
@@ -249,6 +249,11 @@ export default function AdminDashboardPage() {
                     <td className="px-4 py-4 text-muted-foreground">{item.outlet}</td>
                     <td className="px-4 py-4"><StatusBadge status={item.status} /></td>
                     <td className="px-4 py-4 text-muted-foreground">{new Date(item.time).toLocaleString()}</td>
+                    <td className="px-4 py-4">
+                      <Link href={`/admin/sales/${item.id}`} className="text-xs font-medium text-primary underline">
+                        View details
+                      </Link>
+                    </td>
                   </tr>
                 ))
               )}

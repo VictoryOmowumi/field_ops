@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import {AiInnovation02Icon} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import Image from "next/image";
 
 type AuthSplitLayoutProps = {
   title: string;
@@ -18,14 +19,11 @@ export default function AuthSplitLayout({
 }: AuthSplitLayoutProps) {
   return (
     <main className="min-h-screen bg-[#f6f2ee] p-4 dark:bg-background md:p-8">
-      <div className="mx-auto grid min-h-[calc(100vh-2rem)] max-w-8xl gap-4 rounded-[2rem] bg-card p-3 shadow-sm ring-1 ring-black/5 dark:ring-white/10 md:grid-cols-2 md:gap-6 md:p-5">
-        <aside className="relative hidden overflow-hidden rounded-[1.6rem] bg-gradient-to-br from-[#f8ece4] via-[#f7c9a9] to-[#ee9e70] p-8 dark:from-[#2a241f] dark:via-[#3a2a20] dark:to-[#4a2f22] md:flex md:flex-col md:justify-between">
+      <div className="mx-auto grid min-h-[calc(100vh-2rem)] max-w-8xl gap-4 rounded-4xl bg-card p-3 shadow-sm ring-1 ring-black/5 dark:ring-white/10 md:grid-cols-2 md:gap-6 md:p-5">
+        <aside className="relative hidden overflow-hidden rounded-[1.6rem] bg-linear-to-br from-[#f8ece4] via-[#f7c9a9] to-[#ee9e70] p-8 dark:from-[#2a241f] dark:via-[#3a2a20] dark:to-[#4a2f22] md:flex md:flex-col md:justify-between">
           <div className="relative z-10">
             <Link href="/login" className="inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-              <span className="grid size-6 place-items-center rounded-md bg-foreground text-background">
-                <HugeiconsIcon icon={AiInnovation02Icon} size={18} strokeWidth={1.8} />
-              </span>
-              ActivationIQ
+              <Image src="/orange-black.png" alt="ActivationIQ logo" width={80} height={80} className="w-full h-auto" />
             </Link>
           </div>
           <div className="relative z-10 max-w-md">
@@ -39,7 +37,7 @@ export default function AuthSplitLayout({
 
         <section className="flex items-center justify-center rounded-[1.6rem] bg-card/40 p-4 dark:bg-card/30 md:p-8">
           <div className="w-full max-w-md">
-            <h2 className="text-sm font-semibold text-foreground">Activation<span className="text-primary">IQ</span></h2>
+                         <Image src="/orange-black.png" alt="ActivationIQ logo" width={40} height={40} className="w-32 flex md:hidden h-auto object-contain" />
             <h1 className="mt-1 text-4xl font-semibold tracking-tight text-foreground">{title}</h1>
             <p className="mt-2 text-sm text-muted-foreground">{description}</p>
 

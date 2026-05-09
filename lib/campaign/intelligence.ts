@@ -173,7 +173,7 @@ export async function getCampaignActivities(
 
   let visitsQuery = supabase
     .from("visits")
-    .select("id, outcome, created_at, outlet_id, agent_id", { count: "exact" })
+    .select("id, outcome, task_type, task_payload, lga, latitude, longitude, created_at, outlet_id, agent_id", { count: "exact" })
     .eq("organization_id", organizationId)
     .eq("campaign_id", campaignId);
   if (filters.dateFrom) visitsQuery = visitsQuery.gte("created_at", `${filters.dateFrom}T00:00:00.000Z`);
@@ -194,7 +194,7 @@ export async function getCampaignActivities(
           .eq("organization_id", organizationId)
           .in("visit_id", visitIds)
       : Promise.resolve({ data: [] as Array<{ id: string; visit_id: string; product_name: string | null; quantity: number | null; conversion_status: string | null }> }),
-    outletIds.length ? supabase.from("outlets").select("id, name").in("id", outletIds) : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
+    outletIds.length ? supabase.from("outlets").select("id, name, contact_person, lga").in("id", outletIds) : Promise.resolve({ data: [] as Array<{ id: string; name: string; contact_person: string | null; lga: string | null }> }),
     userIds.length ? supabase.from("profiles").select("user_id, full_name").in("user_id", userIds) : Promise.resolve({ data: [] as Array<{ user_id: string; full_name: string | null }> }),
   ]);
 
@@ -209,18 +209,36 @@ export async function getCampaignActivities(
     });
     saleByVisit.set(item.visit_id, list);
   }
-  const outletMap = new Map((outlets ?? []).map((x) => [x.id, x.name]));
+  const outletMap = new Map((outlets ?? []).map((x) => [x.id, x]));
   const profileMap = new Map((profiles ?? []).map((x) => [x.user_id, x.full_name ?? "Unknown"]));
 
   let rows: CampaignActivityRow[] = visitRows.map((row) => {
     const saleLines = saleByVisit.get(row.id) ?? [];
+    const outlet = row.outlet_id ? outletMap.get(row.outlet_id) : null;
+    const taskPayload = (row.task_payload ?? {}) as { activities?: Array<{ activityId?: string; payload?: Record<string, unknown> }> };
+    const activityProducts = (taskPayload.activities ?? [])
+      .map((item) => item.payload?.productName ?? item.payload?.product ?? null)
+      .filter(Boolean)
+      .map((item) => String(item));
+    const saleProducts = saleLines.map((line) => line.product_name).filter(Boolean).map((item) => String(item));
+    const products = [...new Set([...saleProducts, ...activityProducts])];
+    const coords =
+      typeof row.latitude === "number" && typeof row.longitude === "number"
+        ? `${row.latitude.toFixed(5)}, ${row.longitude.toFixed(5)}`
+        : "-";
     return {
       id: `visit-${row.id}`,
       type: "visit",
+      taskType: row.task_type ?? "visit",
       status: row.outcome ?? "-",
       createdAt: row.created_at,
-      outlet: row.outlet_id ? outletMap.get(row.outlet_id) ?? "-" : "-",
+      customer: outlet?.contact_person ?? "-",
+      outlet: outlet?.name ?? "-",
+      area: row.lga ?? outlet?.lga ?? "-",
+      products: products.length > 0 ? products.join(", ") : "-",
+      location: coords,
       actor: row.agent_id ? profileMap.get(row.agent_id) ?? "-" : "-",
+      taskPayload: (row.task_payload as Record<string, unknown> | null) ?? null,
       saleCount: saleLines.length,
       saleLines,
     };
@@ -230,6 +248,10 @@ export async function getCampaignActivities(
     const q = filters.search.toLowerCase();
     rows = rows.filter((row) =>
       row.outlet.toLowerCase().includes(q)
+      || (row.customer ?? "").toLowerCase().includes(q)
+      || (row.area ?? "").toLowerCase().includes(q)
+      || (row.products ?? "").toLowerCase().includes(q)
+      || (row.location ?? "").toLowerCase().includes(q)
       || row.actor.toLowerCase().includes(q)
       || row.status.toLowerCase().includes(q)
     );

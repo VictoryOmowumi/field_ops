@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
     .select("id, conversion_status, created_at, outlet_id, agent_id, campaign_id")
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false })
-    .limit(8);
+    .limit(10);
   if (campaignId && campaignId !== "all") recentQuery = recentQuery.eq("campaign_id", campaignId);
   if (dateFrom) recentQuery = recentQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
   if (dateTo) recentQuery = recentQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);

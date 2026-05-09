@@ -11,6 +11,7 @@ export function PwaRuntimeProvider() {
   useEffect(() => {
     if (!pwaFlags.offlineReadEnabled && !pwaFlags.offlineWriteEnabled) return;
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+    if (window.location.pathname.startsWith("/shared/")) return;
 
     let mounted = true;
 
@@ -49,6 +50,7 @@ export function PwaRuntimeProvider() {
 
   useEffect(() => {
     if (!updateReady) return;
+    if (typeof window !== "undefined" && window.location.pathname.startsWith("/shared/")) return;
     toast.info("New app version available.", {
       action: {
         label: "Update",

@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MapContainer, Marker, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
 import { divIcon, latLngBounds } from "leaflet";
-import { useEffect } from "react";
 
 type TerritoryPoint = {
   label: string;
@@ -35,7 +34,7 @@ function rateColor(rate: number) {
 function markerIcon(color: string) {
   return divIcon({
     className: "fieldops-map-marker",
-    html: `<div style="display:grid;place-items:center;width:24px;height:24px;border-radius:9999px;background:${color};border:2px solid var(--color-background);color:#fff;font-size:12px;line-height:1">⚑</div>`,
+    html: `<div style="display:grid;place-items:center;width:24px;height:24px;border-radius:9999px;background:${color};border:2px solid var(--color-background);color:#fff;font-size:11px;font-weight:700;line-height:1">L</div>`,
     iconSize: [24, 24],
     iconAnchor: [12, 12],
   });
@@ -43,29 +42,16 @@ function markerIcon(color: string) {
 
 export default function TerritoryPerformanceMap({ points }: { points: TerritoryPoint[] }) {
   const [mapStyle, setMapStyle] = useState<"street" | "light" | "dark">("street");
-  const validPoints = points.filter(
-    (point) =>
-      Number.isFinite(point.latitude) &&
-      Number.isFinite(point.longitude)
-  );
+  const validPoints = points.filter((point) => Number.isFinite(point.latitude) && Number.isFinite(point.longitude));
   const tileConfig =
     mapStyle === "dark"
-      ? {
-          url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-          attribution: "&copy; OpenStreetMap, &copy; CARTO",
-        }
+      ? { url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", attribution: "&copy; OpenStreetMap, &copy; CARTO" }
       : mapStyle === "light"
-        ? {
-            url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-            attribution: "&copy; OpenStreetMap, &copy; CARTO",
-          }
-        : {
-            url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-            attribution: "&copy; OpenStreetMap contributors",
-          };
+        ? { url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", attribution: "&copy; OpenStreetMap, &copy; CARTO" }
+        : { url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", attribution: "&copy; OpenStreetMap contributors" };
 
   return (
-    <div className="fieldops-map relative h-[340px] overflow-hidden rounded-3xl border border-border bg-muted/30">
+    <div className="fieldops-map relative z-10 h-[340px] overflow-hidden rounded-3xl border border-border bg-muted/30">
       <div className="absolute right-3 top-3 z-[500] flex gap-1 rounded-full border border-border bg-background/95 p-1 shadow-sm">
         {(["street", "light", "dark"] as const).map((style) => (
           <button
@@ -84,11 +70,7 @@ export default function TerritoryPerformanceMap({ points }: { points: TerritoryP
         <TileLayer attribution={tileConfig.attribution} url={tileConfig.url} />
         <FitToPoints points={validPoints} />
         {validPoints.map((point) => (
-          <Marker
-            key={point.label}
-            position={[point.latitude, point.longitude]}
-            icon={markerIcon(rateColor(point.rate))}
-          >
+          <Marker key={point.label} position={[point.latitude, point.longitude]} icon={markerIcon(rateColor(point.rate))}>
             <Tooltip direction="top" offset={[0, -8]} opacity={1}>
               <div className="text-xs">
                 <p className="font-semibold">{point.label}</p>

@@ -73,7 +73,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   }
 
   const [{ rows: activities, total }, summary, mapPoints, evidence] = await Promise.all([
-    getCampaignActivities(supabase, shareLink.organization_id, shareLink.campaign_id, { page: 1, pageSize: 100 }),
+    getCampaignActivities(supabase, shareLink.organization_id, shareLink.campaign_id, { page: 1, pageSize: 2000 }),
     getCampaignAnalyticsSummary(supabase, shareLink.organization_id, shareLink.campaign_id),
     getCampaignMapPoints(supabase, shareLink.organization_id, shareLink.campaign_id),
     getCampaignEvidence(supabase, shareLink.organization_id, shareLink.campaign_id),

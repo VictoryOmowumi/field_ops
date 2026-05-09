@@ -42,8 +42,13 @@ type AssignedRepRow = {
 type CampaignActivity = {
   id: string;
   type: "visit" | "sale";
+  taskType?: string;
   status: string;
+  customer?: string;
   outlet: string;
+  area?: string;
+  products?: string;
+  location?: string;
   actor: string;
   createdAt: string;
   saleCount?: number;
@@ -300,32 +305,36 @@ export function CampaignDetailsSections({
             <thead className="bg-muted/50 text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 text-left font-medium">Activity</th>
+                <th className="px-4 py-3 text-left font-medium">Customer</th>
                 <th className="px-4 py-3 text-left font-medium">Outlet</th>
+                <th className="px-4 py-3 text-left font-medium">Area</th>
+                <th className="px-4 py-3 text-left font-medium">Products</th>
+                <th className="px-4 py-3 text-left font-medium">Location</th>
                 <th className="px-4 py-3 text-left font-medium">Actor</th>
                 <th className="px-4 py-3 text-left font-medium">Status</th>
-                <th className="px-4 py-3 text-left font-medium">Sales</th>
-                <th className="px-4 py-3 text-left font-medium">Time</th>
+                <th className="px-4 py-3 text-left font-medium">Date</th>
                 <th className="px-4 py-3 text-left font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
               {activities.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td className="px-4 py-6 text-muted-foreground" colSpan={7}>
+                  <td className="px-4 py-6 text-muted-foreground" colSpan={10}>
                     No activities yet for this campaign.
                   </td>
                 </tr>
               ) : (
                 activities.map((item) => (
                   <tr key={item.id} className="border-t border-border hover:bg-muted/30">
-                    <td className="px-4 py-4 capitalize">{item.type === "visit" ? "Visit" : "Sale"}</td>
+                    <td className="px-4 py-4 capitalize">{item.taskType ?? (item.type === "visit" ? "visit" : "sale")}</td>
+                    <td className="px-4 py-4">{item.customer ?? "-"}</td>
                     <td className="px-4 py-4">{item.outlet}</td>
+                    <td className="px-4 py-4">{item.area ?? "-"}</td>
+                    <td className="px-4 py-4">{item.products ?? "-"}</td>
+                    <td className="px-4 py-4 text-muted-foreground">{item.location ?? "-"}</td>
                     <td className="px-4 py-4">{item.actor}</td>
                     <td className="px-4 py-4">
                       <Badge className="rounded-full capitalize">{item.status}</Badge>
-                    </td>
-                    <td className="px-4 py-4 text-muted-foreground">
-                      {item.type === "visit" ? `${item.saleCount ?? 0} line(s)` : "1 line"}
                     </td>
                     <td className="px-4 py-4 text-muted-foreground">{new Date(item.createdAt).toLocaleString()}</td>
                     <td className="px-4 py-4">

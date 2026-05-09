@@ -223,3 +223,9 @@
 .fieldops-map .leaflet-popup-tip {
   background: var(--color-card);
 }
+
+.fieldops-map .leaflet-pane,
+.fieldops-map .leaflet-top,
+.fieldops-map .leaflet-bottom {
+  z-index: 10 !important;
+}

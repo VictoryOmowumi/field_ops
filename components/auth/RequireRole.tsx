@@ -49,8 +49,14 @@ export default function RequireRole({
         const token = session.access_token;
         const response = await fetch("/api/auth/context", {
           headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
         });
         if (!response.ok) {
+          if (response.status === 401) {
+            await supabaseClient.auth.signOut();
+            router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+            return;
+          }
           router.replace(redirectOnOrgDeniedTo);
           return;
         }

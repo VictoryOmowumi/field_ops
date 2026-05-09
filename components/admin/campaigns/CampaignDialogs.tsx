@@ -166,7 +166,7 @@ export function ShareCampaignDialog({
 }: ShareCampaignDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl!">
+      <DialogContent className="max-w-4xl! h-[95vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Share Campaign</DialogTitle>
           <DialogDescription>
@@ -207,14 +207,6 @@ export function ShareCampaignDialog({
               {sendingShareLink ? "Sending..." : "Send via Email"}
             </span>
           </Button>
-          {generatedShareUrl ? (
-            <Button variant="outline" className="rounded-full" onClick={() => onCopyShareUrl(generatedShareUrl)}>
-              <span className="inline-flex items-center gap-2">
-                <Copy className="size-4" />
-                Copy Latest Link
-              </span>
-            </Button>
-          ) : null}
         </div>
         {generatedShareUrl ? (
           <div className="rounded-xl border border-dashed border-border p-3 text-xs text-muted-foreground">
@@ -281,4 +273,3 @@ function statusBadgeClass(status: string) {
   if (status === "suspended") return "bg-red-500/10 text-red-600";
   return "bg-muted text-muted-foreground";
 }
-

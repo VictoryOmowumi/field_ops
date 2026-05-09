@@ -27,10 +27,16 @@ export type CampaignMapPoint = {
 export type CampaignActivityRow = {
   id: string;
   type: "visit" | "sale";
+  taskType?: string;
   status: string;
+  customer?: string;
   outlet: string;
+  area?: string;
+  products?: string;
+  location?: string;
   actor: string;
   createdAt: string;
+  taskPayload?: Record<string, unknown> | null;
   saleCount?: number;
   saleLines?: Array<{ id: string; product_name: string | null; quantity: number | null; conversion_status?: string | null }>;
 };

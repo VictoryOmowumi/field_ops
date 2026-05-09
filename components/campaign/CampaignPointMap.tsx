@@ -38,6 +38,7 @@ export default function CampaignPointMap({ points }: { points: CampaignMapPoint[
   const validPoints = points.filter(
     (point) => Number.isFinite(point.latitude) && Number.isFinite(point.longitude)
   );
+  const mapKey = `${validPoints.length}-${validPoints[0]?.id ?? "none"}-${validPoints[validPoints.length - 1]?.id ?? "none"}`;
 
   if (validPoints.length === 0) {
     return <p className="text-sm text-muted-foreground">No coordinate data captured yet.</p>;
@@ -45,7 +46,7 @@ export default function CampaignPointMap({ points }: { points: CampaignMapPoint[
 
   return (
     <div className="relative z-10 h-120 overflow-hidden rounded-3xl border border-border bg-muted/20">
-      <MapContainer center={[9.082, 8.6753]} zoom={6} scrollWheelZoom={false} className="h-full w-full">
+      <MapContainer key={mapKey} center={[9.082, 8.6753]} zoom={6} scrollWheelZoom={false} className="h-full w-full">
         <TileLayer
           attribution="&copy; OpenStreetMap, &copy; CARTO"
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
