@@ -17,6 +17,7 @@ const OutletLocationPreviewMap = dynamic(() => import("@/components/admin/Outlet
 
 type OutletVisit = {
   id: string;
+  campaign_id?: string | null;
   task_type?: string | null;
   outcome?: string | null;
   notes?: string | null;
@@ -210,6 +211,16 @@ export default function OutletDetailsPage() {
                       {visit.created_at ? new Date(visit.created_at).toLocaleTimeString() : "-"}
                     </span>
                   </div>
+                  {visit.campaign_id ? (
+                    <div className="mt-2">
+                      <Link
+                        href={`/admin/campaigns/${visit.campaign_id}/activities/visit-${visit.id}`}
+                        className="text-xs font-medium text-primary underline"
+                      >
+                        View campaign activity details
+                      </Link>
+                    </div>
+                  ) : null}
 
                   {(visit.sales?.length ?? 0) > 0 ? (
                     <div className="mt-3 rounded-2xl border border-border p-3">

@@ -35,7 +35,7 @@ export default function AuthSplitLayout({
 
         <section className="flex items-center justify-center rounded-[1.6rem] bg-card/40 p-4 dark:bg-card/30 md:p-8">
           <div className="w-full max-w-md">
-                         <Image src="/orange-black.png" alt="ActivationIQ logo" width={40} height={40} className="w-32 flex md:hidden h-auto object-contain" />
+                         <Image src="/orange-black.png" alt="ActivationIQ logo" width={40} height={40} className="w-24 flex md:hidden h-auto object-contain" />
             <h1 className="mt-1 text-4xl font-semibold tracking-tight text-foreground">{title}</h1>
             <p className="mt-2 text-sm text-muted-foreground">{description}</p>
 

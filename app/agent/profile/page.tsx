@@ -88,7 +88,7 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        <div className="relative mt-6 grid grid-cols-3 gap-2 bg-primary/50 p-4 rounded-2xl">
+        <div className="relative mt-2 grid grid-cols-3 gap-2 bg-primary/50 p-4 rounded-2xl">
           <HeroMetric label="Campaigns" value={query.isLoading ? "—" : activeCampaigns} />
           <HeroMetric label="Pending" value={query.isLoading ? "—" : pendingSync} />
           <HeroMetric label="Failed" value={query.isLoading ? "—" : failedSync} />

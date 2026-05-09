@@ -21,6 +21,14 @@ function uuidFromIdempotencyKey(key: string) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
+function normalizeText(input?: string | null) {
+  return (input ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function normalizePhone(input?: string | null) {
+  return (input ?? "").replace(/\D/g, "");
+}
+
 export async function POST(request: NextRequest) {
   const user = await getAuthenticatedUserFromRequest(request);
   if (!user) return unauthorized();
@@ -78,27 +86,58 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "Outlet name is required." }, { status: 400 });
     }
 
-    const { data: rpcOutletId, error: rpcError } = await supabase.rpc("match_or_create_outlet", {
-      p_organization_id: membership.organizationId,
-      p_campaign_id: payload.campaignId,
-      p_created_by: user.id,
-      p_name: outletInput.name,
-      p_outlet_type: outletInput.outletType ?? null,
-      p_contact_person: outletInput.contactPerson ?? null,
-      p_phone: outletInput.phone ?? null,
-      p_address: outletInput.address ?? null,
-      p_state: outletInput.state ?? campaign.state ?? null,
-      p_lga: outletInput.lga ?? null,
-      p_latitude: payload.gps?.latitude ?? null,
-      p_longitude: payload.gps?.longitude ?? null,
-      p_location_accuracy: payload.gps?.locationAccuracy ?? null,
-      p_radius_meters: 250,
+    const targetName = normalizeText(outletInput.name);
+    const targetCustomer = normalizeText(outletInput.contactPerson);
+    const targetPhone = normalizePhone(outletInput.phone);
+
+    const { data: outletCandidates, error: matchError } = await supabase
+      .from("outlets")
+      .select("id, name, contact_person, phone")
+      .eq("organization_id", membership.organizationId)
+      .ilike("name", outletInput.name.trim())
+      .limit(25);
+
+    if (matchError) {
+      return NextResponse.json({ success: false, message: matchError.message }, { status: 500 });
+    }
+
+    const matched = (outletCandidates ?? []).find((candidate) => {
+      return (
+        normalizeText(candidate.name) === targetName
+        && normalizeText(candidate.contact_person) === targetCustomer
+        && normalizePhone(candidate.phone) === targetPhone
+      );
     });
 
-    if (rpcError || !rpcOutletId) {
-      return NextResponse.json({ success: false, message: rpcError?.message ?? "Failed to match or create outlet." }, { status: 500 });
+    if (matched) {
+      outletId = matched.id;
+    } else {
+      const { data: createdOutlet, error: createOutletError } = await supabase
+        .from("outlets")
+        .insert({
+          organization_id: membership.organizationId,
+          campaign_id: payload.campaignId,
+          name: outletInput.name.trim(),
+          outlet_type: outletInput.outletType ?? null,
+          contact_person: outletInput.contactPerson ?? null,
+          phone: outletInput.phone ?? null,
+          address: outletInput.address ?? null,
+          state: outletInput.state ?? campaign.state ?? null,
+          lga: outletInput.lga ?? null,
+          latitude: payload.gps?.latitude ?? null,
+          longitude: payload.gps?.longitude ?? null,
+          location_accuracy: payload.gps?.locationAccuracy ?? null,
+          created_by: user.id,
+          sync_status: payload.syncStatus ?? "synced",
+        })
+        .select("id")
+        .single();
+
+      if (createOutletError || !createdOutlet) {
+        return NextResponse.json({ success: false, message: createOutletError?.message ?? "Failed to create outlet." }, { status: 500 });
+      }
+      outletId = createdOutlet.id;
     }
-    outletId = String(rpcOutletId);
   }
 
   const visitId = dedupeVisitId;

@@ -61,7 +61,6 @@ export default function GuidedVisitFlow({
   const [areaLga, setAreaLga] = useState("");
   const [outletAddress, setOutletAddress] = useState("");
 
-  const [outcomeCode, setOutcomeCode] = useState<string>("");
   const [sales, setSales] = useState<SaleRow[]>([{ productName: productOptions[0]?.name ?? "", quantity: 1 }]);
   const [productAudit, setProductAudit] = useState<ProductAuditRow[]>(
     productOptions.map((item) => ({ productName: item.name ?? item.sku ?? "" }))
@@ -92,7 +91,7 @@ export default function GuidedVisitFlow({
   const hasPosmDeployment = Boolean(posmActivity);
   const requirePosmQuantityWhenDeployed = Boolean(posmActivity?.settings?.requireQuantityWhenDeployed);
   const hasValidSales = sales.some((row) => row.productName.trim() && row.quantity > 0);
-  const resolvedOutcomeCode = outcomeCode || (hasSalesStep ? "products_sold" : "follow_up_needed");
+  const resolvedOutcomeCode = hasSalesStep && hasValidSales ? "products_sold" : "follow_up_needed";
   const isSoldOutcome = resolvedOutcomeCode === "products_sold";
   const gpsRequired = workflow.validationRules.requireGpsBeforeSubmit;
   const hasGps = typeof gps.latitude === "number" && typeof gps.longitude === "number";
@@ -462,18 +461,6 @@ export default function GuidedVisitFlow({
           multiple
           onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
         />
-      </section>
-
-      <section className="space-y-2 rounded-3xl border border-border/70 bg-card p-4">
-        <h3 className="text-base font-medium">Visit Outcome (Optional)</h3>
-        <Select value={outcomeCode} onValueChange={setOutcomeCode}>
-          <SelectTrigger><SelectValue placeholder="Auto-detect from captured data" /></SelectTrigger>
-          <SelectContent>
-            {workflow.agentCopy.outcomes.map((item) => (
-              <SelectItem key={item.code} value={item.code}>{item.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
       </section>
 
       {hasNotesStep ? (

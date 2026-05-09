@@ -52,7 +52,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const [{ data: visits }, { data: sales }] = await Promise.all([
     supabase
       .from("visits")
-      .select("id, task_type, outcome, notes, state, lga, latitude, longitude, location_accuracy, created_at, agent_id, task_payload")
+      .select("id, campaign_id, task_type, outcome, notes, state, lga, latitude, longitude, location_accuracy, created_at, agent_id, task_payload")
       .eq("organization_id", membership.organizationId)
       .eq("outlet_id", id)
       .order("created_at", { ascending: false })
