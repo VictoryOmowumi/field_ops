@@ -84,7 +84,7 @@ function toTaskLabel(taskType?: string | null) {
 
 function toOutcomeLabel(outcome: string) {
   if (outcome === "converted") return "Products sold";
-  if (outcome === "pending") return "Follow-up needed";
+  if (outcome === "pending") return "Pending sync";
   if (outcome === "revisit") return "Revisit required";
   if (outcome === "no_sale") return "Customer refused";
   if (outcome === "registered_only") return "Visit completed";

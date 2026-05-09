@@ -84,6 +84,7 @@ export default function AgentHomePage() {
 
   const displayName = bootstrapQuery.data?.profile.fullName || "Field Agent";
   const isLoading = bootstrapQuery.isLoading || campaignsQuery.isLoading || submissionsQuery.isLoading;
+  const identityLoading = bootstrapQuery.isPending || (!bootstrapQuery.data?.profile?.fullName && bootstrapQuery.isFetching);
   const activeRate = campaigns.length ? (activeCampaigns.length / campaigns.length) * 100 : 0;
   const visitsChangeText = useMemo(() => {
     const previous = todayStats.visitsYesterday;
@@ -100,7 +101,7 @@ export default function AgentHomePage() {
     <main className="mt-2 space-y-5 pb-24">
       <InstallPromptCard />
       <section>
-        {isLoading ? (
+        {identityLoading ? (
           <>
             <Skeleton className="mt-3 h-8 w-60 bg-white/20" />
             <Skeleton className="mt-2 h-6 w-44 bg-white/20" />

@@ -178,7 +178,7 @@ function ProfileBadge({
   label: string;
 }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white/75 ring-1 ring-white/10">
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-500/75 ring-1 ring-amber-400/10">
       <HugeiconsIcon icon={icon} size={14} strokeWidth={1.8} />
       {label}
     </span>

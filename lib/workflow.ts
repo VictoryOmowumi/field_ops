@@ -96,7 +96,7 @@ function toStepTitle(activityId: WorkflowActivityId): string {
 
 export function mapWorkflowOutcomeToVisitOutcome(code: VisitOutcomeCode): "converted" | "pending" | "revisit" | "no_sale" {
   if (code === "products_sold") return "converted";
-  if (code === "follow_up_needed") return "pending";
+  if (code === "follow_up_needed") return "no_sale";
   if (code === "outlet_closed") return "revisit";
   return "no_sale";
 }

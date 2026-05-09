@@ -119,7 +119,7 @@ function formatTaskLabel(taskType?: string | null) {
 
 function formatOutcomeLabel(outcome: string) {
   if (outcome === "converted") return "Products sold";
-  if (outcome === "pending") return "Follow-up needed";
+  if (outcome === "pending") return "Pending sync";
   if (outcome === "revisit") return "Outlet closed / revisit";
   if (outcome === "no_sale") return "Customer refused";
   if (outcome === "registered_only") return "Visit completed";

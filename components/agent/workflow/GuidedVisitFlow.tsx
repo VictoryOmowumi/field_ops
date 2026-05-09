@@ -91,7 +91,7 @@ export default function GuidedVisitFlow({
   const hasPosmDeployment = Boolean(posmActivity);
   const requirePosmQuantityWhenDeployed = Boolean(posmActivity?.settings?.requireQuantityWhenDeployed);
   const hasValidSales = sales.some((row) => row.productName.trim() && row.quantity > 0);
-  const resolvedOutcomeCode = hasSalesStep && hasValidSales ? "products_sold" : "follow_up_needed";
+  const resolvedOutcomeCode = hasSalesStep && hasValidSales ? "products_sold" : "no_sale";
   const isSoldOutcome = resolvedOutcomeCode === "products_sold";
   const gpsRequired = workflow.validationRules.requireGpsBeforeSubmit;
   const hasGps = typeof gps.latitude === "number" && typeof gps.longitude === "number";
@@ -148,7 +148,11 @@ export default function GuidedVisitFlow({
           : `wf-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     }
 
-    const outcomeLabel = workflow.agentCopy.outcomes.find((item) => item.code === resolvedOutcomeCode)?.label ?? "Follow-up needed";
+    const fallbackOutcome = workflow.agentCopy.outcomes[0];
+    const resolvedOutcome =
+      workflow.agentCopy.outcomes.find((item) => item.code === resolvedOutcomeCode)
+      ?? fallbackOutcome
+      ?? { code: "no_sale", label: "No sale recorded" as const };
 
     const activityPayloads: WorkflowSubmissionPayload["activityPayloads"] = [];
 
@@ -225,8 +229,8 @@ export default function GuidedVisitFlow({
       },
       activityPayloads,
       outcome: {
-        code: availableOutcomeCodes.has(resolvedOutcomeCode as never) ? (resolvedOutcomeCode as never) : "follow_up_needed",
-        label: outcomeLabel,
+        code: availableOutcomeCodes.has(resolvedOutcome.code as never) ? (resolvedOutcome.code as never) : (resolvedOutcomeCode as never),
+        label: resolvedOutcome.label,
       },
       gps,
       photos: files.map((file) => ({ fileName: file.name })),
@@ -454,13 +458,39 @@ export default function GuidedVisitFlow({
 
       <section className="space-y-2 rounded-3xl border border-border/70 bg-card p-4">
         <h3 className="text-base font-medium">Photo Evidence</h3>
+        <p className="text-xs text-muted-foreground">Upload up to 2 photos.</p>
         <Input
           type="file"
           accept="image/*"
           capture="environment"
           multiple
-          onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
+          onChange={(event) => {
+            const incoming = Array.from(event.target.files ?? []);
+            setFiles((prev) => [...prev, ...incoming].slice(0, 2));
+            event.currentTarget.value = "";
+          }}
         />
+        {files.length > 0 ? (
+          <div className="space-y-2">
+            {files.map((file, index) => (
+              <div key={`${file.name}-${index}`} className="flex items-center justify-between rounded-xl border border-border/70 px-3 py-2">
+                <p className="truncate pr-3 text-xs">{file.name}</p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 rounded-full px-2 text-xs"
+                  onClick={() => setFiles((prev) => prev.filter((_, i) => i !== index))}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+            <Button type="button" variant="outline" size="sm" className="rounded-full text-xs" onClick={() => setFiles([])}>
+              Clear all
+            </Button>
+          </div>
+        ) : null}
       </section>
 
       {hasNotesStep ? (

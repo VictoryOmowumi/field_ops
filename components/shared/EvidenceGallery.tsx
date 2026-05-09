@@ -18,6 +18,8 @@ type EvidenceItem = {
 
 export default function EvidenceGallery({ evidence }: { evidence: EvidenceItem[] }) {
   const [selected, setSelected] = useState<EvidenceItem | null>(null);
+  const [loadedThumbIds, setLoadedThumbIds] = useState<Record<string, boolean>>({});
+  const [previewLoaded, setPreviewLoaded] = useState(false);
 
   if (evidence.length === 0) {
     return <p className="text-xs text-muted-foreground">No evidence uploaded.</p>;
@@ -32,10 +34,23 @@ export default function EvidenceGallery({ evidence }: { evidence: EvidenceItem[]
             <button
               key={item.id}
               type="button"
-              onClick={() => setSelected(item)}
+              onClick={() => {
+                setPreviewLoaded(false);
+                setSelected(item);
+              }}
               className="overflow-hidden rounded-xl border border-border/70 bg-muted/20 text-left"
             >
-              <Image src={src} alt="Evidence thumbnail" className="h-24 w-full object-cover" width={250} height={250} />
+              <div className="relative h-24 w-full">
+                {!loadedThumbIds[item.id] ? <div className="absolute inset-0 animate-pulse bg-muted" /> : null}
+                <Image
+                  src={src}
+                  alt="Evidence thumbnail"
+                  className="h-24 w-full object-cover"
+                  width={250}
+                  height={250}
+                  onLoad={() => setLoadedThumbIds((prev) => ({ ...prev, [item.id]: true }))}
+                />
+              </div>
               <p className="truncate px-2 py-1 text-[11px] text-muted-foreground">
                 {new Date(item.created_at).toLocaleString()}
               </p>
@@ -50,13 +65,17 @@ export default function EvidenceGallery({ evidence }: { evidence: EvidenceItem[]
             <DialogTitle>Evidence Preview</DialogTitle>
           </DialogHeader>
           {selected ? (
-            <Image
-              src={selected.signed_url ?? selected.file_url}
-              alt="Evidence preview"
-              className="max-h-[75vh] w-full rounded-xl object-contain"
-              width={800}
-              height={600}
-            />
+            <div className="relative">
+              {!previewLoaded ? <div className="absolute inset-0 animate-pulse rounded-xl bg-muted" /> : null}
+              <Image
+                src={selected.signed_url ?? selected.file_url}
+                alt="Evidence preview"
+                className="max-h-[75vh] w-full rounded-xl object-contain"
+                width={800}
+                height={600}
+                onLoad={() => setPreviewLoaded(true)}
+              />
+            </div>
           ) : null}
         </DialogContent>
       </Dialog>
