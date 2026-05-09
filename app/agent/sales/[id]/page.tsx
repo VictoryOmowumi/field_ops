@@ -6,7 +6,6 @@ import { toast } from "sonner";
 
 import AgentBackButton from "@/components/agent/AgentBackButton";
 import SectionHeader from "@/components/agent/SectionHeader";
-import StatusPill from "@/components/agent/StatusPill";
 import { Skeleton } from "@/components/ui/skeleton";
 import EvidenceGallery from "@/components/shared/EvidenceGallery";
 import { authorizedFetch } from "@/lib/api/client";
@@ -15,6 +14,11 @@ type SubmissionDetail = {
   id: string;
   campaign: string;
   outlet: string;
+  outletContactPerson?: string | null;
+  outletPhone?: string | null;
+  outletAddress?: string | null;
+  outletState?: string | null;
+  outletLga?: string | null;
   taskType?: string | null;
   outcome: string;
   outcomeLabel?: string | null;
@@ -61,6 +65,15 @@ export default function AgentSubmissionDetailPage() {
       </main>
     );
   }
+  const payloadOutlet = extractPayloadOutlet(item.payload);
+  const outletInfo = {
+    name: item.outlet || payloadOutlet.name || "-",
+    contactPerson: item.outletContactPerson || payloadOutlet.contactPerson || "-",
+    phone: item.outletPhone || payloadOutlet.phone || "-",
+    address: item.outletAddress || payloadOutlet.address || "-",
+    lga: item.outletLga || item.lga || payloadOutlet.lga || "-",
+    state: item.outletState || item.state || payloadOutlet.state || "-",
+  };
 
   return (
     <main className="space-y-4 pt-4">
@@ -70,13 +83,17 @@ export default function AgentSubmissionDetailPage() {
       <section className="space-y-2 rounded-2xl border border-border/70 bg-card p-4">
         <p className="text-sm font-medium">{item.campaign}</p>
         <p className="text-xs text-muted-foreground">{new Date(item.createdAt).toLocaleString()}</p>
-        <div className="pt-1"><StatusPill status={item.syncStatus} /></div>
-        <p className="text-xs text-muted-foreground">
-          {item.outcomeLabel || item.outcome.replaceAll("_", " ")}
-        </p>
         <p className="text-xs text-muted-foreground">
           {[item.lga, item.state].filter(Boolean).join(", ") || "No area"}
         </p>
+      </section>
+      <section className="space-y-2 rounded-2xl border border-border/70 bg-card p-4">
+        <h3 className="text-sm font-medium">Outlet Information</h3>
+        <InfoRow label="Outlet" value={outletInfo.name} />
+        <InfoRow label="Customer" value={outletInfo.contactPerson} />
+        <InfoRow label="Phone" value={outletInfo.phone} />
+        <InfoRow label="Address" value={outletInfo.address} />
+        <InfoRow label="Area" value={`${outletInfo.lga}, ${outletInfo.state}`} />
       </section>
 
       <section className="space-y-2 rounded-2xl border border-border/70 bg-card p-4">
@@ -94,7 +111,14 @@ export default function AgentSubmissionDetailPage() {
 
 function ReadablePayload({ payload }: { payload?: unknown }) {
   const data = (payload ?? {}) as {
-    activities?: Array<{ activityId?: string; payload?: { products?: Array<Record<string, unknown>>; sales?: Array<Record<string, unknown>> } }>;
+    activities?: Array<{
+      activityId?: string;
+      payload?: {
+        products?: Array<Record<string, unknown>>;
+        sales?: Array<Record<string, unknown>>;
+        questions?: Array<Record<string, unknown>>;
+      };
+    }>;
   };
   const activities = Array.isArray(data.activities) ? data.activities : [];
   if (activities.length === 0) {
@@ -107,6 +131,7 @@ function ReadablePayload({ payload }: { payload?: unknown }) {
         const activityId = activity.activityId ?? `activity_${idx + 1}`;
         const products = Array.isArray(activity.payload?.products) ? activity.payload?.products : [];
         const sales = Array.isArray(activity.payload?.sales) ? activity.payload?.sales : [];
+        const questions = Array.isArray(activity.payload?.questions) ? activity.payload?.questions : [];
 
         return (
           <div key={`${activityId}-${idx}`} className="rounded-xl border border-border/70 p-3">
@@ -167,6 +192,27 @@ function ReadablePayload({ payload }: { payload?: unknown }) {
                 </table>
               </div>
             ) : null}
+
+            {questions.length > 0 ? (
+              <div className="mt-2 overflow-hidden rounded-lg border border-border/70">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/40">
+                    <tr>
+                      <th className="px-2 py-1 text-left font-medium">Question</th>
+                      <th className="px-2 py-1 text-left font-medium">Answer</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {questions.map((row, rowIndex) => (
+                      <tr key={`${activityId}-q-${rowIndex}`} className="border-t border-border/60">
+                        <td className="px-2 py-1">{String(row.question ?? "-")}</td>
+                        <td className="px-2 py-1">{String(row.answer ?? "-")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
           </div>
         );
       })}
@@ -193,4 +239,33 @@ function showBuying(activityId: string) {
 }
 function showSelling(activityId: string) {
   return activityId === "price_survey";
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <p className="text-xs">
+      <span className="text-muted-foreground">{label}:</span> {value}
+    </p>
+  );
+}
+
+function extractPayloadOutlet(payload: unknown): {
+  name?: string;
+  contactPerson?: string;
+  phone?: string;
+  address?: string;
+  lga?: string;
+  state?: string;
+} {
+  const record = payload as { selectedOutletRef?: { outlet?: Record<string, unknown> } } | null;
+  const outlet = record?.selectedOutletRef?.outlet;
+  if (!outlet || typeof outlet !== "object") return {};
+  return {
+    name: typeof outlet.name === "string" ? outlet.name : undefined,
+    contactPerson: typeof outlet.contactPerson === "string" ? outlet.contactPerson : undefined,
+    phone: typeof outlet.phone === "string" ? outlet.phone : undefined,
+    address: typeof outlet.address === "string" ? outlet.address : undefined,
+    lga: typeof outlet.lga === "string" ? outlet.lga : undefined,
+    state: typeof outlet.state === "string" ? outlet.state : undefined,
+  };
 }

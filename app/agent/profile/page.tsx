@@ -1,23 +1,21 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect} from "react";
 import { toast } from "sonner";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Briefcase01Icon,
   Mail01Icon,
   PhoneIncoming as PhoneIcon,
-  ReloadIcon,
   ShieldUserIcon,
   UserCircleIcon,
-  Alert02Icon,
+
 } from "@hugeicons/core-free-icons";
 
 import LogoutButton from "@/components/auth/LogoutButton";
 import InstallAppButton from "@/components/pwa/InstallAppButton";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAgentBootstrap } from "@/hooks/useAgentBootstrap";
-import { cn } from "@/lib/utils";
 
 export default function ProfilePage() {
   const query = useAgentBootstrap();
@@ -30,32 +28,11 @@ export default function ProfilePage() {
 
   const bootstrap = query.data;
 
-  const activeCampaigns = useMemo(() => {
-    return (bootstrap?.assignedCampaigns ?? []).filter(
-      (c) => c.status?.toLowerCase() === "active"
-    ).length;
-  }, [bootstrap?.assignedCampaigns]);
-
-  const pendingSync = bootstrap?.syncState.pending ?? 0;
-  const failedSync = bootstrap?.syncState.failed ?? 0;
-
   const fullName = bootstrap?.profile.fullName || "Agent";
   const role = bootstrap?.profile.organizationRole || "Agent";
   const initials = getInitials(fullName);
 
-  const syncLabel =
-    failedSync > 0
-      ? "Sync issues"
-      : pendingSync > 0
-        ? "Pending sync"
-        : "Fully synced";
 
-  const syncTone =
-    failedSync > 0
-      ? "bg-red-50 text-red-700 border-red-100"
-      : pendingSync > 0
-        ? "bg-amber-50 text-amber-700 border-amber-100"
-        : "bg-emerald-50 text-emerald-700 border-emerald-100";
 
   return (
     <main className="min-h-screen space-y-5 pb-24 pt-4">
@@ -88,39 +65,9 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        <div className="relative mt-2 grid grid-cols-3 gap-2 bg-primary/50 p-4 rounded-2xl">
-          <HeroMetric label="Campaigns" value={query.isLoading ? "—" : activeCampaigns} />
-          <HeroMetric label="Pending" value={query.isLoading ? "—" : pendingSync} />
-          <HeroMetric label="Failed" value={query.isLoading ? "—" : failedSync} />
-        </div>
+       
       </section>
 
-      <section
-        className={cn(
-          "flex items-center justify-between rounded-3xl border p-4",
-          syncTone
-        )}
-      >
-        <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-white/70">
-            <HugeiconsIcon
-              icon={failedSync > 0 ? Alert02Icon : ReloadIcon}
-              size={20}
-              strokeWidth={1.8}
-            />
-          </div>
-          <div>
-            <p className="text-sm font-semibold">{syncLabel}</p>
-            <p className="text-xs opacity-75">
-              {failedSync > 0
-                ? `${failedSync} record(s) need attention.`
-                : pendingSync > 0
-                  ? `${pendingSync} record(s) waiting to upload.`
-                  : "Your field data is up to date."}
-            </p>
-          </div>
-        </div>
-      </section>
 
       <section className="rounded-4xl border border-border/70 bg-card p-4">
         <div className="mb-4">
@@ -185,20 +132,6 @@ function ProfileBadge({
   );
 }
 
-function HeroMetric({
-  label,
-  value,
-}: {
-  label: string;
-  value: string | number;
-}) {
-  return (
-    <div className="">
-      <p className="text-[11px] text-taupe-800">{label}</p>
-      <p className="mt-1 text-xl font-semibold">{value}</p>
-    </div>
-  );
-}
 
 function InfoRow({
   icon,

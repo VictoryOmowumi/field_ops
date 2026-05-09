@@ -11,6 +11,20 @@ function forbidden() {
   return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
 }
 
+function normalizeOutcomeLabel(
+  outcome: string | null | undefined,
+  outcomeLabel: string | null | undefined,
+  outcomeCode: string | null | undefined
+) {
+  const raw = (outcomeLabel ?? "").trim().toLowerCase();
+  if (raw === "follow-up needed" || raw === "follow up needed" || outcomeCode === "follow_up_needed") {
+    return "No sale recorded";
+  }
+  if (outcome === "pending") return "Pending sync";
+  if (outcome === "no_sale") return "No sale recorded";
+  return outcomeLabel ?? null;
+}
+
 export async function GET(request: NextRequest) {
   const user = await getAuthenticatedUserFromRequest(request);
   if (!user) return unauthorized();
@@ -41,7 +55,7 @@ export async function GET(request: NextRequest) {
       taskType: item.task_type,
       outcome: item.outcome,
       outcomeCode: item.visit_outcome_code,
-      outcomeLabel: item.visit_outcome_label,
+      outcomeLabel: normalizeOutcomeLabel(item.outcome, item.visit_outcome_label, item.visit_outcome_code),
       notes: item.notes,
       state: item.state,
       lga: item.lga,

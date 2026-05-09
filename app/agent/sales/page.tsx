@@ -1,11 +1,13 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import ListRowCard from "@/components/agent/ListRowCard";
 import SectionHeader from "@/components/agent/SectionHeader";
 import StatusPill from "@/components/agent/StatusPill";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { authorizedFetch } from "@/lib/api/client";
 
@@ -26,16 +28,42 @@ type Submission = {
 };
 
 export default function SalesPage() {
+  const [search, setSearch] = useState("");
   const query = useQuery({
     queryKey: ["agent-submissions"],
     queryFn: async () =>
       (await authorizedFetch<{ success: boolean; submissions: Submission[] }>("/api/agent/submissions")).submissions ?? [],
   });
   if (query.error) toast.error((query.error as Error).message);
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return query.data ?? [];
+    return (query.data ?? []).filter((item) =>
+      [
+        item.outlet,
+        item.campaign,
+        item.lga,
+        item.state,
+        item.taskType,
+        item.outcomeLabel,
+        item.outcome,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(needle)
+    );
+  }, [query.data, search]);
 
   return (
     <main className="space-y-4 pt-4">
       <SectionHeader title="My Activity" subtitle="Recent visit submissions and outcomes." />
+      <Input
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="Search by outlet, campaign, area, task or status"
+        className="h-11 rounded-2xl"
+      />
       <section className="space-y-2">
         {query.isLoading ? (
           <div className="space-y-2">
@@ -44,7 +72,7 @@ export default function SalesPage() {
             <Skeleton className="h-20 w-full rounded-2xl" />
           </div>
         ) : null}
-        {(query.data ?? []).map((item) => (
+        {filtered.map((item) => (
           <ListRowCard
             key={item.id}
             href={`/agent/sales/${item.id}`}
@@ -61,9 +89,9 @@ export default function SalesPage() {
             trailing={<StatusPill status={item.syncStatus} />}
           />
         ))}
-        {!query.isLoading && (query.data ?? []).length === 0 ? (
+        {!query.isLoading && filtered.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">
-            No submissions yet.
+            {search.trim() ? "No activity matched your search." : "No submissions yet."}
           </p>
         ) : null}
       </section>

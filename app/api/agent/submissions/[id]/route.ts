@@ -15,6 +15,20 @@ function forbidden() {
   return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
 }
 
+function normalizeOutcomeLabel(
+  outcome: string | null | undefined,
+  outcomeLabel: string | null | undefined,
+  outcomeCode: string | null | undefined
+) {
+  const raw = (outcomeLabel ?? "").trim().toLowerCase();
+  if (raw === "follow-up needed" || raw === "follow up needed" || outcomeCode === "follow_up_needed") {
+    return "No sale recorded";
+  }
+  if (outcome === "pending") return "Pending sync";
+  if (outcome === "no_sale") return "No sale recorded";
+  return outcomeLabel ?? null;
+}
+
 export async function GET(request: NextRequest, context: RouteContext) {
   const user = await getAuthenticatedUserFromRequest(request);
   if (!user) return unauthorized();
@@ -27,7 +41,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   const { data: visit, error } = await supabase
     .from("visits")
-    .select("id, campaign_id, outlet_id, task_type, outcome, visit_outcome_code, visit_outcome_label, notes, task_payload, state, lga, latitude, longitude, sync_status, created_at, outlets(name), campaigns(name)")
+    .select("id, campaign_id, outlet_id, task_type, outcome, visit_outcome_code, visit_outcome_label, notes, task_payload, state, lga, latitude, longitude, sync_status, created_at, outlets(name, contact_person, phone, address, state, lga), campaigns(name)")
     .eq("id", id)
     .eq("organization_id", membership.organizationId)
     .eq("agent_id", user.id)
@@ -59,7 +73,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       taskType: visit.task_type,
       outcome: visit.outcome,
       outcomeCode: visit.visit_outcome_code,
-      outcomeLabel: visit.visit_outcome_label,
+      outcomeLabel: normalizeOutcomeLabel(visit.outcome, visit.visit_outcome_label, visit.visit_outcome_code),
       notes: visit.notes,
       payload: visit.task_payload,
       state: visit.state,
@@ -69,6 +83,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
       syncStatus: visit.sync_status,
       createdAt: visit.created_at,
       outlet: (visit as { outlets?: { name?: string } }).outlets?.name ?? "-",
+      outletContactPerson: (visit as { outlets?: { contact_person?: string | null } }).outlets?.contact_person ?? null,
+      outletPhone: (visit as { outlets?: { phone?: string | null } }).outlets?.phone ?? null,
+      outletAddress: (visit as { outlets?: { address?: string | null } }).outlets?.address ?? null,
+      outletState: (visit as { outlets?: { state?: string | null } }).outlets?.state ?? null,
+      outletLga: (visit as { outlets?: { lga?: string | null } }).outlets?.lga ?? null,
       campaign: (visit as { campaigns?: { name?: string } }).campaigns?.name ?? "-",
       evidence: evidenceRows.map((row) => ({
         ...row,
