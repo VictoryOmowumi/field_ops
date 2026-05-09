@@ -15,6 +15,7 @@ export const workflowActivityIdSchema = z.enum([
   "price_survey",
   "product_survey",
   "sell_to_outlet",
+  "posm_deployment",
   "photo_evidence",
   "notes",
 ]);

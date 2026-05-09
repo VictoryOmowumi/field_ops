@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -25,6 +25,10 @@ type DashboardSummary = {
   conversionRate: number;
   salesValue: number;
   syncHealth: number;
+  posmChecks: number;
+  posmDeployed: number;
+  posmUnits: number;
+  posmDeploymentRate: number;
 };
 
 type RecentActivity = { id: string; rep: string; outlet: string; status: string; time: string };
@@ -76,12 +80,20 @@ export default function AdminDashboardPage() {
       }>(`/api/admin/dashboard/summary${queryString}`),
   });
 
-  if (campaignsQuery.error) toast.error((campaignsQuery.error as Error).message);
-  if (query.error) toast.error((query.error as Error).message);
+  useEffect(() => {
+    if (campaignsQuery.error) toast.error((campaignsQuery.error as Error).message);
+  }, [campaignsQuery.error]);
+
+  useEffect(() => {
+    if (query.error) toast.error((query.error as Error).message);
+  }, [query.error]);
 
   const summary = query.data?.summary;
   const trend = query.data?.trend ?? [];
-  const territoryPerformance = query.data?.territoryPerformance ?? [];
+  const territoryPerformance = useMemo(
+    () => query.data?.territoryPerformance ?? [],
+    [query.data?.territoryPerformance]
+  );
   const stateOptions = useMemo(
     () => ["all", ...Array.from(new Set(territoryPerformance.map((item) => item.state).filter(Boolean))).sort((a, b) => a.localeCompare(b))],
     [territoryPerformance]
@@ -177,6 +189,8 @@ export default function AdminDashboardPage() {
           <SmallStat icon={CloudUploadIcon} label="Field sync health" value={`${summary?.syncHealth.toFixed(1) ?? "100"}%`} trend="Live" />
           <SmallStat icon={Alert01Icon} label="Pending uploads" value={String(pendingUploads)} trend="Derived" />
           <SmallStat icon={Store01Icon} label="Active campaigns" value={String(summary?.activeCampaigns ?? 0)} trend={`${summary?.totalCampaigns ?? 0} total`} />
+          <SmallStat icon={Store01Icon} label="POSM deployed" value={String(summary?.posmDeployed ?? 0)} trend={`${summary?.posmDeploymentRate?.toFixed(1) ?? "0"}%`} />
+          <SmallStat icon={Store01Icon} label="POSM units" value={String(summary?.posmUnits ?? 0)} trend={`${summary?.posmChecks ?? 0} checks`} />
         </div>
 
         <div className="rounded-[2rem] bg-card p-5 shadow-sm ring-1 ring-border/60 lg:col-span-7">

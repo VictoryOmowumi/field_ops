@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { HugeiconsIcon } from "@hugeicons/react";
+import { CloudSavingDone02Icon } from "@hugeicons/core-free-icons";
+
 import ListRowCard from "@/components/agent/ListRowCard";
 import MetricCard from "@/components/agent/MetricCard";
 import SectionHeader from "@/components/agent/SectionHeader";
@@ -81,9 +84,10 @@ export default function SyncPage() {
       <SectionHeader title="Sync Queue" subtitle="Review pending records and trigger retries." />
 
       {isOnline && pending === 0 ? (
-        <section className="rounded-2xl border border-emerald-200/70 bg-emerald-50 p-4 text-emerald-900">
-          <p className="font-medium">All records synced</p>
-          <p className="mt-1 text-sm">You are online and there are no pending uploads.</p>
+        <section className="flex flex-col h-[calc(100vh-16rem)] items-center justify-center relative">
+          <HugeiconsIcon icon={CloudSavingDone02Icon} size={60} strokeWidth={0.5} className="text-green-500" />
+          <h2 className="mt-4 text-lg font-medium">All caught up!</h2>
+          <p className="text-sm text-muted-foreground">No pending records to sync.</p>
         </section>
       ) : (
         <>

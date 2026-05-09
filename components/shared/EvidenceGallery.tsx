@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-
+import Image from "next/image";
 import {
   Dialog,
   DialogContent,
@@ -35,7 +35,7 @@ export default function EvidenceGallery({ evidence }: { evidence: EvidenceItem[]
               onClick={() => setSelected(item)}
               className="overflow-hidden rounded-xl border border-border/70 bg-muted/20 text-left"
             >
-              <img src={src} alt="Evidence thumbnail" className="h-24 w-full object-cover" />
+              <Image src={src} alt="Evidence thumbnail" className="h-24 w-full object-cover" width={250} height={250} />
               <p className="truncate px-2 py-1 text-[11px] text-muted-foreground">
                 {new Date(item.created_at).toLocaleString()}
               </p>
@@ -50,10 +50,12 @@ export default function EvidenceGallery({ evidence }: { evidence: EvidenceItem[]
             <DialogTitle>Evidence Preview</DialogTitle>
           </DialogHeader>
           {selected ? (
-            <img
+            <Image
               src={selected.signed_url ?? selected.file_url}
               alt="Evidence preview"
               className="max-h-[75vh] w-full rounded-xl object-contain"
+              width={800}
+              height={600}
             />
           ) : null}
         </DialogContent>

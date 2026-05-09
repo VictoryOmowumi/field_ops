@@ -15,7 +15,7 @@ export default function LogoutButton() {
     <Button
       type="button"
       variant="outline"
-      className="h-10 rounded-xl"
+      className="h-10 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 focus-visible:ring-red-500/30 disabled:pointer-events-none disabled:opacity-50"
       disabled={loading}
       onClick={async () => {
         setLoading(true);

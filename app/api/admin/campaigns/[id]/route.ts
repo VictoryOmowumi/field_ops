@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-access";
 import { buildWorkflowConfigFromTemplate } from "@/lib/workflow";
+import { getCampaignAnalyticsSummary } from "@/lib/campaign/intelligence";
 import { campaignWorkflowConfigV1Schema, workflowTemplateSchema } from "@/schemas/workflow";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -48,7 +49,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ success: false, message: "Campaign not found." }, { status: 404 });
   }
 
-  return NextResponse.json({ success: true, campaign: data });
+  const summary = await getCampaignAnalyticsSummary(supabase, data.organization_id, data.id);
+  return NextResponse.json({ success: true, campaign: data, summary });
 }
 
 type UpdateCampaignPayload = {
@@ -91,6 +93,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   const { id } = await context.params;
   const payload = (await request.json()) as UpdateCampaignPayload;
+  const supabase = createServerSupabaseClient();
 
   const patch: Record<string, unknown> = {};
   if (payload.name !== undefined) patch.name = payload.name?.trim();
@@ -125,6 +128,25 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
     patch.campaign_workflow = parsedWorkflow.data;
   }
+  if (
+    payload.formRequirements !== undefined &&
+    payload.campaignWorkflow === undefined &&
+    payload.campaignWorkflowTemplate === undefined
+  ) {
+    const { data: existing } = await supabase
+      .from("campaigns")
+      .select("campaign_workflow")
+      .eq("id", id)
+      .eq("organization_id", membership.organizationId)
+      .maybeSingle();
+    const parsedExisting = campaignWorkflowConfigV1Schema.safeParse(existing?.campaign_workflow);
+    if (parsedExisting.success) {
+      patch.campaign_workflow = withPosmActivity(parsedExisting.data, {
+        enabled: Boolean(payload.formRequirements.requirePosmDeployment),
+        requireQuantity: Boolean(payload.formRequirements.requirePosmQuantityWhenDeployed),
+      });
+    }
+  }
   if (payload.assignedSupervisorUserId !== undefined) patch.assigned_supervisor_user_id = payload.assignedSupervisorUserId;
   if (payload.status !== undefined) patch.status = payload.status;
 
@@ -135,7 +157,6 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     patch.launched_at = new Date().toISOString();
   }
 
-  const supabase = createServerSupabaseClient();
   const { data, error } = await supabase
     .from("campaigns")
     .update(patch)
@@ -149,4 +170,29 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   }
 
   return NextResponse.json({ success: true, campaign: data });
+}
+
+function withPosmActivity(
+  workflow: ReturnType<typeof campaignWorkflowConfigV1Schema.parse>,
+  options: { enabled: boolean; requireQuantity: boolean }
+) {
+  const hasPosm = workflow.activities.some((item) => item.id === "posm_deployment");
+  if (options.enabled && !hasPosm) {
+    workflow.activities.push({
+      id: "posm_deployment",
+      required: true,
+      settings: { requireQuantityWhenDeployed: options.requireQuantity },
+    });
+  }
+  if (!options.enabled && hasPosm) {
+    workflow.activities = workflow.activities.filter((item) => item.id !== "posm_deployment");
+  }
+  if (options.enabled && hasPosm) {
+    workflow.activities = workflow.activities.map((item) =>
+      item.id === "posm_deployment"
+        ? { ...item, settings: { ...(item.settings ?? {}), requireQuantityWhenDeployed: options.requireQuantity } }
+        : item
+    );
+  }
+  return workflow;
 }

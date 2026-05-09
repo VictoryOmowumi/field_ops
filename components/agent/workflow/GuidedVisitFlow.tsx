@@ -66,6 +66,8 @@ export default function GuidedVisitFlow({
     productOptions.map((item) => ({ productName: item.name ?? item.sku ?? "" }))
   );
   const [notes, setNotes] = useState("");
+  const [posmDeployed, setPosmDeployed] = useState<"yes" | "no" | "">("");
+  const [posmQuantity, setPosmQuantity] = useState<number | undefined>(undefined);
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -78,6 +80,9 @@ export default function GuidedVisitFlow({
   const hasAvailability = workflow.activities.some((item) => item.id === "availability_survey");
   const hasPriceSurvey = workflow.activities.some((item) => item.id === "price_survey");
   const hasProductSurvey = workflow.activities.some((item) => item.id === "product_survey");
+  const posmActivity = workflow.activities.find((item) => item.id === "posm_deployment");
+  const hasPosmDeployment = Boolean(posmActivity);
+  const requirePosmQuantityWhenDeployed = Boolean(posmActivity?.settings?.requireQuantityWhenDeployed);
   const hasValidSales = sales.some((row) => row.productName.trim() && row.quantity > 0);
   const resolvedOutcomeCode = outcomeCode || (hasSalesStep ? "products_sold" : "follow_up_needed");
   const isSoldOutcome = resolvedOutcomeCode === "products_sold";
@@ -109,6 +114,14 @@ export default function GuidedVisitFlow({
 
     if ((hasPriceSurvey || hasProductSurvey || hasAvailability) && productAudit.length === 0) {
       toast.error("At least one product audit row is required.");
+      return;
+    }
+    if (hasPosmDeployment && !posmDeployed) {
+      toast.error("Please select whether POSM was deployed.");
+      return;
+    }
+    if (hasPosmDeployment && posmDeployed === "yes" && requirePosmQuantityWhenDeployed && (!posmQuantity || posmQuantity < 1)) {
+      toast.error("Enter POSM quantity when deployment is marked yes.");
       return;
     }
     if (!stableSubmissionKeyRef.current) {
@@ -167,6 +180,15 @@ export default function GuidedVisitFlow({
     if (notes.trim()) {
       activityPayloads.push({ activityId: "notes", payload: { notes: notes.trim() } });
     }
+    if (hasPosmDeployment) {
+      activityPayloads.push({
+        activityId: "posm_deployment",
+        payload: {
+          deployed: posmDeployed === "yes",
+          quantity: posmDeployed === "yes" ? posmQuantity ?? null : null,
+        },
+      });
+    }
 
     const payload: WorkflowSubmissionPayload = {
       campaignId,
@@ -217,6 +239,12 @@ export default function GuidedVisitFlow({
     }
     if (hasSalesStep && resolvedOutcomeCode === "products_sold" && !hasValidSales) {
       return toast.error("Add at least one valid sale row.");
+    }
+    if (hasPosmDeployment && !posmDeployed) {
+      return toast.error("Please select whether POSM was deployed.");
+    }
+    if (hasPosmDeployment && posmDeployed === "yes" && requirePosmQuantityWhenDeployed && (!posmQuantity || posmQuantity < 1)) {
+      return toast.error("Enter POSM quantity when deployment is marked yes.");
     }
     if (!stableSubmissionKeyRef.current) {
       stableSubmissionKeyRef.current =
@@ -392,6 +420,43 @@ export default function GuidedVisitFlow({
         <h3 className="text-base font-medium">Notes</h3>
         <Textarea placeholder="Notes (optional)" value={notes} onChange={(event) => setNotes(event.target.value)} />
       </section>
+
+      {hasPosmDeployment ? (
+        <section className="space-y-3 rounded-3xl border border-border/70 bg-card p-4">
+          <h3 className="text-base font-medium">POSM Deployment</h3>
+          <p className="text-sm text-muted-foreground">Did you deploy POSM?</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Button
+              type="button"
+              variant={posmDeployed === "yes" ? "default" : "outline"}
+              className="h-11 rounded-2xl"
+              onClick={() => setPosmDeployed("yes")}
+            >
+              Yes
+            </Button>
+            <Button
+              type="button"
+              variant={posmDeployed === "no" ? "default" : "outline"}
+              className="h-11 rounded-2xl"
+              onClick={() => {
+                setPosmDeployed("no");
+                setPosmQuantity(undefined);
+              }}
+            >
+              No
+            </Button>
+          </div>
+          {posmDeployed === "yes" ? (
+            <Input
+              type="number"
+              min={1}
+              placeholder="How many POSM units deployed?"
+              value={posmQuantity ?? ""}
+              onChange={(event) => setPosmQuantity(event.target.value ? Number(event.target.value) : undefined)}
+            />
+          ) : null}
+        </section>
+      ) : null}
 
       <Button type="button" className="h-12 w-full rounded-2xl" onClick={submit} disabled={submitting}>
         {submitting ? "Submitting..." : workflow.agentCopy.submitVisitLabel}

@@ -23,6 +23,32 @@ type TerritoryBucket = {
   longitude: number;
 };
 
+function extractPosmMetrics(visits: Array<{ task_payload?: unknown }>) {
+  let posmChecks = 0;
+  let posmDeployed = 0;
+  let posmUnits = 0;
+  for (const visit of visits) {
+    const taskPayload = (visit.task_payload ?? {}) as {
+      activities?: Array<{ activityId?: string; payload?: Record<string, unknown> }>;
+    };
+    const posm = taskPayload.activities?.find((item) => item.activityId === "posm_deployment");
+    if (!posm) continue;
+    posmChecks += 1;
+    const deployed = Boolean(posm.payload?.deployed);
+    if (deployed) {
+      posmDeployed += 1;
+      const qty = Number(posm.payload?.quantity ?? 0);
+      if (Number.isFinite(qty) && qty > 0) posmUnits += qty;
+    }
+  }
+  return {
+    posmChecks,
+    posmDeployed,
+    posmUnits,
+    posmDeploymentRate: posmChecks > 0 ? (posmDeployed / posmChecks) * 100 : 0,
+  };
+}
+
 export async function GET(request: NextRequest) {
   const user = await getAuthenticatedUserFromRequest(request);
   if (!user) return unauthorized();
@@ -67,7 +93,7 @@ export async function GET(request: NextRequest) {
 
   let visitsQuery = supabase
     .from("visits")
-    .select("id, created_at, campaign_id, outcome, lga, state, latitude, longitude")
+    .select("id, created_at, campaign_id, outcome, lga, state, latitude, longitude, task_payload")
     .eq("organization_id", organizationId);
   if (campaignId && campaignId !== "all") visitsQuery = visitsQuery.eq("campaign_id", campaignId);
   if (dateFrom) visitsQuery = visitsQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
@@ -90,6 +116,7 @@ export async function GET(request: NextRequest) {
   const syncedSales = syncRes.data ?? [];
   const recent = recentRes.data ?? [];
   const visits = visitsRes.data ?? [];
+  const posm = extractPosmMetrics(visits);
 
   const convertedCount = sales.filter((s) => s.conversion_status === "converted").length;
   const totalSales = sales.reduce((sum, item) => sum + Number(item.sales_value ?? 0), 0);
@@ -178,6 +205,10 @@ export async function GET(request: NextRequest) {
       conversionRate,
       salesValue: totalSales,
       syncHealth,
+      posmChecks: posm.posmChecks,
+      posmDeployed: posm.posmDeployed,
+      posmUnits: posm.posmUnits,
+      posmDeploymentRate: posm.posmDeploymentRate,
     },
     trend,
     territoryPerformance,

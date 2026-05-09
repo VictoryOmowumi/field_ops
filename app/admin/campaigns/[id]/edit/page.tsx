@@ -129,6 +129,8 @@ export default function EditCampaignPage() {
         allowProductSelectionForAllTasks: true,
         allowNotes: true,
         allowRevisitStatus: true,
+        requirePosmDeployment: false,
+        requirePosmQuantityWhenDeployed: true,
         ...((campaign.form_requirements as Record<string, boolean>) ?? {}),
       });
       setWorkflowTemplate((campaign.campaign_workflow_template as CampaignWorkflowTemplate | undefined) ?? "sales_activation");
@@ -150,7 +152,7 @@ export default function EditCampaignPage() {
       toast.error("Add at least one product for the selected task(s).");
       return;
     }
-    const workflow = buildWorkflowConfigFromTemplate(workflowTemplate, {
+    const workflowBase = buildWorkflowConfigFromTemplate(workflowTemplate, {
       validationRules: {
         requireGpsBeforeSubmit: Boolean(formRequirements.requireGps),
         requirePhotoEvidence: Boolean(formRequirements.requirePhotoEvidence),
@@ -170,6 +172,10 @@ export default function EditCampaignPage() {
           { code: "not_interested", label: "Not interested" },
         ],
       },
+    });
+    const workflow = withPosmActivity(workflowBase, {
+      enabled: Boolean(formRequirements.requirePosmDeployment),
+      requireQuantity: Boolean(formRequirements.requirePosmQuantityWhenDeployed),
     });
     setSaving(true);
     const { data } = await supabaseClient.auth.getSession();
@@ -235,6 +241,10 @@ export default function EditCampaignPage() {
             },
             product_access: {
               allowOnAllTasks: Boolean(formRequirements.allowProductSelectionForAllTasks ?? true),
+            },
+            posm_deployment: {
+              enabled: Boolean(formRequirements.requirePosmDeployment),
+              requireQuantityWhenDeployed: Boolean(formRequirements.requirePosmQuantityWhenDeployed),
             },
           },
         },
@@ -348,6 +358,8 @@ export default function EditCampaignPage() {
               ["allowProductSelectionForAllTasks", "Allow products on all tasks"],
               ["allowNotes", "Allow notes"],
               ["allowRevisitStatus", "Allow revisit status"],
+              ["requirePosmDeployment", "Capture POSM deployment"],
+              ["requirePosmQuantityWhenDeployed", "Require POSM quantity (when yes)"],
             ].map(([key, label]) => (
               <ToggleField key={key} label={label} value={Boolean(formRequirements[key])} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, [key]: checked }))} />
             ))}
@@ -413,4 +425,29 @@ function tasksForTemplate(template: CampaignWorkflowTemplate): string[] {
     default:
       return ["register_outlet", "sell_to_outlet"];
   }
+}
+
+function withPosmActivity(
+  workflow: ReturnType<typeof buildWorkflowConfigFromTemplate>,
+  options: { enabled: boolean; requireQuantity: boolean }
+) {
+  const hasPosm = workflow.activities.some((item) => item.id === "posm_deployment");
+  if (options.enabled && !hasPosm) {
+    workflow.activities.push({
+      id: "posm_deployment",
+      required: true,
+      settings: { requireQuantityWhenDeployed: options.requireQuantity },
+    });
+  }
+  if (!options.enabled && hasPosm) {
+    workflow.activities = workflow.activities.filter((item) => item.id !== "posm_deployment");
+  }
+  if (options.enabled && hasPosm) {
+    workflow.activities = workflow.activities.map((item) =>
+      item.id === "posm_deployment"
+        ? { ...item, settings: { ...(item.settings ?? {}), requireQuantityWhenDeployed: options.requireQuantity } }
+        : item
+    );
+  }
+  return workflow;
 }

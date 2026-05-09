@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { CircleMarker, MapContainer, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
-import { latLngBounds } from "leaflet";
+import { MapContainer, Marker, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
+import { divIcon, latLngBounds } from "leaflet";
 import { useEffect } from "react";
 
 type TerritoryPoint = {
@@ -32,8 +32,22 @@ function rateColor(rate: number) {
   return "var(--color-destructive)";
 }
 
+function markerIcon(color: string) {
+  return divIcon({
+    className: "fieldops-map-marker",
+    html: `<div style="display:grid;place-items:center;width:24px;height:24px;border-radius:9999px;background:${color};border:2px solid var(--color-background);color:#fff;font-size:12px;line-height:1">⚑</div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
+}
+
 export default function TerritoryPerformanceMap({ points }: { points: TerritoryPoint[] }) {
   const [mapStyle, setMapStyle] = useState<"street" | "light" | "dark">("street");
+  const validPoints = points.filter(
+    (point) =>
+      Number.isFinite(point.latitude) &&
+      Number.isFinite(point.longitude)
+  );
   const tileConfig =
     mapStyle === "dark"
       ? {
@@ -68,18 +82,12 @@ export default function TerritoryPerformanceMap({ points }: { points: TerritoryP
       </div>
       <MapContainer center={[9.082, 8.6753]} zoom={6} scrollWheelZoom={false} className="h-full w-full">
         <TileLayer attribution={tileConfig.attribution} url={tileConfig.url} />
-        <FitToPoints points={points} />
-        {points.map((point) => (
-          <CircleMarker
+        <FitToPoints points={validPoints} />
+        {validPoints.map((point) => (
+          <Marker
             key={point.label}
-            center={[point.latitude, point.longitude]}
-            radius={Math.max(7, Math.min(18, 6 + point.visits / 3))}
-            pathOptions={{
-              color: rateColor(point.rate),
-              fillColor: rateColor(point.rate),
-              fillOpacity: 0.3,
-              weight: 1.5,
-            }}
+            position={[point.latitude, point.longitude]}
+            icon={markerIcon(rateColor(point.rate))}
           >
             <Tooltip direction="top" offset={[0, -8]} opacity={1}>
               <div className="text-xs">
@@ -97,7 +105,7 @@ export default function TerritoryPerformanceMap({ points }: { points: TerritoryP
                 <p className="text-muted-foreground">Rate: {point.rate.toFixed(1)}%</p>
               </div>
             </Popup>
-          </CircleMarker>
+          </Marker>
         ))}
       </MapContainer>
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-linear-to-t from-background/50 to-transparent" />

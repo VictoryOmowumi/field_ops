@@ -16,6 +16,8 @@ const settingDefs = [
   { key: "requireSalesValue", label: "Require sales value" },
   { key: "allowNotes", label: "Allow notes" },
   { key: "allowRevisitStatus", label: "Allow revisit status" },
+  { key: "requirePosmDeployment", label: "Capture POSM deployment" },
+  { key: "requirePosmQuantityWhenDeployed", label: "Require POSM quantity (when yes)" },
 ];
 
 export default function CampaignFormSettingsPage() {
@@ -86,4 +88,3 @@ export default function CampaignFormSettingsPage() {
     </div>
   );
 }
-

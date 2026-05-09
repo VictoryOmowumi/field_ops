@@ -73,7 +73,6 @@ export default function AgentVisitStartPage() {
       setGpsReady(true);
       return;
     }
-    setGpsReady(false);
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setGps({
@@ -113,7 +112,22 @@ export default function AgentVisitStartPage() {
         window.removeEventListener("offline", handleOffline);
       };
     }
-    requestGps();
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setGps({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          locationAccuracy: position.coords.accuracy,
+        });
+        setGpsError(null);
+        setGpsReady(true);
+      },
+      () => {
+        setGpsError("Unable to get GPS location. Please retry.");
+        setGpsReady(true);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
 
     return () => {
       window.removeEventListener("online", handleOnline);

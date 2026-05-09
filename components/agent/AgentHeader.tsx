@@ -2,9 +2,7 @@
 
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  DashboardCircleIcon,
   Moon02Icon,
-  Notification01Icon,
   Sun01Icon,
   CellularNetworkIcon,
 } from "@hugeicons/core-free-icons";
@@ -12,25 +10,13 @@ import {
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useThemeMode } from "@/hooks/useThemeMode";
 import { Button } from "@/components/ui/button";
-import { useQuery } from "@tanstack/react-query";
-import { authorizedFetch } from "@/lib/api/client";
 import AgentSessionMenu from "@/components/agent/AgentSessionMenu";
+import { useAgentBootstrap } from "@/hooks/useAgentBootstrap";
 
 export default function AgentHeader() {
   const isOnline = useOnlineStatus();
   const { toggleTheme } = useThemeMode();
-  const bootstrapQuery = useQuery({
-    queryKey: ["agent-header-bootstrap"],
-    queryFn: async () =>
-      (
-        await authorizedFetch<{
-          success: boolean;
-          bootstrap: {
-            profile: { fullName?: string; organizationRole?: string };
-          };
-        }>("/api/agent/bootstrap")
-      ).bootstrap,
-  });
+  const bootstrapQuery = useAgentBootstrap();
  
 
   return (

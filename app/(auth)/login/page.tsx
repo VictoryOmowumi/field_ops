@@ -7,7 +7,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 
 import { extractAppRole, getDefaultRouteForRole } from "@/lib/auth/roles";
 import AuthSplitLayout from "@/components/auth/AuthSplitLayout";
@@ -27,6 +27,7 @@ function LoginPageContent() {
   const searchParams = useSearchParams();
   const [checkingSession, setCheckingSession] = useState(true);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const nextPath = useMemo(() => searchParams.get("next") || "/agent/home", [searchParams]);
 
   const {
@@ -136,25 +137,38 @@ function LoginPageContent() {
           <label htmlFor="password" className="text-sm font-medium">
             Password
           </label>
-          <Input
-            id="password"
-            type="password"
-            autoComplete="current-password"
-            placeholder="Enter your password"
-            {...register("password")}
-          />
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              placeholder="Enter your password"
+              className="pr-11"
+              {...register("password")}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((prev) => !prev)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              aria-pressed={showPassword}
+            >
+              {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </button>
+          </div>
           {errors.password ? <p className="text-xs text-red-600">{errors.password.message}</p> : null}
         </div>
 
         <Button type="submit" className="h-11 w-full rounded-xl text-sm font-semibold shadow-sm" disabled={isSubmitting}>
-          {isSubmitting ? "Signing in..." : "Sign In"}
+          {isSubmitting ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="size-4 animate-spin" />
+              {pendingMessage ?? "Signing in..."}
+            </span>
+          ) : (
+            "Sign In"
+          )}
         </Button>
-        {pendingMessage ? (
-          <div className="flex items-center justify-center gap-2 rounded-xl border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
-            <span>{pendingMessage}</span>
-          </div>
-        ) : null}
       </form>
     </AuthSplitLayout>
   );

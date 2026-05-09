@@ -67,6 +67,8 @@ export default function NewCampaignPage() {
     allowProductSelectionForAllTasks: true,
     allowNotes: true,
     allowRevisitStatus: true,
+    requirePosmDeployment: false,
+    requirePosmQuantityWhenDeployed: true,
   });
 
   const [savingDraft, setSavingDraft] = useState(false);
@@ -156,7 +158,7 @@ export default function NewCampaignPage() {
       return;
     }
 
-    const workflow = buildWorkflowConfigFromTemplate(workflowTemplate, {
+    const workflowBase = buildWorkflowConfigFromTemplate(workflowTemplate, {
       validationRules: {
         requireGpsBeforeSubmit: formRequirements.requireGps,
         requirePhotoEvidence: formRequirements.requirePhotoEvidence,
@@ -176,6 +178,10 @@ export default function NewCampaignPage() {
           { code: "not_interested", label: "Not interested" },
         ],
       },
+    });
+    const workflow = withPosmActivity(workflowBase, {
+      enabled: formRequirements.requirePosmDeployment,
+      requireQuantity: formRequirements.requirePosmQuantityWhenDeployed,
     });
 
     const response = await fetch("/api/admin/campaigns", {
@@ -237,6 +243,10 @@ export default function NewCampaignPage() {
             },
             product_access: {
               allowOnAllTasks: formRequirements.allowProductSelectionForAllTasks,
+            },
+            posm_deployment: {
+              enabled: formRequirements.requirePosmDeployment,
+              requireQuantityWhenDeployed: formRequirements.requirePosmQuantityWhenDeployed,
             },
           },
         },
@@ -356,6 +366,8 @@ export default function NewCampaignPage() {
             <ToggleField label="Allow products on all tasks" value={formRequirements.allowProductSelectionForAllTasks} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, allowProductSelectionForAllTasks: checked }))} />
             <ToggleField label="Allow notes" value={formRequirements.allowNotes} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, allowNotes: checked }))} />
             <ToggleField label="Allow revisit status" value={formRequirements.allowRevisitStatus} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, allowRevisitStatus: checked }))} />
+            <ToggleField label="Capture POSM deployment" value={formRequirements.requirePosmDeployment} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, requirePosmDeployment: checked }))} />
+            <ToggleField label="Require POSM quantity (when yes)" value={formRequirements.requirePosmQuantityWhenDeployed} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, requirePosmQuantityWhenDeployed: checked }))} />
             {campaignTasks.includes("price_survey") ? (
               <Field label="Price Survey Mode">
                 <Select value={priceMode} onValueChange={(value: "buying" | "selling" | "both") => setPriceMode(value)}>
@@ -474,4 +486,29 @@ function tasksForTemplate(template: CampaignWorkflowTemplate): string[] {
     default:
       return ["register_outlet", "sell_to_outlet"];
   }
+}
+
+function withPosmActivity(
+  workflow: ReturnType<typeof buildWorkflowConfigFromTemplate>,
+  options: { enabled: boolean; requireQuantity: boolean }
+) {
+  const hasPosm = workflow.activities.some((item) => item.id === "posm_deployment");
+  if (options.enabled && !hasPosm) {
+    workflow.activities.push({
+      id: "posm_deployment",
+      required: true,
+      settings: { requireQuantityWhenDeployed: options.requireQuantity },
+    });
+  }
+  if (!options.enabled && hasPosm) {
+    workflow.activities = workflow.activities.filter((item) => item.id !== "posm_deployment");
+  }
+  if (options.enabled && hasPosm) {
+    workflow.activities = workflow.activities.map((item) =>
+      item.id === "posm_deployment"
+        ? { ...item, settings: { ...(item.settings ?? {}), requireQuantityWhenDeployed: options.requireQuantity } }
+        : item
+    );
+  }
+  return workflow;
 }

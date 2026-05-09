@@ -83,6 +83,8 @@ function toStepTitle(activityId: WorkflowActivityId): string {
       return "Product Audit";
     case "sell_to_outlet":
       return "Sales Capture";
+    case "posm_deployment":
+      return "POSM Deployment";
     case "photo_evidence":
       return "Photo Evidence";
     case "notes":
@@ -98,4 +100,3 @@ export function mapWorkflowOutcomeToVisitOutcome(code: VisitOutcomeCode): "conve
   if (code === "outlet_closed") return "revisit";
   return "no_sale";
 }
-

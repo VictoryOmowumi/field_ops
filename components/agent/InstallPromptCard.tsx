@@ -33,7 +33,13 @@ function isiOS() {
 }
 
 export default function InstallPromptCard() {
-  const [deferredPrompt, setDeferredPrompt] = useState<DeferredBeforeInstallPromptEvent | null>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<DeferredBeforeInstallPromptEvent | null>(() => {
+    if (typeof window === "undefined") return null;
+    return (
+      (window as Window & { __actiQDeferredInstallPrompt?: DeferredBeforeInstallPromptEvent })
+        .__actiQDeferredInstallPrompt ?? null
+    );
+  });
   const [showIosHint] = useState(() => isiOS());
   const [installPromptEligible, setInstallPromptEligible] = useState(() => {
     if (!pwaFlags.installPromptEnabled) return false;
@@ -52,9 +58,6 @@ export default function InstallPromptCard() {
       (window as Window & { __actiQDeferredInstallPrompt?: DeferredBeforeInstallPromptEvent }).__actiQDeferredInstallPrompt = deferred;
       setDeferredPrompt(deferred);
     };
-
-    const existing = (window as Window & { __actiQDeferredInstallPrompt?: DeferredBeforeInstallPromptEvent }).__actiQDeferredInstallPrompt;
-    if (existing) setDeferredPrompt(existing);
 
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);

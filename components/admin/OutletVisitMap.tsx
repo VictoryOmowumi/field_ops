@@ -1,17 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CircleMarker, MapContainer, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
-import { latLngBounds } from "leaflet";
+import { MapContainer, Marker, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
+import { divIcon, latLngBounds } from "leaflet";
 import MarkerClusterGroup from "react-leaflet-cluster";
 
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useThemeMode } from "@/hooks/useThemeMode";
 import { db } from "@/lib/offline/db";
 
@@ -80,13 +74,11 @@ function nearestCity(lat: number, lng: number) {
 
 function FitToPoints({ points }: { points: VisitPoint[] }) {
   const map = useMap();
-
   useEffect(() => {
     if (points.length === 0) return;
     const bounds = latLngBounds(points.map((point) => [point.lat, point.lng]));
     map.fitBounds(bounds, { padding: [30, 30], maxZoom: 12 });
   }, [map, points]);
-
   return null;
 }
 
@@ -102,26 +94,29 @@ function markerLabel(status: VisitPoint["status"]) {
   return "Revisit";
 }
 
+function markerIcon(status: VisitPoint["status"]) {
+  const color = markerColor(status);
+  return divIcon({
+    className: "fieldops-map-marker",
+    html: `<div style="display:grid;place-items:center;width:24px;height:24px;border-radius:9999px;background:${color};border:2px solid var(--color-background);color:#fff;font-size:11px;font-weight:700;line-height:1">P</div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
+}
+
 export default function OutletVisitMap() {
   const [selectedCity, setSelectedCity] = useState("all");
-  const [enabledStatuses, setEnabledStatuses] = useState<VisitPoint["status"][]>([
-    "converted",
-    "pending",
-    "revisit",
-  ]);
+  const [enabledStatuses, setEnabledStatuses] = useState<VisitPoint["status"][]>(["converted", "pending", "revisit"]);
   const [livePoints, setLivePoints] = useState<VisitPoint[]>([]);
   const { theme } = useThemeMode();
 
   useEffect(() => {
     let active = true;
-
     async function loadFromDexie() {
       try {
         const [outlets, sales] = await Promise.all([db.outlets.toArray(), db.sales.toArray()]);
         if (!active) return;
-
         const outletById = new Map(outlets.map((o) => [o.id, o]));
-
         const salePoints: VisitPoint[] = sales
           .filter((sale) => typeof sale.latitude === "number" && typeof sale.longitude === "number")
           .map((sale) => ({
@@ -132,7 +127,6 @@ export default function OutletVisitMap() {
             lng: sale.longitude as number,
             status: sale.conversionStatus,
           }));
-
         const outletPoints: VisitPoint[] = outlets
           .filter((outlet) => typeof outlet.latitude === "number" && typeof outlet.longitude === "number")
           .map((outlet) => ({
@@ -143,14 +137,11 @@ export default function OutletVisitMap() {
             lng: outlet.longitude as number,
             status: "pending",
           }));
-
-        const merged = salePoints.length > 0 ? salePoints : outletPoints;
-        setLivePoints(merged);
+        setLivePoints(salePoints.length > 0 ? salePoints : outletPoints);
       } catch {
         setLivePoints([]);
       }
     }
-
     void loadFromDexie();
     return () => {
       active = false;
@@ -158,7 +149,6 @@ export default function OutletVisitMap() {
   }, []);
 
   const basePoints = livePoints.length > 0 ? livePoints : outletVisitPoints;
-
   const filteredPoints = useMemo(() => {
     const byCity = selectedCity === "all" ? basePoints : basePoints.filter((point) => point.city === selectedCity);
     return byCity.filter((point) => enabledStatuses.includes(point.status));
@@ -170,9 +160,7 @@ export default function OutletVisitMap() {
       : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
 
   const toggleStatus = (status: VisitPoint["status"]) => {
-    setEnabledStatuses((current) =>
-      current.includes(status) ? current.filter((item) => item !== status) : [...current, status]
-    );
+    setEnabledStatuses((current) => (current.includes(status) ? current.filter((item) => item !== status) : [...current, status]));
   };
 
   return (
@@ -180,11 +168,8 @@ export default function OutletVisitMap() {
       <div className="mb-5 flex items-center justify-between">
         <div>
           <h2 className="font-semibold">Outlet Visit Map</h2>
-          <p className="text-sm text-muted-foreground">
-            Plot outlet visit coordinates by selected city.
-          </p>
+          <p className="text-sm text-muted-foreground">Plot outlet visit coordinates by selected city.</p>
         </div>
-
         <Select value={selectedCity} onValueChange={setSelectedCity}>
           <SelectTrigger className="w-[180px] rounded-full">
             <SelectValue placeholder="Select city" />
@@ -225,70 +210,37 @@ export default function OutletVisitMap() {
       </div>
 
       <div className="fieldops-map relative h-[340px] overflow-hidden rounded-3xl border border-border bg-muted/30">
-        <MapContainer
-          key={theme}
-          center={[9.082, 8.6753]}
-          zoom={6}
-          scrollWheelZoom={false}
-          className="h-full w-full saturate-[.85]"
-        >
-          <TileLayer
-            attribution='&copy; OpenStreetMap, &copy; CARTO'
-            url={tileUrl}
-          />
+        <MapContainer key={theme} center={[9.082, 8.6753]} zoom={6} scrollWheelZoom={false} className="h-full w-full saturate-[.85]">
+          <TileLayer attribution="&copy; OpenStreetMap, &copy; CARTO" url={tileUrl} />
           <FitToPoints points={filteredPoints} />
           <MarkerClusterGroup chunkedLoading>
             {filteredPoints.map((point) => (
-              <div key={point.id}>
-                <CircleMarker
-                  center={[point.lat, point.lng]}
-                  radius={12}
-                  pathOptions={{
-                    color: markerColor(point.status),
-                    fillColor: markerColor(point.status),
-                    fillOpacity: 0.18,
-                    weight: 1.5,
-                  }}
-                />
-                <CircleMarker
-                  center={[point.lat, point.lng]}
-                  radius={6}
-                  pathOptions={{
-                    color: "var(--color-background)",
-                    fillColor: markerColor(point.status),
-                    fillOpacity: 1,
-                    weight: 2,
-                  }}
-                >
-                  <Tooltip direction="top" offset={[0, -8]} opacity={1}>
-                    <div className="text-xs">
-                      <p className="font-semibold">{point.outlet}</p>
-                      <p className="text-muted-foreground">{point.city}</p>
-                      <p className="mt-1 text-muted-foreground">
-                        {point.lat.toFixed(4)}, {point.lng.toFixed(4)}
-                      </p>
-                    </div>
-                  </Tooltip>
-                  <Popup className="fieldops-map-popup">
-                    <div className="text-xs">
-                      <p className="font-semibold">{point.outlet}</p>
-                      <p className="text-muted-foreground">{point.city}</p>
-                      <p className="mt-1">
-                        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px]">
-                          <span
-                            className="size-1.5 rounded-full"
-                            style={{ backgroundColor: markerColor(point.status) }}
-                          />
-                          {markerLabel(point.status)}
-                        </span>
-                      </p>
-                      <p className="mt-1 text-muted-foreground">
-                        {point.lat.toFixed(4)}, {point.lng.toFixed(4)}
-                      </p>
-                    </div>
-                  </Popup>
-                </CircleMarker>
-              </div>
+              <Marker key={point.id} position={[point.lat, point.lng]} icon={markerIcon(point.status)}>
+                <Tooltip direction="top" offset={[0, -8]} opacity={1}>
+                  <div className="text-xs">
+                    <p className="font-semibold">{point.outlet}</p>
+                    <p className="text-muted-foreground">{point.city}</p>
+                    <p className="mt-1 text-muted-foreground">
+                      {point.lat.toFixed(4)}, {point.lng.toFixed(4)}
+                    </p>
+                  </div>
+                </Tooltip>
+                <Popup className="fieldops-map-popup">
+                  <div className="text-xs">
+                    <p className="font-semibold">{point.outlet}</p>
+                    <p className="text-muted-foreground">{point.city}</p>
+                    <p className="mt-1">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px]">
+                        <span className="size-1.5 rounded-full" style={{ backgroundColor: markerColor(point.status) }} />
+                        {markerLabel(point.status)}
+                      </span>
+                    </p>
+                    <p className="mt-1 text-muted-foreground">
+                      {point.lat.toFixed(4)}, {point.lng.toFixed(4)}
+                    </p>
+                  </div>
+                </Popup>
+              </Marker>
             ))}
           </MarkerClusterGroup>
         </MapContainer>
@@ -297,15 +249,15 @@ export default function OutletVisitMap() {
 
       <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
         <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/40 px-2.5 py-1">
-          <span className="size-2.5 rounded-full bg-primary shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-primary)_20%,transparent)]" />
+          <span className="text-sm leading-none">P</span>
           Converted
         </div>
         <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/40 px-2.5 py-1">
-          <span className="size-2.5 rounded-full bg-chart-4 shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-chart-4)_20%,transparent)]" />
+          <span className="text-sm leading-none">P</span>
           Pending
         </div>
         <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/40 px-2.5 py-1">
-          <span className="size-2.5 rounded-full bg-destructive shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-destructive)_20%,transparent)]" />
+          <span className="text-sm leading-none">P</span>
           Revisit
         </div>
         <span className="ml-auto text-xs">{filteredPoints.length} outlets plotted</span>

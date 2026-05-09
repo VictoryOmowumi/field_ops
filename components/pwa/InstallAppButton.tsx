@@ -24,14 +24,14 @@ function isiOS() {
 }
 
 export default function InstallAppButton({ className = "" }: { className?: string }) {
-  const [deferredPrompt, setDeferredPrompt] = useState<DeferredBeforeInstallPromptEvent | null>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<DeferredBeforeInstallPromptEvent | null>(() => {
+    if (typeof window === "undefined") return null;
+    return (window as Window & { __actiQDeferredInstallPrompt?: DeferredBeforeInstallPromptEvent }).__actiQDeferredInstallPrompt ?? null;
+  });
   const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
     if (!pwaFlags.installPromptEnabled) return;
-
-    const existing = (window as Window & { __actiQDeferredInstallPrompt?: DeferredBeforeInstallPromptEvent }).__actiQDeferredInstallPrompt;
-    if (existing) setDeferredPrompt(existing);
 
     const handler = (event: Event) => {
       event.preventDefault();
@@ -81,4 +81,3 @@ export default function InstallAppButton({ className = "" }: { className?: strin
     </Button>
   );
 }
-

@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { authorizedFetch } from "@/lib/api/client";
 
 type CatalogProduct = {
@@ -20,40 +21,37 @@ type ProductCatalogSelectorProps = {
   onChange: (value: string[]) => void;
 };
 
-export default function ProductCatalogSelector({
-  value,
-  onChange,
-}: ProductCatalogSelectorProps) {
+export default function ProductCatalogSelector({ value, onChange }: ProductCatalogSelectorProps) {
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [products, setProducts] = useState<CatalogProduct[]>([]);
+  const [createdProducts, setCreatedProducts] = useState<CatalogProduct[]>([]);
+
+  const catalogQuery = useQuery({
+    queryKey: ["admin-product-catalog"],
+    queryFn: async () => {
+      const result = await authorizedFetch<{ success: boolean; products: CatalogProduct[] }>("/api/admin/product-catalog");
+      return result.products ?? [];
+    },
+  });
 
   useEffect(() => {
-    void loadCatalog();
-  }, []);
+    if (catalogQuery.error) toast.error((catalogQuery.error as Error).message);
+  }, [catalogQuery.error]);
 
-  async function loadCatalog() {
-    setLoading(true);
-    try {
-      const result = await authorizedFetch<{ success: boolean; products: CatalogProduct[] }>(
-        "/api/admin/product-catalog"
-      );
-      setProducts(result.products ?? []);
-    } catch (error) {
-      toast.error((error as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const products = useMemo(() => {
+    const base = catalogQuery.data ?? [];
+    if (createdProducts.length === 0) return base;
+    const seen = new Set(base.map((item) => item.name.toLowerCase()));
+    return [...base, ...createdProducts.filter((item) => !seen.has(item.name.toLowerCase()))].sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+  }, [catalogQuery.data, createdProducts]);
 
   const selectedSet = useMemo(() => new Set(value.map((item) => item.toLowerCase())), [value]);
   const normalizedQuery = query.trim().toLowerCase();
   const filtered = useMemo(() => {
     if (!normalizedQuery) return products.slice(0, 25);
-    return products
-      .filter((item) => item.name.toLowerCase().includes(normalizedQuery))
-      .slice(0, 25);
+    return products.filter((item) => item.name.toLowerCase().includes(normalizedQuery)).slice(0, 25);
   }, [normalizedQuery, products]);
 
   const exactMatch = useMemo(
@@ -76,19 +74,18 @@ export default function ProductCatalogSelector({
     if (!name) return;
     setCreating(true);
     try {
-      const result = await authorizedFetch<{
-        success: boolean;
-        product: CatalogProduct;
-        alreadyExists?: boolean;
-      }>("/api/admin/product-catalog", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
+      const result = await authorizedFetch<{ success: boolean; product: CatalogProduct; alreadyExists?: boolean }>(
+        "/api/admin/product-catalog",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        }
+      );
       const created = result.product;
-      setProducts((prev) => {
+      setCreatedProducts((prev) => {
         if (prev.some((item) => item.name.toLowerCase() === created.name.toLowerCase())) return prev;
-        return [...prev, created].sort((a, b) => a.name.localeCompare(b.name));
+        return [...prev, created];
       });
       addProduct(created.name);
       setQuery("");
@@ -109,7 +106,7 @@ export default function ProductCatalogSelector({
       />
 
       <div className="rounded-2xl border border-border bg-background p-3">
-        {loading ? (
+        {catalogQuery.isLoading ? (
           <p className="text-sm text-muted-foreground">Loading product catalog...</p>
         ) : filtered.length === 0 ? (
           <p className="text-sm text-muted-foreground">No products found.</p>
@@ -128,7 +125,7 @@ export default function ProductCatalogSelector({
                 >
                   <div className="font-medium">{item.name}</div>
                   <div className="text-xs text-muted-foreground">
-                    {[item.brand, item.category, item.industry].filter(Boolean).join(" · ") || "Catalog product"}
+                    {[item.brand, item.category, item.industry].filter(Boolean).join(" | ") || "Catalog product"}
                   </div>
                 </button>
               );
@@ -138,13 +135,7 @@ export default function ProductCatalogSelector({
       </div>
 
       {query.trim() && !exactMatch ? (
-        <Button
-          type="button"
-          variant="outline"
-          className="rounded-full"
-          disabled={creating}
-          onClick={createProductFromQuery}
-        >
+        <Button type="button" variant="outline" className="rounded-full" disabled={creating} onClick={createProductFromQuery}>
           {creating ? "Saving..." : `Add "${query.trim()}" to catalog`}
         </Button>
       ) : null}
@@ -155,9 +146,7 @@ export default function ProductCatalogSelector({
         ) : (
           value.map((item) => (
             <button key={item} type="button" onClick={() => removeProduct(item)}>
-              <Badge className="rounded-full bg-primary/10 text-primary hover:bg-primary/20">
-                {item} ×
-              </Badge>
+              <Badge className="rounded-full bg-primary/10 text-primary hover:bg-primary/20">{item} x</Badge>
             </button>
           ))
         )}
