@@ -100,6 +100,15 @@ export default function CampaignDetailsPage() {
         }}
         onSave={vm.saveAssignments}
         savingAssignments={vm.savingAssignments}
+        registerRepOpen={vm.registerRepOpen}
+        onRegisterRepOpenChange={vm.setRegisterRepOpen}
+        onOpenRegisterRep={vm.openRegisterRepDialog}
+        repForm={vm.registerRepForm}
+        onRepFormChange={vm.setRegisterRepForm}
+        registerRepSubmitting={vm.registerRepSubmitting}
+        registerRepError={vm.registerRepError}
+        registerCampaignOptions={vm.registerCampaignOptions}
+        onSubmitRegisterRep={vm.submitRegisterRepFromAssignDialog}
       />
 
       <ShareCampaignDialog

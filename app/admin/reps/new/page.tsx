@@ -24,31 +24,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { nigerianBankOptions } from "@/data/nigerian-banks";
 import { nigeriaLocations } from "@/data/nigeria-locations";
 import { authorizedFetch } from "@/lib/api/client";
+import {
+  buildCreateRepPayload,
+  createDefaultRepFormValues,
+  type RepFormValues,
+  validateRepForm,
+} from "@/lib/admin/rep-form";
 
 type Campaign = { id: string; name: string; status: string };
 type User = { id: string; displayName: string; organizationRole: string };
 
 export default function NewRepPage() {
   const router = useRouter();
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [selectedState, setSelectedState] = useState("");
-  const [selectedLga, setSelectedLga] = useState("");
-  const [targetOutlets, setTargetOutlets] = useState("");
-  const [targetConversions, setTargetConversions] = useState("");
-  const [assignedSupervisorUserId, setAssignedSupervisorUserId] = useState("none");
-  const [notes, setNotes] = useState("");
-  const [bankName, setBankName] = useState("");
-  const [accountNumber, setAccountNumber] = useState("");
-  const [accountName, setAccountName] = useState("");
-  const [paymentType, setPaymentType] = useState("");
-  const [dailyRate, setDailyRate] = useState("");
-  const [commissionRate, setCommissionRate] = useState("");
-  const [selectedCampaignIds, setSelectedCampaignIds] = useState<string[]>([]);
+  const [form, setForm] = useState<RepFormValues>(createDefaultRepFormValues);
   const [creating, setCreating] = useState(false);
 
-  const location = useMemo(() => nigeriaLocations.find((item) => item.state === selectedState), [selectedState]);
+  const location = useMemo(() => nigeriaLocations.find((item) => item.state === form.selectedState), [form.selectedState]);
 
   const campaignsQuery = useQuery({
     queryKey: ["campaigns-select"],
@@ -73,8 +64,9 @@ export default function NewRepPage() {
   const campaigns = useMemo(() => (campaignsQuery.data ?? []).filter((c) => c.status !== "completed"), [campaignsQuery.data]);
 
   async function createRep() {
-    if (!fullName.trim() || !email.trim()) {
-      toast.error("Full name and email are required.");
+    const validationError = validateRepForm(form);
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
 
@@ -83,24 +75,7 @@ export default function NewRepPage() {
       const result = await authorizedFetch<{ success: boolean; rep: { id: string } }>("/api/admin/reps", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fullName,
-          email,
-          phone: phone || undefined,
-          state: selectedState || undefined,
-          lga: selectedLga || undefined,
-          targetOutlets: targetOutlets ? Number(targetOutlets) : null,
-          targetConversions: targetConversions ? Number(targetConversions) : null,
-          assignedSupervisorUserId: assignedSupervisorUserId === "none" ? null : assignedSupervisorUserId,
-          notes: notes || undefined,
-          campaignIds: selectedCampaignIds,
-          bankName: bankName || undefined,
-          accountNumber: accountNumber || undefined,
-          accountName: accountName || undefined,
-          paymentType: paymentType || undefined,
-          dailyRate: dailyRate ? Number(dailyRate) : null,
-          commissionRate: commissionRate ? Number(commissionRate) : null,
-        }),
+        body: JSON.stringify(buildCreateRepPayload(form)),
       });
       toast.success("Rep invited and created.");
       router.push(`/admin/reps/${result.rep.id}`);
@@ -123,11 +98,11 @@ export default function NewRepPage() {
 
       <section className="rounded-4xl bg-card p-6 shadow-sm ring-1 ring-border/60 space-y-5">
         <div className="grid gap-5 md:grid-cols-2">
-          <Field label="Full name"><Input value={fullName} onChange={(e) => setFullName(e.target.value)} /></Field>
-          <Field label="Phone"><Input value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
-          <Field label="Email"><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+          <Field label="Full name"><Input value={form.fullName} onChange={(e) => setForm((prev) => ({ ...prev, fullName: e.target.value }))} /></Field>
+          <Field label="Phone"><Input value={form.phone} onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))} /></Field>
+          <Field label="Email"><Input type="email" value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} /></Field>
           <Field label="Assigned supervisor">
-            <Select value={assignedSupervisorUserId} onValueChange={setAssignedSupervisorUserId}>
+            <Select value={form.assignedSupervisorUserId} onValueChange={(value) => setForm((prev) => ({ ...prev, assignedSupervisorUserId: value }))}>
               <SelectTrigger><SelectValue placeholder="Select supervisor" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">None</SelectItem>
@@ -136,31 +111,31 @@ export default function NewRepPage() {
             </Select>
           </Field>
           <Field label="State">
-            <Select value={selectedState} onValueChange={setSelectedState}>
+            <Select value={form.selectedState} onValueChange={(value) => setForm((prev) => ({ ...prev, selectedState: value, selectedLga: "" }))}>
               <SelectTrigger><SelectValue placeholder="Select state" /></SelectTrigger>
               <SelectContent>{nigeriaLocations.map((n) => <SelectItem key={n.state} value={n.state}>{n.state}</SelectItem>)}</SelectContent>
             </Select>
           </Field>
           <Field label="LGA">
-            <Select value={selectedLga} onValueChange={setSelectedLga} disabled={!selectedState}>
+            <Select value={form.selectedLga} onValueChange={(value) => setForm((prev) => ({ ...prev, selectedLga: value }))} disabled={!form.selectedState}>
               <SelectTrigger><SelectValue placeholder="Select LGA" /></SelectTrigger>
               <SelectContent>{location?.lgas.map((x) => <SelectItem key={x} value={x}>{x}</SelectItem>)}</SelectContent>
             </Select>
           </Field>
-          <Field label="Target outlets"><Input type="number" value={targetOutlets} onChange={(e) => setTargetOutlets(e.target.value)} /></Field>
-          <Field label="Target conversions"><Input type="number" value={targetConversions} onChange={(e) => setTargetConversions(e.target.value)} /></Field>
+          <Field label="Target outlets"><Input type="number" value={form.targetOutlets} onChange={(e) => setForm((prev) => ({ ...prev, targetOutlets: e.target.value }))} /></Field>
+          <Field label="Target conversions"><Input type="number" value={form.targetConversions} onChange={(e) => setForm((prev) => ({ ...prev, targetConversions: e.target.value }))} /></Field>
           <div className="space-y-1">
             <p className="text-sm font-medium">Assign campaigns (multi-select)</p>
           
             <Combobox
               items={campaigns.map((campaign) => campaign.id)}
               multiple
-              value={selectedCampaignIds}
-              onValueChange={setSelectedCampaignIds}
+              value={form.selectedCampaignIds}
+              onValueChange={(value) => setForm((prev) => ({ ...prev, selectedCampaignIds: value }))}
             >
               <ComboboxChips>
                 <ComboboxValue>
-                  {selectedCampaignIds.map((id) => {
+                  {form.selectedCampaignIds.map((id) => {
                     const match = campaigns.find((campaign) => campaign.id === id);
                     return <ComboboxChip key={id}>{match?.name ?? id}</ComboboxChip>;
                   })}
@@ -195,15 +170,15 @@ export default function NewRepPage() {
           </p>
           <div className="mt-4 grid gap-5 md:grid-cols-2">
             <Field label="Bank name">
-              <Select value={bankName} onValueChange={setBankName}>
+              <Select value={form.bankName} onValueChange={(value) => setForm((prev) => ({ ...prev, bankName: value }))}>
                 <SelectTrigger><SelectValue placeholder="Select bank" /></SelectTrigger>
                 <SelectContent>{nigerianBankOptions.map((bank) => <SelectItem key={bank} value={bank}>{bank}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
-            <Field label="Account number"><Input inputMode="numeric" placeholder="0123456789" value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} /></Field>
-            <Field label="Account name"><Input placeholder="Auto-confirmed or entered manually" value={accountName} onChange={(e) => setAccountName(e.target.value)} /></Field>
+            <Field label="Account number"><Input inputMode="numeric" placeholder="0123456789" value={form.accountNumber} onChange={(e) => setForm((prev) => ({ ...prev, accountNumber: e.target.value }))} /></Field>
+            <Field label="Account name"><Input placeholder="Auto-confirmed or entered manually" value={form.accountName} onChange={(e) => setForm((prev) => ({ ...prev, accountName: e.target.value }))} /></Field>
             <Field label="Payment type">
-              <Select value={paymentType} onValueChange={setPaymentType}>
+              <Select value={form.paymentType} onValueChange={(value) => setForm((prev) => ({ ...prev, paymentType: value }))}>
                 <SelectTrigger><SelectValue placeholder="Select payment type" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="daily_rate">Daily Rate</SelectItem>
@@ -212,12 +187,12 @@ export default function NewRepPage() {
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Daily rate"><Input type="number" placeholder="10000" value={dailyRate} onChange={(e) => setDailyRate(e.target.value)} /></Field>
-            <Field label="Commission rate (%)"><Input type="number" placeholder="5" value={commissionRate} onChange={(e) => setCommissionRate(e.target.value)} /></Field>
+            <Field label="Daily rate"><Input type="number" placeholder="10000" value={form.dailyRate} onChange={(e) => setForm((prev) => ({ ...prev, dailyRate: e.target.value }))} /></Field>
+            <Field label="Commission rate (%)"><Input type="number" placeholder="5" value={form.commissionRate} onChange={(e) => setForm((prev) => ({ ...prev, commissionRate: e.target.value }))} /></Field>
           </div>
         </section>
 
-        <Field label="Notes"><Textarea className="min-h-24" value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
+        <Field label="Notes"><Textarea className="min-h-24" value={form.notes} onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))} /></Field>
 
         <div className="flex justify-end">
           <Button className="rounded-full px-6" disabled={creating} onClick={createRep}>

@@ -35,7 +35,7 @@ type Rep = {
   targetConversions: number | null;
   assignedSupervisorUserId: string | null;
   notes: string | null;
-  status: "active" | "inactive" | "suspended";
+  status: "active" | "inactive";
   campaignIds: string[];
   bankName?: string | null;
   accountNumber?: string | null;
@@ -83,7 +83,7 @@ function RepEditForm({ rep, campaigns, users }: { rep: Rep; campaigns: Campaign[
   const [assignedSupervisorUserId, setAssignedSupervisorUserId] = useState(rep.assignedSupervisorUserId ?? "none");
   const [targetOutlets, setTargetOutlets] = useState(rep.targetOutlets?.toString() ?? "");
   const [targetConversions, setTargetConversions] = useState(rep.targetConversions?.toString() ?? "");
-  const [status, setStatus] = useState<"active" | "inactive" | "suspended">(rep.status);
+  const [status, setStatus] = useState<"active" | "inactive">(rep.status);
   const [notes, setNotes] = useState(rep.notes ?? "");
   const [selectedCampaignIds, setSelectedCampaignIds] = useState<string[]>(rep.campaignIds);
   const [bankName, setBankName] = useState(rep.bankName ?? "");
@@ -148,9 +148,9 @@ function RepEditForm({ rep, campaigns, users }: { rep: Rep; campaigns: Campaign[
             </Select>
           </Field>
           <Field label="Status">
-            <Select value={status} onValueChange={(value: "active" | "inactive" | "suspended") => setStatus(value)}>
+            <Select value={status} onValueChange={(value: "active" | "inactive") => setStatus(value)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem><SelectItem value="suspended">Suspended</SelectItem></SelectContent>
+              <SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent>
             </Select>
           </Field>
           <Field label="Target outlets"><Input type="number" value={targetOutlets} onChange={(e) => setTargetOutlets(e.target.value)} /></Field>

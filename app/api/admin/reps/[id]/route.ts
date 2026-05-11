@@ -14,7 +14,7 @@ type UpdateRepPayload = {
   targetConversions?: number | null;
   assignedSupervisorUserId?: string | null;
   notes?: string | null;
-  status?: "active" | "inactive" | "suspended";
+  status?: "active" | "inactive";
   campaignIds?: string[];
   bankName?: string | null;
   accountNumber?: string | null;
@@ -144,10 +144,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   }
 
   if (payload.status !== undefined) {
-    const membershipStatus = payload.status === "suspended" ? "suspended" : payload.status;
     const { error: membershipUpdateError } = await supabase
       .from("organization_users")
-      .update({ status: membershipStatus })
+      .update({ status: payload.status })
       .eq("organization_id", membership.organizationId)
       .eq("user_id", rep.user_id);
     if (membershipUpdateError) {

@@ -1,7 +1,8 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useState } from "react";
+import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -28,7 +29,6 @@ type UserDetails = {
 
 export default function UserDetailsPage() {
   const params = useParams<{ id: string }>();
-  const router = useRouter();
   const userId = params.id;
 
   const query = useQuery({
@@ -38,8 +38,10 @@ export default function UserDetailsPage() {
       return result.user;
     },
   });
+  const [updatingStatus, setUpdatingStatus] = useState<"active" | "inactive" | null>(null);
 
-  async function quickStatusUpdate(status: UserDetails["status"]) {
+  async function quickStatusUpdate(status: "active" | "inactive") {
+    setUpdatingStatus(status);
     try {
       await authorizedFetch<{ success: boolean }>(`/api/admin/users/${userId}`, {
         method: "PATCH",
@@ -50,6 +52,8 @@ export default function UserDetailsPage() {
       await query.refetch();
     } catch (error) {
       toast.error((error as Error).message);
+    } finally {
+      setUpdatingStatus(null);
     }
   }
 
@@ -101,14 +105,29 @@ export default function UserDetailsPage() {
         </div>
       </section>
 
-      <section className="rounded-4xl bg-card p-6 shadow-sm ring-1 ring-border/60">
-        <h2 className="font-medium">Actions</h2>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button variant="outline" className="rounded-full" onClick={() => quickStatusUpdate("active")}>Set Active</Button>
-          <Button variant="outline" className="rounded-full" onClick={() => quickStatusUpdate("inactive")}>Set Inactive</Button>
-          <Button variant="outline" className="rounded-full" onClick={() => quickStatusUpdate("suspended")}>Suspend</Button>
+      <section className="flex justify-end">
+        <div className="mt-2 flex flex-wrap gap-2">
+          {user.status === "active" ? (
+            <Button
+              variant="destructive"
+              className="rounded-full"
+              onClick={() => quickStatusUpdate("inactive")}
+              disabled={updatingStatus !== null}
+            >
+              {updatingStatus === "inactive" ? "Deactivating..." : "Deactivate"}
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              className="rounded-full"
+              onClick={() => quickStatusUpdate("active")}
+              disabled={updatingStatus !== null}
+            >
+              {updatingStatus === "active" ? "Activating..." : "Activate"}
+            </Button>
+          )}
           {(user.status === "invited" || user.status === "inactive") ? <ResendUserInviteButton userId={user.id} /> : null}
-          <Button variant="secondary" className="rounded-full" onClick={() => router.push(`/admin/users/${user.id}/edit`)}>Update Role/Status</Button>
+        
         </div>
       </section>
     </div>

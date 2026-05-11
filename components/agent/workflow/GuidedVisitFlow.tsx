@@ -67,7 +67,7 @@ export default function GuidedVisitFlow({
   );
   const [notes, setNotes] = useState("");
   const [posmDeployed, setPosmDeployed] = useState<"yes" | "no" | "">("");
-  const [posmQuantity, setPosmQuantity] = useState<number | undefined>(undefined);
+  const [posmQuantityInput, setPosmQuantityInput] = useState("");
   const [availabilityAnswers, setAvailabilityAnswers] = useState<AvailabilityAnswer[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -90,6 +90,7 @@ export default function GuidedVisitFlow({
   const posmActivity = workflow.activities.find((item) => item.id === "posm_deployment");
   const hasPosmDeployment = Boolean(posmActivity);
   const requirePosmQuantityWhenDeployed = Boolean(posmActivity?.settings?.requireQuantityWhenDeployed);
+  const posmQuantityValue = posmQuantityInput.trim() ? Number.parseInt(posmQuantityInput, 10) : undefined;
   const hasValidSales = sales.some((row) => row.productName.trim() && row.quantity > 0);
   const resolvedOutcomeCode = hasSalesStep && hasValidSales ? "products_sold" : "no_sale";
   const gpsRequired = workflow.validationRules.requireGpsBeforeSubmit;
@@ -136,7 +137,12 @@ export default function GuidedVisitFlow({
       toast.error("Please select whether POSM was deployed.");
       return;
     }
-    if (hasPosmDeployment && posmDeployed === "yes" && requirePosmQuantityWhenDeployed && (!posmQuantity || posmQuantity < 1)) {
+    if (
+      hasPosmDeployment
+      && posmDeployed === "yes"
+      && requirePosmQuantityWhenDeployed
+      && (!posmQuantityValue || Number.isNaN(posmQuantityValue) || posmQuantityValue < 1)
+    ) {
       toast.error("Enter POSM quantity when deployment is marked yes.");
       return;
     }
@@ -206,7 +212,7 @@ export default function GuidedVisitFlow({
         activityId: "posm_deployment",
         payload: {
           deployed: posmDeployed === "yes",
-          quantity: posmDeployed === "yes" ? posmQuantity ?? null : null,
+          quantity: posmDeployed === "yes" ? posmQuantityValue ?? null : null,
         },
       });
     }
@@ -273,7 +279,12 @@ export default function GuidedVisitFlow({
         return toast.error("Answer all availability questions with Yes or No.");
       }
     }
-    if (hasPosmDeployment && posmDeployed === "yes" && requirePosmQuantityWhenDeployed && (!posmQuantity || posmQuantity < 1)) {
+    if (
+      hasPosmDeployment
+      && posmDeployed === "yes"
+      && requirePosmQuantityWhenDeployed
+      && (!posmQuantityValue || Number.isNaN(posmQuantityValue) || posmQuantityValue < 1)
+    ) {
       return toast.error("Enter POSM quantity when deployment is marked yes.");
     }
     if (!stableSubmissionKeyRef.current) {
@@ -518,7 +529,7 @@ export default function GuidedVisitFlow({
               className="h-11 rounded-2xl"
               onClick={() => {
                 setPosmDeployed("no");
-                setPosmQuantity(undefined);
+                setPosmQuantityInput("");
               }}
             >
               No
@@ -526,11 +537,12 @@ export default function GuidedVisitFlow({
           </div>
           {posmDeployed === "yes" ? (
             <Input
-              type="number"
-              min={1}
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               placeholder="How many POSM units deployed?"
-              value={posmQuantity ?? ""}
-              onChange={(event) => setPosmQuantity(event.target.value ? Number(event.target.value) : undefined)}
+              value={posmQuantityInput}
+              onChange={(event) => setPosmQuantityInput(event.target.value.replace(/\D/g, ""))}
             />
           ) : null}
         </section>

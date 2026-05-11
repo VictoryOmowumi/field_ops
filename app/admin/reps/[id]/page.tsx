@@ -1,12 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
+import { Copy, Eye, EyeOff } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import UserStatusBadge from "@/components/admin/UserStatusBadge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { authorizedFetch } from "@/lib/api/client";
 
 type Rep = {
@@ -33,6 +36,8 @@ type Rep = {
 export default function RepDetailsPage() {
   const params = useParams<{ id: string }>();
   const repId = params.id;
+  const [showAccountNumber, setShowAccountNumber] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState<"active" | "inactive" | null>(null);
 
   const query = useQuery({
     queryKey: ["rep", repId],
@@ -47,7 +52,8 @@ export default function RepDetailsPage() {
   if (!query.data) return <div className="rounded-4xl bg-card p-10 text-center ring-1 ring-border/60">Rep not found.</div>;
   const rep = query.data;
 
-  async function updateStatus(status: "active" | "inactive" | "suspended") {
+  async function updateStatus(status: "active" | "inactive") {
+    setUpdatingStatus(status);
     try {
       await authorizedFetch<{ success: boolean }>(`/api/admin/reps/${rep.id}`, {
         method: "PATCH",
@@ -58,6 +64,21 @@ export default function RepDetailsPage() {
       await query.refetch();
     } catch (error) {
       toast.error((error as Error).message);
+    } finally {
+      setUpdatingStatus(null);
+    }
+  }
+
+  async function copyAccountNumber() {
+    if (!rep.accountNumber) {
+      toast.error("No account number to copy.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(rep.accountNumber);
+      toast.success("Account number copied.");
+    } catch {
+      toast.error("Could not copy account number.");
     }
   }
 
@@ -89,26 +110,76 @@ export default function RepDetailsPage() {
       </section>
 
       <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60">
-        <h2 className="font-medium">Lifecycle Actions</h2>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button variant="outline" className="rounded-full" onClick={() => updateStatus("active")}>Set Active</Button>
-          <Button variant="outline" className="rounded-full" onClick={() => updateStatus("inactive")}>Set Inactive</Button>
-          <Button variant="outline" className="rounded-full" onClick={() => updateStatus("suspended")}>Suspend</Button>
-        </div>
-      </section>
-
-      <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60">
         <h2 className="font-medium">Payment Information</h2>
         <p className="mt-1 text-sm text-muted-foreground">Visible to authorized admins only.</p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Info label="Bank" value={rep.bankName || "-"} />
-          <Info label="Account number" value={maskAccountNumber(rep.accountNumber)} />
+          <div className="rounded-3xl bg-background p-4">
+              <p className="text-xs text-muted-foreground">Account number</p>
+            <div className="flex items-start justify-between gap-3">
+              <p className="mt-1 font-medium">{showAccountNumber ? rep.accountNumber || "-" : maskAccountNumber(rep.accountNumber)}</p>
+              <TooltipProvider>
+                <div className="flex items-center gap-1">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="rounded-md p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-50"
+                        onClick={() => setShowAccountNumber((prev) => !prev)}
+                        disabled={!rep.accountNumber}
+                        aria-label={showAccountNumber ? "Hide account number" : "Reveal account number"}
+                      >
+                        {showAccountNumber ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>{showAccountNumber ? "Hide account number" : "Reveal account number"}</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="rounded-md p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-50"
+                        onClick={() => void copyAccountNumber()}
+                        disabled={!rep.accountNumber}
+                        aria-label="Copy account number"
+                      >
+                        <Copy className="size-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>Copy account number</TooltipContent>
+                  </Tooltip>
+                </div>
+              </TooltipProvider>
+            </div>
+          </div>
           <Info label="Account name" value={rep.accountName || "-"} />
           <Info label="Payment type" value={rep.paymentType || "-"} />
           <Info label="Daily rate" value={rep.dailyRate !== null && rep.dailyRate !== undefined ? `${rep.dailyRate}` : "-"} />
           <Info label="Commission rate (%)" value={rep.commissionRate !== null && rep.commissionRate !== undefined ? `${rep.commissionRate}` : "-"} />
         </div>
       </section>
+
+        <div className="mt-3 flex flex-wrap justify-end gap-2">
+          {rep.status === "active" ? (
+            <Button
+              variant="destructive"
+              className="rounded-full"
+              onClick={() => updateStatus("inactive")}
+              disabled={updatingStatus !== null}
+            >
+              {updatingStatus === "inactive" ? "Deactivating..." : "Deactivate"}
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              className="rounded-full bg-green-500/10 text-green-500 border-green-400"
+              onClick={() => updateStatus("active")}
+              disabled={updatingStatus !== null}
+            >
+              {updatingStatus === "active" ? "Activating..." : "Activate Account"}
+            </Button>
+          )}
+        </div>
     </div>
   );
 }

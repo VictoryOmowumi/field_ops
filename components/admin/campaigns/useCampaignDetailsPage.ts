@@ -4,6 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { supabaseClient } from "@/lib/supabase/client";
+import {
+  buildCreateRepPayload,
+  createDefaultRepFormValues,
+  type RepFormValues,
+  validateRepForm,
+} from "@/lib/admin/rep-form";
 import type {
   CampaignAnalyticsSummary,
   CampaignEvidenceItem,
@@ -80,6 +86,10 @@ export function useCampaignDetailsPage(campaignId?: string) {
   const [activityStatusFilter, setActivityStatusFilter] = useState("all");
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [savingAssignments, setSavingAssignments] = useState(false);
+  const [registerRepOpen, setRegisterRepOpen] = useState(false);
+  const [registerRepSubmitting, setRegisterRepSubmitting] = useState(false);
+  const [registerRepError, setRegisterRepError] = useState<string | null>(null);
+  const [registerRepForm, setRegisterRepForm] = useState<RepFormValues>(createDefaultRepFormValues);
   const [exportingActivities, setExportingActivities] = useState(false);
   const [summary, setSummary] = useState<CampaignAnalyticsSummary | null>(null);
   const [mapPoints, setMapPoints] = useState<CampaignMapPoint[]>([]);
@@ -102,6 +112,10 @@ export function useCampaignDetailsPage(campaignId?: string) {
     [users]
   );
   const agents = useMemo(() => users.filter((user) => user.organizationRole === "agent"), [users]);
+  const registerCampaignOptions = useMemo(
+    () => (campaign && campaign.status !== "completed" ? [{ id: campaign.id, name: campaign.name }] : []),
+    [campaign]
+  );
 
   const loadActivities = useCallback(
     async (token: string, nextPage: number, nextSearch: string, nextStatus: string) => {
@@ -205,6 +219,25 @@ export function useCampaignDetailsPage(campaignId?: string) {
 
     void loadCampaign();
   }, [campaignId, loadActivities, loadCampaignIntelligence]);
+
+  async function refreshAssignableUsersAndAssignments(token: string) {
+    if (!campaignId) return;
+    const [usersResponse, assignmentsResponse] = await Promise.all([
+      fetch("/api/admin/users", { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`/api/admin/campaigns/${campaignId}/assignments`, { headers: { Authorization: `Bearer ${token}` } }),
+    ]);
+
+    const usersResult = (await usersResponse.json()) as { success: boolean; users?: AdminUser[] };
+    const assignmentsResult = (await assignmentsResponse.json()) as { success: boolean; assignments?: CampaignAssignment[] };
+
+    if (usersResponse.ok && usersResult.success) {
+      setUsers(usersResult.users ?? []);
+    }
+    if (assignmentsResponse.ok && assignmentsResult.success) {
+      const nextAssignments = assignmentsResult.assignments ?? [];
+      setAssignments(nextAssignments);
+    }
+  }
 
   async function launchCampaign() {
     if (!campaign) return;
@@ -353,6 +386,56 @@ export function useCampaignDetailsPage(campaignId?: string) {
     setAssignDialogOpen(true);
   }
 
+  function openRegisterRepDialog() {
+    setRegisterRepForm(createDefaultRepFormValues());
+    setRegisterRepError(null);
+    setRegisterRepOpen(true);
+  }
+
+  async function submitRegisterRepFromAssignDialog() {
+    const validationError = validateRepForm(registerRepForm);
+    if (validationError) {
+      setRegisterRepError(validationError);
+      return;
+    }
+
+    setRegisterRepSubmitting(true);
+    setRegisterRepError(null);
+    try {
+      const { data } = await supabaseClient.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Session expired. Please sign in again.");
+
+      const response = await fetch("/api/admin/reps", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(buildCreateRepPayload(registerRepForm)),
+      });
+      const result = (await response.json()) as {
+        success: boolean;
+        message?: string;
+        rep?: { id: string; userId: string };
+      };
+      if (!response.ok || !result.success || !result.rep?.userId) {
+        throw new Error(result.message ?? "Failed to register rep.");
+      }
+
+      await refreshAssignableUsersAndAssignments(token);
+      setSelectedAgents((prev) => (prev.includes(result.rep!.userId) ? prev : [...prev, result.rep!.userId]));
+      setRegisterRepOpen(false);
+      toast.success("Rep registered. Invite sent.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to register rep.";
+      setRegisterRepError(message);
+      toast.error(message);
+    } finally {
+      setRegisterRepSubmitting(false);
+    }
+  }
+
   function toggleAgent(userId: string) {
     setSelectedAgents((previous) =>
       previous.includes(userId) ? previous.filter((id) => id !== userId) : [...previous, userId]
@@ -447,6 +530,11 @@ export function useCampaignDetailsPage(campaignId?: string) {
     agents,
     selectedAgents,
     savingAssignments,
+    registerRepOpen,
+    registerRepSubmitting,
+    registerRepError,
+    registerRepForm,
+    registerCampaignOptions,
     shareDialogOpen,
     shareExpiresAt,
     shareRecipientEmail,
@@ -470,6 +558,10 @@ export function useCampaignDetailsPage(campaignId?: string) {
     revokeShareLink,
     refreshShareLinks,
     openAssignDialog,
+    openRegisterRepDialog,
+    setRegisterRepOpen,
+    setRegisterRepForm,
+    submitRegisterRepFromAssignDialog,
     resetAssignDialogFromCurrent,
     toggleAgent,
     saveAssignments,

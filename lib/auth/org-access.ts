@@ -13,6 +13,7 @@ export async function getOrgMembershipForUser(userId: string) {
     .maybeSingle();
 
   if (error || !data) return null;
+  if (data.status !== "active") return null;
   return {
     id: data.id as string,
     organizationId: data.organization_id as string,
@@ -25,4 +26,3 @@ export function hasAllowedOrgRole(role: OrgRole | null, allowedRoles: OrgRole[])
   if (!role) return false;
   return allowedRoles.includes(role);
 }
-

@@ -17,6 +17,7 @@ export async function getPrimaryOrgMembership(userId: string) {
     .maybeSingle();
 
   if (error || !data) return null;
+  if (data.status !== "active") return null;
 
   return {
     organizationId: data.organization_id as string,
