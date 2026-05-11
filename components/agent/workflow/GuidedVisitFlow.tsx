@@ -92,7 +92,6 @@ export default function GuidedVisitFlow({
   const requirePosmQuantityWhenDeployed = Boolean(posmActivity?.settings?.requireQuantityWhenDeployed);
   const hasValidSales = sales.some((row) => row.productName.trim() && row.quantity > 0);
   const resolvedOutcomeCode = hasSalesStep && hasValidSales ? "products_sold" : "no_sale";
-  const isSoldOutcome = resolvedOutcomeCode === "products_sold";
   const gpsRequired = workflow.validationRules.requireGpsBeforeSubmit;
   const hasGps = typeof gps.latitude === "number" && typeof gps.longitude === "number";
 
@@ -413,7 +412,7 @@ export default function GuidedVisitFlow({
         </section>
       ) : null}
 
-      {hasSalesStep && isSoldOutcome ? (
+      {hasSalesStep ? (
         <section className="space-y-3 rounded-3xl border border-border/70 bg-card p-4">
           <h3 className="text-base font-medium">Sales Capture</h3>
           <div className="space-y-2">
