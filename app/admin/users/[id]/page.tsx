@@ -2,12 +2,22 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import ResendUserInviteButton from "@/components/admin/ResendUserInviteButton";
 import UserStatusBadge from "@/components/admin/UserStatusBadge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { authorizedFetch } from "@/lib/api/client";
@@ -29,6 +39,7 @@ type UserDetails = {
 
 export default function UserDetailsPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const userId = params.id;
 
   const query = useQuery({
@@ -39,6 +50,8 @@ export default function UserDetailsPage() {
     },
   });
   const [updatingStatus, setUpdatingStatus] = useState<"active" | "inactive" | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   async function quickStatusUpdate(status: "active" | "inactive") {
     setUpdatingStatus(status);
@@ -54,6 +67,22 @@ export default function UserDetailsPage() {
       toast.error((error as Error).message);
     } finally {
       setUpdatingStatus(null);
+    }
+  }
+
+  async function deleteUser() {
+    setDeleting(true);
+    try {
+      await authorizedFetch<{ success: boolean }>(`/api/admin/users/${userId}`, {
+        method: "DELETE",
+      });
+      toast.success("User deleted.");
+      router.push("/admin/users");
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setDeleting(false);
+      setDeleteOpen(false);
     }
   }
 
@@ -116,7 +145,7 @@ export default function UserDetailsPage() {
             >
               {updatingStatus === "inactive" ? "Deactivating..." : "Deactivate"}
             </Button>
-          ) : (
+          ) : user.status === "inactive" || user.status === "suspended" ? (
             <Button
               variant="outline"
               className="rounded-full"
@@ -125,11 +154,34 @@ export default function UserDetailsPage() {
             >
               {updatingStatus === "active" ? "Activating..." : "Activate"}
             </Button>
-          )}
+          ) : null}
           {(user.status === "invited" || user.status === "inactive") ? <ResendUserInviteButton userId={user.id} /> : null}
-        
+          <Button variant="destructive" className="rounded-full" onClick={() => setDeleteOpen(true)} disabled={deleting || updatingStatus !== null}>
+            Delete User
+          </Button>
         </div>
       </section>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete User?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the user from this organization and cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => void deleteUser()}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting..." : "Delete User"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -141,4 +193,3 @@ function Info({ label, value }: { label: string; value: string }) {
 function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleString() : "-";
 }
-

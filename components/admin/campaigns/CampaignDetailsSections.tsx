@@ -1,8 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Download, Pencil, Rocket, Share2, Users } from "lucide-react";
+import { useState } from "react";
+import { ArrowLeft, Download, Pencil, Rocket, Share2, Trash2, Users } from "lucide-react";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -72,8 +83,10 @@ type CampaignDetailsSectionsProps = {
   evidence: CampaignEvidenceItem[];
   exportingActivities: boolean;
   launching: boolean;
+  deletingCampaign: boolean;
   onExportActivities: () => void;
   onLaunchCampaign: () => void;
+  onDeleteCampaign: () => void;
   onOpenShareDialog: () => void;
   onOpenAssignDialog: () => void;
   activitySearch: string;
@@ -98,8 +111,10 @@ export function CampaignDetailsSections({
   evidence,
   exportingActivities,
   launching,
+  deletingCampaign,
   onExportActivities,
   onLaunchCampaign,
+  onDeleteCampaign,
   onOpenShareDialog,
   onOpenAssignDialog,
   activitySearch,
@@ -113,6 +128,7 @@ export function CampaignDetailsSections({
   onPreviousPage,
   onNextPage,
 }: CampaignDetailsSectionsProps) {
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const posmConfigured =
     Boolean(campaign.form_requirements?.requirePosmDeployment) ||
     (campaign.campaign_tasks ?? []).includes("posm_deployment");
@@ -166,6 +182,12 @@ export function CampaignDetailsSections({
             <span className="inline-flex items-center gap-2">
               <Share2 className="size-4" />
               Share Campaign
+            </span>
+          </Button>
+          <Button variant="destructive" className="rounded-full px-5" onClick={() => setDeleteOpen(true)} disabled={deletingCampaign}>
+            <span className="inline-flex items-center gap-2">
+              <Trash2 className="size-4" />
+              Delete Campaign
             </span>
           </Button>
         </div>
@@ -405,6 +427,27 @@ export function CampaignDetailsSections({
           <EvidenceGallery evidence={evidence} />
         </div>
       </section>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Campaign?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this campaign and related submissions, outlets, assignments, share links, and evidence references.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingCampaign}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => void onDeleteCampaign()}
+              disabled={deletingCampaign}
+            >
+              {deletingCampaign ? "Deleting..." : "Delete Campaign"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

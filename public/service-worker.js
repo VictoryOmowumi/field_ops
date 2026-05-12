@@ -1,4 +1,4 @@
-const VERSION = "v1.0.2";
+const VERSION = "v1.0.3";
 const APP_SHELL_CACHE = `app-shell-${VERSION}`;
 const API_CACHE = `api-get-${VERSION}`;
 
@@ -39,7 +39,12 @@ function isApiGetRequest(request) {
 
 function shouldBypassApiCache(request) {
   const url = new URL(request.url);
-  return url.pathname.startsWith("/api/auth/");
+  return (
+    url.pathname.startsWith("/api/auth/")
+    || url.pathname.startsWith("/api/agent/bootstrap")
+    || url.pathname.startsWith("/api/public/brand")
+    || url.pathname.startsWith("/api/brand/active")
+  );
 }
 
 function isStaticAssetRequest(request) {

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
 import { supabaseClient } from "@/lib/supabase/client";
 import {
@@ -74,6 +75,7 @@ type CampaignActivity = {
 };
 
 export function useCampaignDetailsPage(campaignId?: string) {
+  const router = useRouter();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -104,6 +106,7 @@ export function useCampaignDetailsPage(campaignId?: string) {
   const [generatedShareUrl, setGeneratedShareUrl] = useState<string | null>(null);
   const [creatingShareLink, setCreatingShareLink] = useState(false);
   const [sendingShareLink, setSendingShareLink] = useState(false);
+  const [deletingCampaign, setDeletingCampaign] = useState(false);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [selectedSupervisors, setSelectedSupervisors] = useState<string[]>([]);
 
@@ -263,6 +266,33 @@ export function useCampaignDetailsPage(campaignId?: string) {
     }
     setCampaign(result.campaign);
     toast.success("Campaign is now live.");
+  }
+
+  async function deleteCampaign() {
+    if (!campaignId) return;
+    setDeletingCampaign(true);
+    const { data } = await supabaseClient.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) {
+      setDeletingCampaign(false);
+      toast.error("Session expired. Please sign in again.");
+      return;
+    }
+    try {
+      const response = await fetch(`/api/admin/campaigns/${campaignId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const result = (await response.json()) as { success: boolean; message?: string };
+      if (!response.ok || !result.success) {
+        toast.error(result.message ?? "Failed to delete campaign.");
+        return;
+      }
+      toast.success("Campaign deleted.");
+      router.push("/admin/campaigns");
+    } finally {
+      setDeletingCampaign(false);
+    }
   }
 
   async function downloadCampaignActivitiesExport() {
@@ -574,6 +604,7 @@ export function useCampaignDetailsPage(campaignId?: string) {
     shareRecipientEmail,
     creatingShareLink,
     sendingShareLink,
+    deletingCampaign,
     generatedShareUrl,
     shareLinks,
     setActivityPage,
@@ -586,6 +617,7 @@ export function useCampaignDetailsPage(campaignId?: string) {
     setShareRecipientEmail,
     loadActivities,
     launchCampaign,
+    deleteCampaign,
     downloadCampaignActivitiesExport,
     createShareLink,
     copyShareUrl,

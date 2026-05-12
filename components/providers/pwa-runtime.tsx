@@ -14,10 +14,18 @@ export function PwaRuntimeProvider() {
     if (window.location.pathname.startsWith("/shared/")) return;
 
     let mounted = true;
+    let refreshing = false;
 
     async function register() {
       try {
         const registration = await navigator.serviceWorker.register("/service-worker.js");
+        await registration.update();
+
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          if (refreshing) return;
+          refreshing = true;
+          window.location.reload();
+        });
 
         if (registration.waiting) {
           waitingWorkerRef.current = registration.waiting;

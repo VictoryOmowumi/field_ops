@@ -8,7 +8,7 @@ export default function BackofficeBrand({ homeHref }: { homeHref: string }) {
     <Link href={homeHref} className="flex shrink-0 items-center gap-2">
       {logoUrl ? (
         <span className="inline-flex items-center rounded-full bg-white ">
-          <img src={logoUrl} alt={`${brandName} logo`} className="h-10 w-auto max-w-40 object-contain" />
+          <img src={logoUrl} alt={`${brandName} logo`} className="h-12 w-auto max-w-40 object-cover" />
         </span>
       ) : 
       <span className="text-xl font-semibold tracking-tight text-foreground">{brandName}</span>

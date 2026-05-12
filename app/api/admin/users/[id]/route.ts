@@ -163,3 +163,69 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   return NextResponse.json({ success: true });
 }
+
+export async function DELETE(request: NextRequest, context: RouteContext) {
+  const user = await getAuthenticatedUserFromRequest(request);
+  if (!user) return unauthorized();
+  if (!hasRequiredRole(user, ["admin", "super_admin"])) return forbidden();
+
+  const membership = await getOrgMembershipForUser(user.id);
+  if (!membership || !hasAllowedOrgRole(membership.role, ["org_admin"])) return forbidden();
+
+  const { id } = await context.params;
+  if (id === user.id) {
+    return NextResponse.json({ success: false, message: "You cannot delete your own account." }, { status: 400 });
+  }
+
+  const supabase = createServerSupabaseClient();
+  const { data: targetMembership, error: targetError } = await supabase
+    .from("organization_users")
+    .select("id, user_id, role, status")
+    .eq("organization_id", membership.organizationId)
+    .eq("user_id", id)
+    .maybeSingle();
+  if (targetError || !targetMembership) {
+    return NextResponse.json({ success: false, message: targetError?.message ?? "User not found." }, { status: 404 });
+  }
+
+  if (targetMembership.role === "org_admin" && targetMembership.status === "active") {
+    const { count } = await supabase
+      .from("organization_users")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", membership.organizationId)
+      .eq("role", "org_admin")
+      .eq("status", "active");
+    if ((count ?? 0) <= 1) {
+      return NextResponse.json({ success: false, message: "You cannot delete the last active organization admin." }, { status: 400 });
+    }
+  }
+
+  const { error: assignmentsError } = await supabase
+    .from("campaign_assignments")
+    .delete()
+    .eq("organization_id", membership.organizationId)
+    .eq("user_id", id);
+  if (assignmentsError) {
+    return NextResponse.json({ success: false, message: assignmentsError.message }, { status: 500 });
+  }
+
+  const { error: repError } = await supabase
+    .from("rep_profiles")
+    .delete()
+    .eq("organization_id", membership.organizationId)
+    .eq("user_id", id);
+  if (repError) {
+    return NextResponse.json({ success: false, message: repError.message }, { status: 500 });
+  }
+
+  const { error: membershipDeleteError } = await supabase
+    .from("organization_users")
+    .delete()
+    .eq("organization_id", membership.organizationId)
+    .eq("user_id", id);
+  if (membershipDeleteError) {
+    return NextResponse.json({ success: false, message: membershipDeleteError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true });
+}

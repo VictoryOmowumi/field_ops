@@ -35,9 +35,8 @@ export default function ResendUserInviteButton({ userId }: { userId: string }) {
   }
 
   return (
-    <Button variant="outline" size="sm" className="rounded-full" disabled={loading} onClick={onResend}>
+    <Button variant="outline" className="rounded-full" disabled={loading} onClick={onResend}>
       {loading ? "Resending..." : "Resend Invite"}
     </Button>
   );
 }
-

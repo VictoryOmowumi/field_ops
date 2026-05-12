@@ -50,8 +50,10 @@ export default function CampaignDetailsPage() {
         evidence={vm.evidence}
         exportingActivities={vm.exportingActivities}
         launching={vm.launching}
+        deletingCampaign={vm.deletingCampaign}
         onExportActivities={() => void vm.downloadCampaignActivitiesExport()}
         onLaunchCampaign={() => void vm.launchCampaign()}
+        onDeleteCampaign={() => void vm.deleteCampaign()}
         onOpenShareDialog={() => vm.setShareDialogOpen(true)}
         onOpenAssignDialog={vm.openAssignDialog}
         activitySearch={vm.activitySearch}

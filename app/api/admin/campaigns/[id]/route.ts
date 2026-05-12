@@ -235,6 +235,125 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   });
 }
 
+export async function DELETE(request: NextRequest, context: RouteContext) {
+  const user = await getAuthenticatedUserFromRequest(request);
+  if (!user) return unauthorized();
+  if (!hasRequiredRole(user, ["admin", "super_admin"])) return forbidden();
+
+  const membership = await getOrgMembershipForUser(user.id);
+  if (!membership || !hasAllowedOrgRole(membership.role, ["org_admin"])) return forbidden();
+
+  const { id } = await context.params;
+  const supabase = createServerSupabaseClient();
+
+  const { data: campaign, error: campaignError } = await supabase
+    .from("campaigns")
+    .select("id, organization_id")
+    .eq("id", id)
+    .eq("organization_id", membership.organizationId)
+    .maybeSingle();
+  if (campaignError || !campaign) {
+    return NextResponse.json({ success: false, message: campaignError?.message ?? "Campaign not found." }, { status: 404 });
+  }
+
+  const { data: visits, error: visitsError } = await supabase
+    .from("visits")
+    .select("id")
+    .eq("organization_id", membership.organizationId)
+    .eq("campaign_id", id);
+  if (visitsError) return NextResponse.json({ success: false, message: visitsError.message }, { status: 500 });
+
+  const visitIds = [...new Set((visits ?? []).map((row) => row.id).filter(Boolean))];
+  if (visitIds.length > 0) {
+    const { data: evidenceRows, error: evidenceError } = await supabase
+      .from("visit_evidence")
+      .select("file_url")
+      .eq("organization_id", membership.organizationId)
+      .in("visit_id", visitIds);
+    if (evidenceError) return NextResponse.json({ success: false, message: evidenceError.message }, { status: 500 });
+
+    const evidencePaths = [...new Set((evidenceRows ?? []).map((row) => row.file_url).filter(Boolean))];
+    if (evidencePaths.length > 0) {
+      const { error: storageError } = await supabase.storage.from("evidence").remove(evidencePaths);
+      if (storageError) {
+        console.warn(`Campaign delete storage cleanup warning: ${storageError.message}`);
+      }
+    }
+
+    const { error: deleteEvidenceError } = await supabase
+      .from("visit_evidence")
+      .delete()
+      .eq("organization_id", membership.organizationId)
+      .in("visit_id", visitIds);
+    if (deleteEvidenceError) return NextResponse.json({ success: false, message: deleteEvidenceError.message }, { status: 500 });
+
+    const { error: deleteVisitSalesError } = await supabase
+      .from("sales")
+      .delete()
+      .eq("organization_id", membership.organizationId)
+      .in("visit_id", visitIds);
+    if (deleteVisitSalesError) return NextResponse.json({ success: false, message: deleteVisitSalesError.message }, { status: 500 });
+  }
+
+  const { error: deleteCampaignSalesError } = await supabase
+    .from("sales")
+    .delete()
+    .eq("organization_id", membership.organizationId)
+    .eq("campaign_id", id);
+  if (deleteCampaignSalesError) return NextResponse.json({ success: false, message: deleteCampaignSalesError.message }, { status: 500 });
+
+  const { error: deleteVisitsError } = await supabase
+    .from("visits")
+    .delete()
+    .eq("organization_id", membership.organizationId)
+    .eq("campaign_id", id);
+  if (deleteVisitsError) return NextResponse.json({ success: false, message: deleteVisitsError.message }, { status: 500 });
+
+  const { error: deleteOutletsError } = await supabase
+    .from("outlets")
+    .delete()
+    .eq("organization_id", membership.organizationId)
+    .eq("campaign_id", id);
+  if (deleteOutletsError) return NextResponse.json({ success: false, message: deleteOutletsError.message }, { status: 500 });
+
+  const { data: shareLinks } = await supabase
+    .from("campaign_share_links")
+    .select("id")
+    .eq("organization_id", membership.organizationId)
+    .eq("campaign_id", id);
+  const shareLinkIds = [...new Set((shareLinks ?? []).map((row) => row.id).filter(Boolean))];
+  if (shareLinkIds.length > 0) {
+    const { error: deleteShareViewsError } = await supabase
+      .from("campaign_share_views")
+      .delete()
+      .in("share_link_id", shareLinkIds);
+    if (deleteShareViewsError) return NextResponse.json({ success: false, message: deleteShareViewsError.message }, { status: 500 });
+  }
+
+  const { error: deleteShareLinksError } = await supabase
+    .from("campaign_share_links")
+    .delete()
+    .eq("organization_id", membership.organizationId)
+    .eq("campaign_id", id);
+  if (deleteShareLinksError) return NextResponse.json({ success: false, message: deleteShareLinksError.message }, { status: 500 });
+
+  const { error: deleteAssignmentsError } = await supabase
+    .from("campaign_assignments")
+    .delete()
+    .eq("organization_id", membership.organizationId)
+    .eq("campaign_id", id);
+  if (deleteAssignmentsError) return NextResponse.json({ success: false, message: deleteAssignmentsError.message }, { status: 500 });
+
+  const { error: deleteCampaignError } = await supabase
+    .from("campaigns")
+    .delete()
+    .eq("organization_id", membership.organizationId)
+    .eq("id", id);
+  if (deleteCampaignError) return NextResponse.json({ success: false, message: deleteCampaignError.message }, { status: 500 });
+
+  return NextResponse.json({ success: true });
+}
+
 function withPosmActivity(
   workflow: ReturnType<typeof campaignWorkflowConfigV1Schema.parse>,
   options: { enabled: boolean; requireQuantity: boolean }

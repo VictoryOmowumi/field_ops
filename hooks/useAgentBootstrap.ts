@@ -31,7 +31,7 @@ export type AgentBootstrap = {
 export function useAgentBootstrap() {
   return useQuery({
     queryKey: ["agent-bootstrap"],
-    staleTime: 10 * 60 * 1000,
+    staleTime: 60 * 1000,
     queryFn: async () => {
       const res = await authorizedFetch<{
         success: boolean;
@@ -47,4 +47,3 @@ export function useAgentBootstrap() {
     },
   });
 }
-
