@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
         role: "admin",
         org_role: "org_admin",
       },
-      redirectTo: `${baseUrl}/accept-invite`,
+      redirectTo: `${baseUrl}/accept-invite?org=${encodeURIComponent(normalizedSlug)}`,
     });
 
   if (inviteError || !invitedAuthUser.user) {

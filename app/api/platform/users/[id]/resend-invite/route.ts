@@ -17,6 +17,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const { id } = await params;
   const supabase = createServerSupabaseClient();
+  const { data: membership } = await supabase
+    .from("organization_users")
+    .select("organization_id, organizations(slug)")
+    .eq("user_id", id)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
@@ -27,12 +34,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!profile?.email) return NextResponse.json({ success: false, message: "User email not found." }, { status: 400 });
 
   const baseUrl = resolveBaseUrl(request);
+  const orgSlug = (membership as { organizations?: { slug?: string | null } } | null)?.organizations?.slug?.trim();
+  const redirectTo = `${baseUrl}/accept-invite${orgSlug ? `?org=${encodeURIComponent(orgSlug)}` : ""}`;
   const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(profile.email, {
     data: {
       full_name: profile.full_name ?? "User",
       phone: profile.phone ?? null,
     },
-    redirectTo: `${baseUrl}/accept-invite`,
+    redirectTo,
   });
   if (inviteError) return NextResponse.json({ success: false, message: inviteError.message }, { status: 500 });
 
@@ -51,4 +60,3 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   return NextResponse.json({ success: true, message: "Invite resent successfully." });
 }
-

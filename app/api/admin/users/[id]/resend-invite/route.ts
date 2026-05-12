@@ -49,7 +49,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ success: false, message: "User does not have an email address." }, { status: 400 });
   }
 
-  const redirectTo = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/accept-invite`;
+  const { data: organization } = await supabase
+    .from("organizations")
+    .select("slug")
+    .eq("id", membership.organizationId)
+    .maybeSingle();
+  const orgSlug = organization?.slug?.trim();
+  const redirectTo = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/accept-invite${orgSlug ? `?org=${encodeURIComponent(orgSlug)}` : ""}`;
   const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, { redirectTo });
 
   if (inviteError) {

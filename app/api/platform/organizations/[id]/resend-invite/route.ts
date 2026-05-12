@@ -30,6 +30,13 @@ export async function POST(
   const { id } = await params;
   const supabase = createServerSupabaseClient();
   const baseUrl = resolveBaseUrl(request);
+  const { data: organization } = await supabase
+    .from("organizations")
+    .select("slug")
+    .eq("id", id)
+    .maybeSingle();
+  const orgSlug = organization?.slug?.trim();
+  const redirectTo = `${baseUrl}/accept-invite${orgSlug ? `?org=${encodeURIComponent(orgSlug)}` : ""}`;
 
   const { data: membership, error: membershipError } = await supabase
     .from("organization_users")
@@ -70,7 +77,7 @@ export async function POST(
       phone: profile?.phone ?? null,
       role: "admin",
     },
-    redirectTo: `${baseUrl}/accept-invite`,
+    redirectTo,
   });
 
   if (!inviteError) {
@@ -89,7 +96,7 @@ export async function POST(
     type: "invite",
     email,
     options: {
-      redirectTo: `${baseUrl}/accept-invite`,
+      redirectTo,
     },
   });
 

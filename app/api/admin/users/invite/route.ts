@@ -39,10 +39,17 @@ export async function POST(request: NextRequest) {
 
   const supabase = createServerSupabaseClient();
   const email = payload.email.trim().toLowerCase();
+  const { data: organization } = await supabase
+    .from("organizations")
+    .select("slug")
+    .eq("id", membership.organizationId)
+    .maybeSingle();
+  const orgSlug = organization?.slug?.trim();
+  const redirectTo = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/accept-invite${orgSlug ? `?org=${encodeURIComponent(orgSlug)}` : ""}`;
 
   const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
     data: { role: payload.role === "agent" ? "agent" : "admin", org_role: payload.role },
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/accept-invite`,
+    redirectTo,
   });
 
   if (inviteError || !inviteData.user) {
