@@ -26,6 +26,7 @@ type SessionUserSummary = {
   fullName: string;
   roleLabel: string;
   email: string;
+  organizationName: string;
 };
 
 function formatRoleLabel(role: string | null) {
@@ -49,6 +50,7 @@ export default function BackofficeSessionActions({ role }: { role: BackofficeRol
     fullName: "Backoffice User",
     roleLabel: formatRoleLabel(role),
     email: "",
+    organizationName: "",
   });
   const profileHref = useMemo(() => resolveProfileHref(role), [role]);
 
@@ -74,19 +76,34 @@ export default function BackofficeSessionActions({ role }: { role: BackofficeRol
         if (response.ok) {
           const result = (await response.json()) as {
             success: boolean;
-            user?: { memberships?: Array<{ role?: string; status?: string }> };
+            user?: {
+              memberships?: Array<{
+                role?: string;
+                status?: string;
+                organizations?: { name?: string | null };
+              }>;
+            };
           };
           const activeMembership = (result.user?.memberships ?? []).find((m) => m.status === "active")
             ?? (result.user?.memberships ?? [])[0];
           if (activeMembership?.role) {
             roleLabel = formatRoleLabel(activeMembership.role);
           }
+          const organizationName = activeMembership?.organizations?.name ?? "";
+          setUser({
+            fullName,
+            roleLabel,
+            email: sessionUser.email ?? "",
+            organizationName,
+          });
+          return;
         }
       }
       setUser({
         fullName,
         roleLabel,
         email: sessionUser.email ?? "",
+        organizationName: "",
       });
     }
 
@@ -140,7 +157,8 @@ export default function BackofficeSessionActions({ role }: { role: BackofficeRol
         <DropdownMenuContent align="end" className="w-64">
           <DropdownMenuLabel className="space-y-0.5">
             <p className="text-sm font-medium text-foreground">{user.fullName}</p>
-            <p className="text-xs text-muted-foreground">{user.roleLabel}</p>
+            <p className="text-xs text-muted-foreground">{user.roleLabel} —  {user.organizationName ? <p className="text-xs text-muted-foreground">{user.organizationName}</p> : null}</p>
+           
             {user.email ? <p className="text-xs text-muted-foreground">{user.email}</p> : null}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />

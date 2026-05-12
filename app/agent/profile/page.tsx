@@ -16,9 +16,11 @@ import LogoutButton from "@/components/auth/LogoutButton";
 import InstallAppButton from "@/components/pwa/InstallAppButton";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAgentBootstrap } from "@/hooks/useAgentBootstrap";
+import { useBrand } from "@/components/providers/brand-provider";
 
 export default function ProfilePage() {
   const query = useAgentBootstrap();
+  const { brandName } = useBrand();
 
   useEffect(() => {
     if (query.error) {
@@ -60,7 +62,7 @@ export default function ProfilePage() {
 
             <div className="mt-3 flex flex-wrap gap-2">
               <ProfileBadge icon={ShieldUserIcon} label={role} />
-              <ProfileBadge icon={Briefcase01Icon} label="ActivationIQ" />
+              <ProfileBadge icon={Briefcase01Icon} label={brandName} />
             </div>
           </div>
         </div>

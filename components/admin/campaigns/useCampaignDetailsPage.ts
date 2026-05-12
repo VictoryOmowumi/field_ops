@@ -36,7 +36,7 @@ type Campaign = {
   form_requirements: Record<string, boolean>;
   runtime_form_config?: Record<string, unknown>;
   campaign_tasks?: string[];
-  assigned_supervisor_user_id: string | null;
+  supervisor_user_ids?: string[];
   created_at: string;
 };
 
@@ -105,7 +105,7 @@ export function useCampaignDetailsPage(campaignId?: string) {
   const [creatingShareLink, setCreatingShareLink] = useState(false);
   const [sendingShareLink, setSendingShareLink] = useState(false);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
-  const [supervisorUserId, setSupervisorUserId] = useState<string>("none");
+  const [selectedSupervisors, setSelectedSupervisors] = useState<string[]>([]);
 
   const supervisors = useMemo(
     () => users.filter((user) => user.organizationRole === "supervisor" || user.organizationRole === "org_admin"),
@@ -212,8 +212,8 @@ export function useCampaignDetailsPage(campaignId?: string) {
         const nextAssignments = assignmentsResult.assignments ?? [];
         setAssignments(nextAssignments);
         setSelectedAgents(nextAssignments.filter((row) => row.role === "agent").map((row) => row.user_id));
+        setSelectedSupervisors(nextAssignments.filter((row) => row.role === "supervisor").map((row) => row.user_id));
       }
-      setSupervisorUserId(campaignResult.campaign.assigned_supervisor_user_id ?? "none");
       await Promise.all([loadActivities(token, 1, "", "all"), loadCampaignIntelligence(token)]);
     }
 
@@ -378,7 +378,7 @@ export function useCampaignDetailsPage(campaignId?: string) {
 
   function resetAssignDialogFromCurrent() {
     setSelectedAgents(assignments.filter((row) => row.role === "agent").map((row) => row.user_id));
-    setSupervisorUserId(campaign?.assigned_supervisor_user_id ?? "none");
+    setSelectedSupervisors(assignments.filter((row) => row.role === "supervisor").map((row) => row.user_id));
   }
 
   function openAssignDialog() {
@@ -442,6 +442,12 @@ export function useCampaignDetailsPage(campaignId?: string) {
     );
   }
 
+  function toggleSupervisor(userId: string) {
+    setSelectedSupervisors((previous) =>
+      previous.includes(userId) ? previous.filter((id) => id !== userId) : [...previous, userId]
+    );
+  }
+
   async function saveAssignments() {
     if (!campaignId) return;
     setSavingAssignments(true);
@@ -457,7 +463,7 @@ export function useCampaignDetailsPage(campaignId?: string) {
       method: "PUT",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({
-        supervisorUserId: supervisorUserId === "none" ? null : supervisorUserId,
+        supervisorUserIds: selectedSupervisors,
         agentUserIds: selectedAgents,
       }),
     });
@@ -468,28 +474,38 @@ export function useCampaignDetailsPage(campaignId?: string) {
       return;
     }
 
-    setAssignments(
-      selectedAgents.map((userId, index) => ({
+    const nextAssignments: CampaignAssignment[] = [
+      ...selectedAgents.map((userId, index) => ({
         id: `local-${userId}-${index}`,
         user_id: userId,
-        role: "agent",
+        role: "agent" as const,
         status: "active",
-      }))
-    );
-    setCampaign((previous) =>
-      previous
-        ? { ...previous, assigned_supervisor_user_id: supervisorUserId === "none" ? null : supervisorUserId }
-        : previous
-    );
+      })),
+      ...selectedSupervisors.map((userId, index) => ({
+        id: `local-supervisor-${userId}-${index}`,
+        user_id: userId,
+        role: "supervisor" as const,
+        status: "active",
+      })),
+    ];
+    setAssignments(nextAssignments);
+    setCampaign((previous) => (previous ? { ...previous, supervisor_user_ids: selectedSupervisors } : previous));
     setAssignDialogOpen(false);
     toast.success("Assignments updated.");
   }
 
-  const supervisorName = useMemo(() => {
-    if (!campaign?.assigned_supervisor_user_id) return "-";
-    const found = users.find((user) => user.id === campaign.assigned_supervisor_user_id);
-    return found?.displayName ?? found?.name ?? campaign.assigned_supervisor_user_id;
-  }, [campaign, users]);
+  const supervisorNames = useMemo(() => {
+    const supervisorIds = assignments
+      .filter((row) => row.role === "supervisor")
+      .map((row) => row.user_id);
+    if (supervisorIds.length === 0) return "-";
+    return supervisorIds
+      .map((id) => {
+        const found = users.find((user) => user.id === id);
+        return found?.displayName ?? found?.name ?? id;
+      })
+      .join(", ");
+  }, [assignments, users]);
 
   const assignedRepRows = useMemo(
     () =>
@@ -509,6 +525,23 @@ export function useCampaignDetailsPage(campaignId?: string) {
     [assignments, users]
   );
 
+  const supervisorRows = useMemo(
+    () =>
+      assignments
+        .filter((row) => row.role === "supervisor")
+        .map((row, index) => {
+          const user = users.find((candidate) => candidate.id === row.user_id);
+          return {
+            id: row.id || `supervisor-${row.user_id}-${index}`,
+            userId: row.user_id,
+            name: user?.displayName ?? user?.name ?? row.user_id,
+            email: user?.email ?? "-",
+            status: user?.status ?? row.status,
+          };
+        }),
+    [assignments, users]
+  );
+
   return {
     campaign,
     loading,
@@ -516,7 +549,8 @@ export function useCampaignDetailsPage(campaignId?: string) {
     exportingActivities,
     summary,
     mapPoints,
-    supervisorName,
+    supervisorNames,
+    supervisorRows,
     assignedRepRows,
     evidence,
     activities,
@@ -525,7 +559,7 @@ export function useCampaignDetailsPage(campaignId?: string) {
     activitySearch,
     activityStatusFilter,
     assignDialogOpen,
-    supervisorUserId,
+    selectedSupervisors,
     supervisors,
     agents,
     selectedAgents,
@@ -546,7 +580,7 @@ export function useCampaignDetailsPage(campaignId?: string) {
     setActivitySearch,
     setActivityStatusFilter,
     setAssignDialogOpen,
-    setSupervisorUserId,
+    toggleSupervisor,
     setShareDialogOpen,
     setShareExpiresAt,
     setShareRecipientEmail,

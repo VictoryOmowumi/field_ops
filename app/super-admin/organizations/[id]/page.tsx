@@ -151,10 +151,10 @@ export default function OrganizationDetailsPage() {
       <div className="grid gap-5 lg:grid-cols-12">
         <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60 lg:col-span-6">
           <h2 className="font-semibold">Branding</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div className="mt-4 grid gap-3 sm:grid-cols-1">
             <Info label="Primary Color" value={org.brand_primary_color ?? "-"} />
             <Info label="Secondary Color" value={org.brand_secondary_color ?? "-"} />
-            <Info label="Logo" value={org.logo_url ?? "Not uploaded"} />
+            <Info label="Logo" value={org.logo_url ?? "Not uploaded"}  />
             <Info label="Report Header" value="Default" />
           </div>
         </section>

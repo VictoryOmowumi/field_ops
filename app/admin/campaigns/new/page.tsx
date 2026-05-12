@@ -46,7 +46,7 @@ export default function NewCampaignPage() {
   const [campaignType, setCampaignType] = useState("");
   const [status, setStatus] = useState<"draft" | "active" | "completed">("draft");
   const [stateName, setStateName] = useState("");
-  const [assignedSupervisorUserId, setAssignedSupervisorUserId] = useState<string>("");
+  const [selectedSupervisorIds, setSelectedSupervisorIds] = useState<string[]>([]);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [targetOutlets, setTargetOutlets] = useState("");
@@ -118,7 +118,7 @@ export default function NewCampaignPage() {
         campaignType,
         status,
         stateName,
-        assignedSupervisorUserId,
+        selectedSupervisorIds,
         startDate,
         endDate,
         targetOutlets,
@@ -203,7 +203,7 @@ export default function NewCampaignPage() {
         expectedReps: expectedReps ? Number(expectedReps) : undefined,
         outletTypes,
         products: hasProductDrivenTask ? parsedProducts : [],
-        assignedSupervisorUserId: assignedSupervisorUserId || null,
+        assignedSupervisorUserIds: selectedSupervisorIds,
         formRequirements,
         campaignTasks,
         campaignWorkflowTemplate: workflowTemplate,
@@ -305,14 +305,31 @@ export default function NewCampaignPage() {
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Assigned supervisor">
-              <Select value={assignedSupervisorUserId || "none"} onValueChange={(value) => setAssignedSupervisorUserId(value === "none" ? "" : value)}>
-                <SelectTrigger><SelectValue placeholder="Select supervisor" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {supervisors.map((supervisor) => <SelectItem key={supervisor.id} value={supervisor.id}>{supervisor.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+            <Field label="Assigned supervisors">
+              <div className="rounded-2xl border border-border/70 p-3">
+                {supervisors.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No supervisors found.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {supervisors.map((supervisor) => (
+                      <label key={supervisor.id} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={selectedSupervisorIds.includes(supervisor.id)}
+                          onChange={() =>
+                            setSelectedSupervisorIds((prev) =>
+                              prev.includes(supervisor.id)
+                                ? prev.filter((id) => id !== supervisor.id)
+                                : [...prev, supervisor.id]
+                            )
+                          }
+                        />
+                        <span>{supervisor.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
             </Field>
           </div>
         </section>

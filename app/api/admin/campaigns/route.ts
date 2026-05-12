@@ -26,7 +26,7 @@ type CreateCampaignPayload = {
     | "availability_survey"
     | "price_survey"
   >;
-  assignedSupervisorUserId?: string | null;
+  assignedSupervisorUserIds?: string[];
   description?: string;
   startDate?: string;
   endDate?: string;
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await supabase
     .from("campaigns")
-    .select("id, organization_id, name, campaign_type, description, start_date, end_date, status, state, lga, target_outlets, target_conversions, expected_reps, outlet_types, products, form_requirements, runtime_form_config, campaign_tasks, campaign_workflow_template, campaign_workflow, assigned_supervisor_user_id, launched_at, created_at")
+    .select("id, organization_id, name, campaign_type, description, start_date, end_date, status, state, lga, target_outlets, target_conversions, expected_reps, outlet_types, products, form_requirements, runtime_form_config, campaign_tasks, campaign_workflow_template, campaign_workflow, launched_at, created_at")
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false });
 
@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
       .in("campaign_id", campaignIds),
     supabase
       .from("campaign_assignments")
-      .select("campaign_id, role, status")
+      .select("campaign_id, user_id, role, status")
       .eq("organization_id", organizationId)
       .in("campaign_id", campaignIds),
   ]);
@@ -123,12 +123,19 @@ export async function GET(request: NextRequest) {
   }
 
   const assignedAgentsByCampaign = new Map<string, number>();
+  const supervisorIdsByCampaign = new Map<string, string[]>();
   for (const assignment of assignmentsRes.data ?? []) {
-    if (assignment.role !== "agent") continue;
     if (assignment.status && assignment.status !== "active") continue;
     const key = assignment.campaign_id ?? "";
     if (!key) continue;
-    assignedAgentsByCampaign.set(key, (assignedAgentsByCampaign.get(key) ?? 0) + 1);
+    if (assignment.role === "agent") {
+      assignedAgentsByCampaign.set(key, (assignedAgentsByCampaign.get(key) ?? 0) + 1);
+      continue;
+    }
+    if (assignment.role === "supervisor") {
+      const existing = supervisorIdsByCampaign.get(key) ?? [];
+      supervisorIdsByCampaign.set(key, [...existing, assignment.user_id]);
+    }
   }
 
   const enrichedCampaigns = campaigns.map((campaign) => {
@@ -145,6 +152,8 @@ export async function GET(request: NextRequest) {
     return {
       ...campaign,
       assigned_reps_count: assignedAgentsByCampaign.get(campaign.id) ?? 0,
+      supervisor_user_ids: supervisorIdsByCampaign.get(campaign.id) ?? [],
+      supervisor_count: (supervisorIdsByCampaign.get(campaign.id) ?? []).length,
       visits_count: visitMetrics.visits,
       conversions_count: visitMetrics.conversions,
       conversion_rate: conversionRate,
@@ -176,6 +185,24 @@ export async function POST(request: NextRequest) {
     : buildWorkflowConfigFromTemplate(workflowTemplate.data);
 
   const supabase = createServerSupabaseClient();
+  const supervisorUserIds = [...new Set(payload.assignedSupervisorUserIds ?? [])];
+  if (supervisorUserIds.length > 0) {
+    const { data: validSupervisors, error: supervisorValidationError } = await supabase
+      .from("organization_users")
+      .select("user_id, role")
+      .eq("organization_id", membership.organizationId)
+      .in("user_id", supervisorUserIds)
+      .in("role", ["supervisor", "org_admin"]);
+
+    if (supervisorValidationError) {
+      return NextResponse.json({ success: false, message: supervisorValidationError.message }, { status: 500 });
+    }
+    const validIds = new Set((validSupervisors ?? []).map((row) => row.user_id));
+    const invalidIds = supervisorUserIds.filter((userId) => !validIds.has(userId));
+    if (invalidIds.length > 0) {
+      return NextResponse.json({ success: false, message: "One or more supervisors are invalid for this organization." }, { status: 400 });
+    }
+  }
   const { data, error } = await supabase
     .from("campaigns")
     .insert({
@@ -197,11 +224,10 @@ export async function POST(request: NextRequest) {
       campaign_tasks: payload.campaignTasks ?? ["register_outlet", "sell_to_outlet"],
       campaign_workflow_template: workflowTemplate.data,
       campaign_workflow: workflow,
-      assigned_supervisor_user_id: payload.assignedSupervisorUserId ?? null,
       status: payload.status || "draft",
       launched_at: payload.status === "active" ? new Date().toISOString() : null,
     })
-    .select("id, organization_id, name, campaign_type, description, start_date, end_date, status, state, lga, target_outlets, target_conversions, expected_reps, outlet_types, products, form_requirements, runtime_form_config, campaign_tasks, campaign_workflow_template, campaign_workflow, assigned_supervisor_user_id, launched_at, created_at")
+    .select("id, organization_id, name, campaign_type, description, start_date, end_date, status, state, lga, target_outlets, target_conversions, expected_reps, outlet_types, products, form_requirements, runtime_form_config, campaign_tasks, campaign_workflow_template, campaign_workflow, launched_at, created_at")
     .single();
 
   if (error || !data) {
@@ -211,5 +237,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ success: true, campaign: data }, { status: 201 });
+  if (supervisorUserIds.length > 0) {
+    const supervisorRows = supervisorUserIds.map((userId) => ({
+      organization_id: membership.organizationId,
+      campaign_id: data.id,
+      user_id: userId,
+      role: "supervisor",
+      status: "active",
+    }));
+    const { error: insertSupervisorError } = await supabase.from("campaign_assignments").insert(supervisorRows);
+    if (insertSupervisorError) {
+      return NextResponse.json({ success: false, message: insertSupervisorError.message }, { status: 500 });
+    }
+  }
+
+  return NextResponse.json({ success: true, campaign: { ...data, supervisor_user_ids: supervisorUserIds } }, { status: 201 });
 }

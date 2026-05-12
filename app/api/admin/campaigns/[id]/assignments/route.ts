@@ -17,7 +17,7 @@ type RouteContext = {
 };
 
 type UpdateAssignmentsPayload = {
-  supervisorUserId?: string | null;
+  supervisorUserIds?: string[];
   agentUserIds?: string[];
 };
 
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   const { data: campaign, error: campaignError } = await supabase
     .from("campaigns")
-    .select("id, name, assigned_supervisor_user_id")
+    .select("id, name")
     .eq("id", id)
     .eq("organization_id", membership.organizationId)
     .maybeSingle();
@@ -72,6 +72,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
   const payload = (await request.json()) as UpdateAssignmentsPayload;
   const agentUserIds = [...new Set(payload.agentUserIds ?? [])];
+  const supervisorUserIds = [...new Set(payload.supervisorUserIds ?? [])];
 
   const supabase = createServerSupabaseClient();
 
@@ -86,15 +87,15 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ success: false, message: campaignError?.message ?? "Campaign not found." }, { status: 404 });
   }
 
-  const { error: clearError } = await supabase
+  const { error: clearAgentsError } = await supabase
     .from("campaign_assignments")
     .delete()
     .eq("campaign_id", id)
     .eq("organization_id", membership.organizationId)
     .eq("role", "agent");
 
-  if (clearError) {
-    return NextResponse.json({ success: false, message: clearError.message }, { status: 500 });
+  if (clearAgentsError) {
+    return NextResponse.json({ success: false, message: clearAgentsError.message }, { status: 500 });
   }
 
   if (agentUserIds.length > 0) {
@@ -112,14 +113,49 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     }
   }
 
-  const { error: updateCampaignError } = await supabase
-    .from("campaigns")
-    .update({ assigned_supervisor_user_id: payload.supervisorUserId ?? null })
-    .eq("id", id)
-    .eq("organization_id", membership.organizationId);
+  const { data: validSupervisors, error: supervisorValidationError } = await supabase
+    .from("organization_users")
+    .select("user_id, role")
+    .eq("organization_id", membership.organizationId)
+    .in("user_id", supervisorUserIds.length ? supervisorUserIds : ["00000000-0000-0000-0000-000000000000"])
+    .in("role", ["supervisor", "org_admin"]);
 
-  if (updateCampaignError) {
-    return NextResponse.json({ success: false, message: updateCampaignError.message }, { status: 500 });
+  if (supervisorValidationError) {
+    return NextResponse.json({ success: false, message: supervisorValidationError.message }, { status: 500 });
+  }
+
+  const validSupervisorIds = new Set((validSupervisors ?? []).map((row) => row.user_id));
+  const invalidIds = supervisorUserIds.filter((userId) => !validSupervisorIds.has(userId));
+  if (invalidIds.length > 0) {
+    return NextResponse.json(
+      { success: false, message: "One or more supervisors are invalid for this organization." },
+      { status: 400 }
+    );
+  }
+
+  const { error: clearSupervisorsError } = await supabase
+    .from("campaign_assignments")
+    .delete()
+    .eq("campaign_id", id)
+    .eq("organization_id", membership.organizationId)
+    .eq("role", "supervisor");
+
+  if (clearSupervisorsError) {
+    return NextResponse.json({ success: false, message: clearSupervisorsError.message }, { status: 500 });
+  }
+
+  if (supervisorUserIds.length > 0) {
+    const rows = supervisorUserIds.map((userId) => ({
+      organization_id: membership.organizationId,
+      campaign_id: id,
+      user_id: userId,
+      role: "supervisor",
+      status: "active",
+    }));
+    const { error: insertSupervisorsError } = await supabase.from("campaign_assignments").insert(rows);
+    if (insertSupervisorsError) {
+      return NextResponse.json({ success: false, message: insertSupervisorsError.message }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ success: true });

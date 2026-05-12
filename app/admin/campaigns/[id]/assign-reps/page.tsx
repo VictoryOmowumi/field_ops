@@ -6,7 +6,6 @@ import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabaseClient } from "@/lib/supabase/client";
 
 type OrgUser = {
@@ -22,7 +21,7 @@ export default function AssignRepsPage() {
   const campaignId = params.id;
 
   const [users, setUsers] = useState<OrgUser[]>([]);
-  const [supervisorUserId, setSupervisorUserId] = useState<string>("none");
+  const [selectedSupervisors, setSelectedSupervisors] = useState<string[]>([]);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -49,7 +48,6 @@ export default function AssignRepsPage() {
       const assignmentResult = (await assignmentResponse.json()) as {
         success: boolean;
         message?: string;
-        campaign?: { assigned_supervisor_user_id: string | null };
         assignments?: Array<{ user_id: string; role: "agent" | "supervisor" }>;
       };
 
@@ -65,8 +63,8 @@ export default function AssignRepsPage() {
       }
 
       setUsers(usersResult.users ?? []);
-      setSupervisorUserId(assignmentResult.campaign?.assigned_supervisor_user_id ?? "none");
       setSelectedAgents((assignmentResult.assignments ?? []).filter((a) => a.role === "agent").map((a) => a.user_id));
+      setSelectedSupervisors((assignmentResult.assignments ?? []).filter((a) => a.role === "supervisor").map((a) => a.user_id));
     }
 
     void loadData();
@@ -89,7 +87,7 @@ export default function AssignRepsPage() {
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        supervisorUserId: supervisorUserId === "none" ? null : supervisorUserId,
+        supervisorUserIds: selectedSupervisors,
         agentUserIds: selectedAgents,
       }),
     });
@@ -124,16 +122,29 @@ export default function AssignRepsPage() {
 
       <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60 space-y-5">
         <div className="max-w-md">
-          <p className="mb-2 text-sm font-medium">Assigned supervisor</p>
-          <Select value={supervisorUserId} onValueChange={setSupervisorUserId}>
-            <SelectTrigger><SelectValue placeholder="Select supervisor" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">None</SelectItem>
-              {supervisors.map((user) => (
-                <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <p className="mb-2 text-sm font-medium">Assigned supervisors</p>
+          <div className="rounded-2xl border border-border/70 p-3">
+            {supervisors.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No supervisors found.</p>
+            ) : (
+              <div className="space-y-2">
+                {supervisors.map((user) => (
+                  <label key={user.id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={selectedSupervisors.includes(user.id)}
+                      onChange={() =>
+                        setSelectedSupervisors((prev) =>
+                          prev.includes(user.id) ? prev.filter((id) => id !== user.id) : [...prev, user.id]
+                        )
+                      }
+                    />
+                    <span>{user.name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="overflow-hidden rounded-3xl border border-border">
@@ -176,4 +187,3 @@ export default function AssignRepsPage() {
     </div>
   );
 }
-

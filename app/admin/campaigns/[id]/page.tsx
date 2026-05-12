@@ -44,7 +44,8 @@ export default function CampaignDetailsPage() {
         campaign={vm.campaign}
         summary={vm.summary}
         mapPoints={vm.mapPoints}
-        supervisorName={vm.supervisorName}
+        supervisorNames={vm.supervisorNames}
+        supervisorRows={vm.supervisorRows}
         assignedRepRows={vm.assignedRepRows}
         evidence={vm.evidence}
         exportingActivities={vm.exportingActivities}
@@ -88,8 +89,8 @@ export default function CampaignDetailsPage() {
       <AssignRepsDialog
         open={vm.assignDialogOpen}
         onOpenChange={vm.setAssignDialogOpen}
-        supervisorUserId={vm.supervisorUserId}
-        onSupervisorUserIdChange={vm.setSupervisorUserId}
+        selectedSupervisors={vm.selectedSupervisors}
+        onToggleSupervisor={vm.toggleSupervisor}
         supervisors={vm.supervisors}
         agents={vm.agents}
         selectedAgents={vm.selectedAgents}

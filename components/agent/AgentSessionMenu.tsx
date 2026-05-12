@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -25,6 +25,37 @@ export default function AgentSessionMenu({
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [organizationName, setOrganizationName] = useState("");
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadOrganizationName() {
+      const { data } = await supabaseClient.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+
+      const response = await fetch("/api/auth/context", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return;
+
+      const result = (await response.json()) as {
+        success: boolean;
+        user?: {
+          memberships?: Array<{ status?: string; organizations?: { name?: string | null } }>;
+        };
+      };
+      const activeMembership = (result.user?.memberships ?? []).find((m) => m.status === "active")
+        ?? (result.user?.memberships ?? [])[0];
+      if (active) setOrganizationName(activeMembership?.organizations?.name ?? "");
+    }
+
+    void loadOrganizationName();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function signOut() {
     setLoading(true);
@@ -48,6 +79,7 @@ export default function AgentSessionMenu({
         <DropdownMenuLabel>
           <p className="font-medium">{fullName ?? "Agent"}</p>
           <p className="text-xs text-muted-foreground">{roleLabel ?? "Field Agent"}</p>
+          {organizationName ? <p className="text-xs text-muted-foreground">{organizationName}</p> : null}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
@@ -61,4 +93,3 @@ export default function AgentSessionMenu({
     </DropdownMenu>
   );
 }
-

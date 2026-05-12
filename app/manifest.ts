@@ -1,11 +1,23 @@
 import type { MetadataRoute } from "next";
+import { cookies } from "next/headers";
 
-export default function manifest(): MetadataRoute.Manifest {
+import { APP_NAME } from "@/lib/constants";
+import { BRAND_COOKIE_SLUG, BRAND_COOKIE_NAME } from "@/lib/branding/types";
+
+export default async function manifest(): Promise<MetadataRoute.Manifest> {
+  const store = await cookies();
+  const name = store.get(BRAND_COOKIE_NAME)?.value || APP_NAME;
+  const slug = store.get(BRAND_COOKIE_SLUG)?.value || "";
+  const iconOrg = slug ? `?org=${encodeURIComponent(slug)}` : "";
+  const icon192 = `/api/public/brand/icon?size=192${slug ? `&org=${encodeURIComponent(slug)}` : ""}`;
+  const icon512 = `/api/public/brand/icon?size=512${slug ? `&org=${encodeURIComponent(slug)}` : ""}`;
+  const manifestStart = slug ? `/login?org=${encodeURIComponent(slug)}` : "/login";
+
   return {
-    name: "ActivationIQ",
-    short_name: "ActIQ",
-    description: "Field sales activation and sync platform",
-    start_url: "/login",
+    name,
+    short_name: name,
+    description: `${name} field sales activation and sync platform`,
+    start_url: manifestStart,
     scope: "/",
     display: "standalone",
     orientation: "portrait",
@@ -14,17 +26,17 @@ export default function manifest(): MetadataRoute.Manifest {
     categories: ["business", "productivity"],
     icons: [
       {
-        src: "/android-chrome-192x192.png",
+        src: icon192,
         sizes: "192x192",
         type: "image/png",
       },
       {
-        src: "/android-chrome-512x512.png",
+        src: icon512,
         sizes: "512x512",
         type: "image/png",
       },
       {
-        src: "/apple-touch-icon.png",
+        src: `/api/public/brand/icon${iconOrg}`,
         sizes: "180x180",
         type: "image/png",
       },

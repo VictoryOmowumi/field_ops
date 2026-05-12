@@ -39,6 +39,14 @@ type AssignedRepRow = {
   status: string;
 };
 
+type SupervisorRow = {
+  id: string;
+  userId: string;
+  name: string;
+  email: string;
+  status: string;
+};
+
 type CampaignActivity = {
   id: string;
   type: "visit" | "sale";
@@ -58,7 +66,8 @@ type CampaignDetailsSectionsProps = {
   campaign: Campaign;
   summary: CampaignAnalyticsSummary | null;
   mapPoints: CampaignMapPoint[];
-  supervisorName: string;
+  supervisorNames: string;
+  supervisorRows: SupervisorRow[];
   assignedRepRows: AssignedRepRow[];
   evidence: CampaignEvidenceItem[];
   exportingActivities: boolean;
@@ -83,7 +92,8 @@ export function CampaignDetailsSections({
   campaign,
   summary,
   mapPoints,
-  supervisorName,
+  supervisorNames,
+  supervisorRows,
   assignedRepRows,
   evidence,
   exportingActivities,
@@ -186,11 +196,35 @@ export function CampaignDetailsSections({
           <Info2 label="Campaign type" value={campaign.campaign_type || "-"} />
           <Info2 label="Tasks" value={(campaign.campaign_tasks ?? []).length ? (campaign.campaign_tasks ?? []).join(", ") : "-"} />
           <Info2 label="Territory" value={[campaign.state, campaign.lga].filter(Boolean).join(" / ") || "-"} />
-          <Info2 label="Assigned supervisor" value={supervisorName} />
+          <Info2 label="Assigned supervisors" value={supervisorRows.length > 1 ? `${supervisorRows.length} supervisors` : supervisorNames} />
           <Info2 label="Target outlets" value={campaign.target_outlets?.toLocaleString() ?? "-"} />
           <Info2 label="Target conversions" value={campaign.target_conversions?.toLocaleString() ?? "-"} />
           <Info2 label="Expected reps" value={campaign.expected_reps?.toLocaleString() ?? "-"} />
         </div>
+        {supervisorRows.length > 1 ? (
+          <div className="mt-4 overflow-hidden rounded-3xl border border-border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium">Supervisor</th>
+                  <th className="px-4 py-3 text-left font-medium">Email</th>
+                  <th className="px-4 py-3 text-left font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {supervisorRows.map((row) => (
+                  <tr key={row.id} className="border-t border-border">
+                    <td className="px-4 py-4 font-medium">{row.name}</td>
+                    <td className="px-4 py-4 text-muted-foreground">{row.email}</td>
+                    <td className="px-4 py-4">
+                      <Badge className={`rounded-full ${statusBadgeClass(row.status)}`}>{row.status}</Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </section>
 
       <div className="grid gap-5 lg:grid-cols-3">
@@ -205,7 +239,7 @@ export function CampaignDetailsSections({
             <Button variant="outline" className="rounded-full" onClick={onOpenAssignDialog}>
               <span className="inline-flex items-center gap-2">
                 <Users className="size-4" />
-                Assign Reps
+                Assign Supervisors & Reps
               </span>
             </Button>
           </div>

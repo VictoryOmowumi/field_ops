@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useThemeMode } from "@/hooks/useThemeMode";
 import type { CampaignActivityRow, CampaignAnalyticsSummary, CampaignEvidenceItem, CampaignMapPoint } from "@/types/campaign-intelligence";
-
+import BackofficeBrand from "@/components/backoffice/BackofficeBrand";
 const CampaignPointMap = dynamic(() => import("@/components/campaign/CampaignPointMap"), {
   ssr: false,
   loading: () => <div className="h-72 rounded-3xl border border-border bg-muted/30" />,
@@ -245,9 +245,7 @@ export default function SharedCampaignPage() {
   return (
     <main className="mx-auto max-w-7xl space-y-6 p-6 pb-10">
       <header className="sticky top-3 z-40 flex items-center justify-between rounded-2xl border border-border bg-card/95 px-4 py-3 backdrop-blur">
-        <div className="text-xl font-semibold tracking-tight text-foreground">
-          Activation<span className="text-primary">IQ</span>
-        </div>
+        <BackofficeBrand homeHref="/" />
         <div className="flex items-center gap-2">
           <Button variant="outline" className="rounded-full" onClick={exportRawDataCsv}>
             <Download className="size-4" />

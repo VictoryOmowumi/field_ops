@@ -35,7 +35,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   const baseQuery = supabase
     .from("campaigns")
-    .select("id, organization_id, name, campaign_type, description, start_date, end_date, status, state, lga, target_outlets, target_conversions, expected_reps, outlet_types, products, form_requirements, runtime_form_config, campaign_tasks, campaign_workflow_template, campaign_workflow, assigned_supervisor_user_id, launched_at, created_at")
+    .select("id, organization_id, name, campaign_type, description, start_date, end_date, status, state, lga, target_outlets, target_conversions, expected_reps, outlet_types, products, form_requirements, runtime_form_config, campaign_tasks, campaign_workflow_template, campaign_workflow, launched_at, created_at")
     .eq("id", id);
 
   const query = organizationId ? baseQuery.eq("organization_id", organizationId) : baseQuery;
@@ -49,8 +49,20 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ success: false, message: "Campaign not found." }, { status: 404 });
   }
 
+  const { data: supervisorAssignments } = await supabase
+    .from("campaign_assignments")
+    .select("user_id")
+    .eq("campaign_id", id)
+    .eq("organization_id", data.organization_id)
+    .eq("role", "supervisor")
+    .eq("status", "active");
+
   const summary = await getCampaignAnalyticsSummary(supabase, data.organization_id, data.id);
-  return NextResponse.json({ success: true, campaign: data, summary });
+  return NextResponse.json({
+    success: true,
+    campaign: { ...data, supervisor_user_ids: (supervisorAssignments ?? []).map((item) => item.user_id) },
+    summary,
+  });
 }
 
 type UpdateCampaignPayload = {
@@ -77,7 +89,7 @@ type UpdateCampaignPayload = {
     | "availability_survey"
     | "price_survey"
   >;
-  assignedSupervisorUserId?: string | null;
+  assignedSupervisorUserIds?: string[];
   action?: "launch";
   campaignWorkflowTemplate?: string;
   campaignWorkflow?: Record<string, unknown>;
@@ -147,7 +159,6 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       });
     }
   }
-  if (payload.assignedSupervisorUserId !== undefined) patch.assigned_supervisor_user_id = payload.assignedSupervisorUserId;
   if (payload.status !== undefined) patch.status = payload.status;
 
   if (payload.action === "launch") {
@@ -162,14 +173,66 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     .update(patch)
     .eq("id", id)
     .eq("organization_id", membership.organizationId)
-    .select("id, organization_id, name, campaign_type, description, start_date, end_date, status, state, lga, target_outlets, target_conversions, expected_reps, outlet_types, products, form_requirements, runtime_form_config, campaign_tasks, campaign_workflow_template, campaign_workflow, assigned_supervisor_user_id, launched_at, created_at")
+    .select("id, organization_id, name, campaign_type, description, start_date, end_date, status, state, lga, target_outlets, target_conversions, expected_reps, outlet_types, products, form_requirements, runtime_form_config, campaign_tasks, campaign_workflow_template, campaign_workflow, launched_at, created_at")
     .single();
 
   if (error || !data) {
     return NextResponse.json({ success: false, message: error?.message ?? "Failed to update campaign." }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true, campaign: data });
+  if (payload.assignedSupervisorUserIds !== undefined) {
+    const supervisorUserIds = [...new Set(payload.assignedSupervisorUserIds)];
+    const { data: validSupervisors, error: supervisorValidationError } = await supabase
+      .from("organization_users")
+      .select("user_id, role")
+      .eq("organization_id", membership.organizationId)
+      .in("user_id", supervisorUserIds.length ? supervisorUserIds : ["00000000-0000-0000-0000-000000000000"])
+      .in("role", ["supervisor", "org_admin"]);
+    if (supervisorValidationError) {
+      return NextResponse.json({ success: false, message: supervisorValidationError.message }, { status: 500 });
+    }
+    const validIds = new Set((validSupervisors ?? []).map((row) => row.user_id));
+    const invalidIds = supervisorUserIds.filter((userId) => !validIds.has(userId));
+    if (invalidIds.length > 0) {
+      return NextResponse.json({ success: false, message: "One or more supervisors are invalid for this organization." }, { status: 400 });
+    }
+
+    const { error: clearSupervisorsError } = await supabase
+      .from("campaign_assignments")
+      .delete()
+      .eq("campaign_id", id)
+      .eq("organization_id", membership.organizationId)
+      .eq("role", "supervisor");
+    if (clearSupervisorsError) {
+      return NextResponse.json({ success: false, message: clearSupervisorsError.message }, { status: 500 });
+    }
+
+    if (supervisorUserIds.length > 0) {
+      const supervisorRows = supervisorUserIds.map((userId) => ({
+        organization_id: membership.organizationId,
+        campaign_id: id,
+        user_id: userId,
+        role: "supervisor",
+        status: "active",
+      }));
+      const { error: insertSupervisorError } = await supabase.from("campaign_assignments").insert(supervisorRows);
+      if (insertSupervisorError) {
+        return NextResponse.json({ success: false, message: insertSupervisorError.message }, { status: 500 });
+      }
+    }
+  }
+
+  const { data: supervisorAssignments } = await supabase
+    .from("campaign_assignments")
+    .select("user_id")
+    .eq("campaign_id", id)
+    .eq("organization_id", membership.organizationId)
+    .eq("role", "supervisor")
+    .eq("status", "active");
+  return NextResponse.json({
+    success: true,
+    campaign: { ...data, supervisor_user_ids: (supervisorAssignments ?? []).map((item) => item.user_id) },
+  });
 }
 
 function withPosmActivity(

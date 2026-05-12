@@ -22,6 +22,42 @@ const loginSchema = z.object({
 
 type LoginValues = z.infer<typeof loginSchema>;
 
+type AuthContextResponse = {
+  success: boolean;
+  user?: {
+    memberships?: Array<{
+      status?: "active" | "inactive" | "invited" | "suspended";
+      organizations?: { slug?: string | null };
+    }>;
+  };
+};
+
+async function verifyMembershipAccess(accessToken: string, orgSlug?: string | null) {
+  const response = await fetch("/api/auth/context", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!response.ok) return { allowed: true as const };
+  const payload = (await response.json()) as AuthContextResponse;
+  const memberships = payload.user?.memberships ?? [];
+  if (orgSlug) {
+    const hasMatchingOrg = memberships.some((item) => item.organizations?.slug?.toLowerCase() === orgSlug.toLowerCase());
+    if (!hasMatchingOrg) {
+      return {
+        allowed: false as const,
+        message: "This account does not belong to the selected organization workspace.",
+      };
+    }
+  }
+  if (memberships.some((item) => item.status === "active")) return { allowed: true as const };
+  if (memberships.some((item) => item.status === "suspended")) {
+    return { allowed: false as const, message: "Your account has been suspended. Contact your administrator." };
+  }
+  if (memberships.some((item) => item.status === "inactive")) {
+    return { allowed: false as const, message: "Your account has been deactivated. Contact your administrator." };
+  }
+  return { allowed: true as const };
+}
+
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -29,6 +65,7 @@ function LoginPageContent() {
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const nextPath = useMemo(() => searchParams.get("next") || "/agent/home", [searchParams]);
+  const orgSlug = useMemo(() => searchParams.get("org"), [searchParams]);
 
   const {
     register,
@@ -53,6 +90,15 @@ function LoginPageContent() {
 
       const role = extractAppRole(session.user);
       if (role) {
+        if (role !== "super_admin" && session.access_token) {
+          const access = await verifyMembershipAccess(session.access_token, orgSlug);
+          if (!access.allowed) {
+            await supabaseClient.auth.signOut();
+            setCheckingSession(false);
+            toast.error(access.message);
+            return;
+          }
+        }
         if (nextPath.startsWith("/agent") && role !== "agent") {
           router.replace(getDefaultRouteForRole(role));
           return;
@@ -65,7 +111,7 @@ function LoginPageContent() {
     }
 
     void init();
-  }, [nextPath, router]);
+  }, [nextPath, orgSlug, router]);
 
   useEffect(() => {
     if (searchParams.get("error") === "role_denied") {
@@ -88,6 +134,15 @@ function LoginPageContent() {
 
     const role = extractAppRole(data.user);
     if (role) {
+      if (role !== "super_admin" && data.session?.access_token) {
+        const access = await verifyMembershipAccess(data.session.access_token, orgSlug);
+        if (!access.allowed) {
+          await supabaseClient.auth.signOut();
+          setPendingMessage(null);
+          toast.error(access.message);
+          return;
+        }
+      }
       if (nextPath.startsWith("/agent") && role !== "agent") {
         setPendingMessage("Redirecting to your workspace...");
         router.replace(getDefaultRouteForRole(role));
@@ -114,7 +169,7 @@ function LoginPageContent() {
   return (
     <AuthSplitLayout
       title="Welcome back"
-      description="Sign in to continue to your ActivationIQ workspace."
+      description="Sign in to continue to your workspace."
       footer={
         <p>
           Forgot your password?{" "}

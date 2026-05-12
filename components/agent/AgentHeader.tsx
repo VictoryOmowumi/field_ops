@@ -12,11 +12,13 @@ import { useThemeMode } from "@/hooks/useThemeMode";
 import { Button } from "@/components/ui/button";
 import AgentSessionMenu from "@/components/agent/AgentSessionMenu";
 import { useAgentBootstrap } from "@/hooks/useAgentBootstrap";
+import { useBrand } from "@/components/providers/brand-provider";
 
 export default function AgentHeader() {
   const isOnline = useOnlineStatus();
   const { toggleTheme } = useThemeMode();
   const bootstrapQuery = useAgentBootstrap();
+  const { brandName, logoUrl } = useBrand();
  
 
   return (
@@ -24,10 +26,18 @@ export default function AgentHeader() {
       <div className="py-2 px-4 ">
         <div className="flex items-center justify-between">
           <div className="">
-            {/* logo */}
-            <span className="text-xl font-semibold tracking-tight text-foreground">
-              Activation<span className="text-primary">IQ</span>
-            </span>
+            {logoUrl ? (
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center rounded-md border border-border/70 bg-white p-1 shadow-xs">
+                  <img src={logoUrl} alt={`${brandName} logo`} className="h-6 w-auto max-w-28 object-contain" />
+                </span>
+                <span className="text-xl font-semibold tracking-tight text-foreground">{brandName}</span>
+              </div>
+            ) : (
+              <span className="text-xl font-semibold tracking-tight text-foreground">
+                {brandName}
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2">

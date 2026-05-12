@@ -5,10 +5,6 @@ const API_CACHE = `api-get-${VERSION}`;
 const APP_SHELL_ASSETS = [
   "/",
   "/login",
-  "/manifest.webmanifest",
-  "/android-chrome-192x192.png",
-  "/android-chrome-512x512.png",
-  "/apple-touch-icon.png",
 ];
 
 self.addEventListener("install", (event) => {

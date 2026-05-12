@@ -10,7 +10,7 @@ export default function AcceptInvitePage() {
   return (
     <AuthSplitLayout
       title="Accept invite"
-      description="Set your password to activate your ActivationIQ account."
+      description="Set your password to activate your account."
       footer={
         <Button variant="outline" className="rounded-xl" asChild>
           <Link href="/login">Back to Login</Link>

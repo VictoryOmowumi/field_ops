@@ -8,12 +8,12 @@ export async function getOrgMembershipForUser(userId: string) {
     .from("organization_users")
     .select("id, organization_id, role, status, created_at")
     .eq("user_id", userId)
-    .order("created_at", { ascending: true })
+    .eq("status", "active")
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
   if (error || !data) return null;
-  if (data.status !== "active") return null;
   return {
     id: data.id as string,
     organizationId: data.organization_id as string,

@@ -23,6 +23,13 @@ type CreateOrganizationPayload = {
   billingEmail?: string;
   brandPrimaryColor?: string;
   brandSecondaryColor?: string;
+  faviconIcoUrl?: string;
+  favicon16Url?: string;
+  favicon32Url?: string;
+  appleTouchIconUrl?: string;
+  android192Url?: string;
+  android512Url?: string;
+  manifestUrl?: string;
 };
 
 function resolveBaseUrl(request: NextRequest) {
@@ -108,6 +115,13 @@ export async function POST(request: NextRequest) {
       billing_email: body.billingEmail?.trim() || null,
       brand_primary_color: body.brandPrimaryColor?.trim() || null,
       brand_secondary_color: body.brandSecondaryColor?.trim() || null,
+      brand_favicon_ico_url: body.faviconIcoUrl?.trim() || null,
+      brand_favicon_16_url: body.favicon16Url?.trim() || null,
+      brand_favicon_32_url: body.favicon32Url?.trim() || null,
+      brand_apple_touch_icon_url: body.appleTouchIconUrl?.trim() || null,
+      brand_android_192_url: body.android192Url?.trim() || null,
+      brand_android_512_url: body.android512Url?.trim() || null,
+      brand_manifest_url: body.manifestUrl?.trim() || null,
     })
     .select("*")
     .single();

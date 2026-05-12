@@ -41,8 +41,8 @@ type UserLite = {
 type AssignRepsDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  supervisorUserId: string;
-  onSupervisorUserIdChange: (value: string) => void;
+  selectedSupervisors: string[];
+  onToggleSupervisor: (userId: string) => void;
   supervisors: UserLite[];
   agents: UserLite[];
   selectedAgents: string[];
@@ -64,8 +64,8 @@ type AssignRepsDialogProps = {
 export function AssignRepsDialog({
   open,
   onOpenChange,
-  supervisorUserId,
-  onSupervisorUserIdChange,
+  selectedSupervisors,
+  onToggleSupervisor,
   supervisors,
   agents,
   selectedAgents,
@@ -84,12 +84,23 @@ export function AssignRepsDialog({
   onSubmitRegisterRep,
 }: AssignRepsDialogProps) {
   const location = nigeriaLocations.find((item) => item.state === repForm.selectedState);
+  const supervisorIds = supervisors.map((user) => user.id);
+
+  function handleSupervisorValueChange(next: string[]) {
+    const currentSet = new Set(selectedSupervisors);
+    const nextSet = new Set(next);
+    for (const id of supervisorIds) {
+      const inCurrent = currentSet.has(id);
+      const inNext = nextSet.has(id);
+      if (inCurrent !== inNext) onToggleSupervisor(id);
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl! max-h-[80vh]! overflow-y-auto!">
         <DialogHeader>
-          <DialogTitle>Assign Reps</DialogTitle>
+          <DialogTitle>Assign Supervisors & Reps</DialogTitle>
           <DialogDescription>
             Link supervisors and field agents to this campaign without leaving this page.
           </DialogDescription>
@@ -97,20 +108,32 @@ export function AssignRepsDialog({
 
         <div className="space-y-5">
           <div className="max-w-full">
-            <p className="mb-2 text-sm font-medium">Assigned supervisor</p>
-            <Select value={supervisorUserId} onValueChange={onSupervisorUserIdChange}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select supervisor" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">None</SelectItem>
-                {supervisors.map((user) => (
-                  <SelectItem key={user.id} value={user.id}>
-                    {user.displayName ?? user.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <p className="mb-2 text-sm font-medium">Assigned supervisors</p>
+            <Combobox
+              items={supervisorIds}
+              multiple
+              value={selectedSupervisors}
+              onValueChange={handleSupervisorValueChange}
+            >
+              <ComboboxChips>
+                <ComboboxValue>
+                  {selectedSupervisors.map((id) => {
+                    const found = supervisors.find((item) => item.id === id);
+                    return <ComboboxChip key={id}>{found?.displayName ?? found?.name ?? id}</ComboboxChip>;
+                  })}
+                </ComboboxValue>
+                <ComboboxChipsInput placeholder="Search and select supervisors..." />
+              </ComboboxChips>
+              <ComboboxContent>
+                {supervisors.length === 0 ? <ComboboxEmpty>No supervisors found.</ComboboxEmpty> : null}
+                <ComboboxList>
+                  {(id) => {
+                    const found = supervisors.find((item) => item.id === id);
+                    return <ComboboxItem key={id} value={id}>{found?.displayName ?? found?.name ?? id}</ComboboxItem>;
+                  }}
+                </ComboboxList>
+              </ComboboxContent>
+            </Combobox>
           </div>
 
           <div className="overflow-hidden rounded-3xl border border-border">

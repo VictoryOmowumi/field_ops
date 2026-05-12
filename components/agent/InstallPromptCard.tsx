@@ -14,6 +14,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { pwaFlags } from "@/lib/pwa/flags";
+import { useBrand } from "@/components/providers/brand-provider";
 
 type DeferredBeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -33,6 +34,7 @@ function isiOS() {
 }
 
 export default function InstallPromptCard() {
+  const { brandName } = useBrand();
   const [deferredPrompt, setDeferredPrompt] = useState<DeferredBeforeInstallPromptEvent | null>(() => {
     if (typeof window === "undefined") return null;
     return (
@@ -95,7 +97,7 @@ export default function InstallPromptCard() {
     <AlertDialog open={shouldShow} onOpenChange={(open) => !open && dismiss()}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Install ActivationIQ</AlertDialogTitle>
+          <AlertDialogTitle>Install {brandName}</AlertDialogTitle>
           <AlertDialogDescription>
             Add the app to your home screen for faster launch and better offline support.
           </AlertDialogDescription>

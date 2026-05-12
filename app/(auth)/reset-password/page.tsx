@@ -10,7 +10,7 @@ export default function ResetPasswordPage() {
   return (
     <AuthSplitLayout
       title="Reset password"
-      description="Set a new password for your ActivationIQ account."
+      description="Set a new password for your account."
       footer={
         <Button variant="outline" className="rounded-xl" asChild>
           <Link href="/login">Back to Login</Link>

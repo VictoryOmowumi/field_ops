@@ -113,7 +113,7 @@ export default function AgentHomePage() {
               <span>{greeting}, </span>
               {displayName.split(" ")[0]}
             </h1>
-            <p className="ml-1 max-w-62 text-lg">Are you ready? Let&apos;s go.</p>
+            <p className="ml-1 max-w-62 text-base">Are you ready? Let&apos;s go.</p>
             {nextCampaign ? (
               <Link
                 href={`/agent/campaigns/${nextCampaign.id}`}
@@ -170,7 +170,7 @@ export default function AgentHomePage() {
         </Link>
       ) : null}
 
-      <section className="space-y-3">
+      <section className="space-y-3 mt-2">
         <div className="flex items-end justify-between gap-4">
           <div>
             <h2 className="text-base font-semibold tracking-tight">Campaigns to Execute</h2>
@@ -260,7 +260,7 @@ function CampaignCard({ campaign }: { campaign: Campaign }) {
   const statusText = started ? "Started" : "Not started";
 
   return (
-    <Link href={`/agent/campaigns/${campaign.id}`} className="group block rounded-3xl border border-border/70 bg-card p-4 shadow-sm transition active:scale-[0.99]">
+    <Link href={`/agent/campaigns/${campaign.id}`} className="group block rounded-3xl border border-border/70 bg-card p-4 shadow transition active:scale-[0.99]">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="line-clamp-2 text-base font-semibold leading-tight">{campaign.name}</p>

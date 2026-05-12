@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-access";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { generateShareToken, hashShareToken, resolvePublicBaseUrl } from "@/lib/campaign/share";
+import { getBrandByOrganizationId } from "@/lib/branding/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -30,17 +31,19 @@ async function sendShareEmail(input: {
   campaignName: string;
   shareUrl: string;
   expiresAt: string;
+  brandName: string;
+  brandLogoUrl?: string | null;
 }) {
   const apiKey = process.env.RESEND_API_KEY;
   const fromEmail = process.env.RESEND_FROM_EMAIL;
-  const from = fromEmail?.includes("<") ? fromEmail : `ActivationIQ <${fromEmail}>`;
+  const from = fromEmail?.includes("<") ? fromEmail : `${input.brandName} <${fromEmail}>`;
   const replyTo = process.env.RESEND_REPLY_TO_EMAIL || fromEmail;
   if (!apiKey || !from) {
     throw new Error("Resend is not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL.");
   }
   const expiresAtLabel = new Date(input.expiresAt).toLocaleString();
   const text = [
-    "ActivationIQ Campaign Share",
+    `${input.brandName} Campaign Share`,
     "",
     `You were invited to view campaign progress for: ${input.campaignName}`,
     `Open link: ${input.shareUrl}`,
@@ -51,7 +54,8 @@ async function sendShareEmail(input: {
   ].join("\n");
   const html = `
     <div style="font-family:Arial,sans-serif;color:#111827;line-height:1.5">
-      <h2 style="margin:0 0 12px">ActivationIQ Campaign Share</h2>
+      <h2 style="margin:0 0 12px">${input.brandName} Campaign Share</h2>
+      ${input.brandLogoUrl ? `<p style="margin:0 0 14px"><img src="${input.brandLogoUrl}" alt="${input.brandName}" style="max-height:36px;width:auto" /></p>` : ""}
       <p style="margin:0 0 10px">Hello,</p>
       <p style="margin:0 0 10px">
         You were invited to view campaign progress for
@@ -183,6 +187,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 
   const shareUrl = `${resolvePublicBaseUrl(request)}/shared/campaigns/${token}`;
+  const orgBrand = await getBrandByOrganizationId(membership.organizationId);
+  const brandName = orgBrand?.name ?? "ActivationIQ";
   if (payload.sendEmail) {
     if (!recipientEmail) {
       return NextResponse.json({ success: false, message: "Recipient email is required to send." }, { status: 400 });
@@ -193,6 +199,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
         campaignName: campaign.name,
         shareUrl,
         expiresAt,
+        brandName,
+        brandLogoUrl: orgBrand?.logoUrl ?? null,
       });
     } catch (sendError) {
       return NextResponse.json({ success: false, message: (sendError as Error).message }, { status: 500 });

@@ -49,7 +49,7 @@ export default function EditCampaignPage() {
   const [campaignType, setCampaignType] = useState("");
   const [status, setStatus] = useState<"draft" | "active" | "completed">("draft");
   const [stateName, setStateName] = useState("");
-  const [assignedSupervisorUserId, setAssignedSupervisorUserId] = useState("none");
+  const [selectedSupervisorIds, setSelectedSupervisorIds] = useState<string[]>([]);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [targetOutlets, setTargetOutlets] = useState("");
@@ -107,7 +107,7 @@ export default function EditCampaignPage() {
       setCampaignType((campaign.campaign_type as string) ?? "");
       setStatus(((campaign.status as "draft" | "active" | "completed") ?? "draft"));
       setStateName((campaign.state as string) ?? "");
-      setAssignedSupervisorUserId((campaign.assigned_supervisor_user_id as string) ?? "none");
+      setSelectedSupervisorIds(Array.isArray(campaign.supervisor_user_ids) ? (campaign.supervisor_user_ids as string[]) : []);
       setStartDate((campaign.start_date as string) ?? "");
       setEndDate((campaign.end_date as string) ?? "");
       setTargetOutlets(campaign.target_outlets ? String(campaign.target_outlets) : "");
@@ -194,7 +194,7 @@ export default function EditCampaignPage() {
         status,
         state: stateName || null,
         lga: null,
-        assignedSupervisorUserId: assignedSupervisorUserId === "none" ? null : assignedSupervisorUserId,
+        assignedSupervisorUserIds: selectedSupervisorIds,
         startDate: startDate || null,
         endDate: endDate || null,
         targetOutlets: targetOutlets ? Number(targetOutlets) : null,
@@ -279,7 +279,30 @@ export default function EditCampaignPage() {
             <Field label="Campaign name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
             <Field label="Campaign type"><Select value={campaignType} onValueChange={setCampaignType}><SelectTrigger><SelectValue placeholder="Select campaign type" /></SelectTrigger><SelectContent>{campaignTypes.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select></Field>
             <Field label="Status"><Select value={status} onValueChange={(v: "draft" | "active" | "completed") => setStatus(v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="draft">Draft</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="completed">Completed</SelectItem></SelectContent></Select></Field>
-            <Field label="Assigned supervisor"><Select value={assignedSupervisorUserId} onValueChange={setAssignedSupervisorUserId}><SelectTrigger><SelectValue placeholder="Select supervisor" /></SelectTrigger><SelectContent><SelectItem value="none">None</SelectItem>{supervisors.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}</SelectContent></Select></Field>
+            <Field label="Assigned supervisors">
+              <div className="rounded-2xl border border-border/70 p-3">
+                {supervisors.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No supervisors found.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {supervisors.map((u) => (
+                      <label key={u.id} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={selectedSupervisorIds.includes(u.id)}
+                          onChange={() =>
+                            setSelectedSupervisorIds((prev) =>
+                              prev.includes(u.id) ? prev.filter((id) => id !== u.id) : [...prev, u.id]
+                            )
+                          }
+                        />
+                        <span>{u.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Field>
           </div>
         </section>
 
