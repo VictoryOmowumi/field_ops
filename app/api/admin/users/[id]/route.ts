@@ -227,5 +227,35 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ success: false, message: membershipDeleteError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true });
+  // If user no longer belongs to any organization, perform a global hard-delete cleanup
+  // to avoid auth-email conflicts when re-inviting/registering later.
+  const { count: remainingMemberships, error: remainingMembershipsError } = await supabase
+    .from("organization_users")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", id);
+  if (remainingMembershipsError) {
+    return NextResponse.json({ success: false, message: remainingMembershipsError.message }, { status: 500 });
+  }
+
+  if ((remainingMemberships ?? 0) === 0) {
+    // Defensive cleanup across shared user-linked tables.
+    await supabase.from("campaign_assignments").delete().eq("user_id", id);
+    await supabase.from("rep_profiles").delete().eq("user_id", id);
+    await supabase.from("profiles").delete().eq("user_id", id);
+
+    const { error: deleteAuthUserError } = await supabase.auth.admin.deleteUser(id);
+    if (deleteAuthUserError) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `User removed from organization, but failed to delete auth user: ${deleteAuthUserError.message}`,
+        },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true, hardDeleted: true });
+  }
+
+  return NextResponse.json({ success: true, hardDeleted: false });
 }
