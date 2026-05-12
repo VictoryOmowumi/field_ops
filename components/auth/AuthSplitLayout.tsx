@@ -49,8 +49,8 @@ export default function AuthSplitLayout({
         <section className="flex items-center justify-center rounded-[1.6rem] bg-card/40 p-4 dark:bg-card/30 md:p-8">
           <div className="w-full max-w-md">
            {logoUrl ? (
-             <span className="inline-flex items-center rounded-md border border-border/70 bg-taupe-800 dark:bg-transparent! p-1.5 shadow-xs lg:hidden">
-               <img src={resolvedLogo} alt={`${brandName} logo`} className="h-8 w-auto max-w-32 object-contain" />
+             <span className="inline-flex items-center rounded-full bg-white lg:hidden">
+               <img src={resolvedLogo} alt={`${brandName} logo`} className="h-12 w-auto max-w-32 object-contain" />
              </span>
            ) : (
              <Image src={fallbackLogo} alt={`${brandName} logo`} width={80} height={80} className="w-24 flex lg:hidden h-auto object-contain" />
