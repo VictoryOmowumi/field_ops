@@ -21,6 +21,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { nigeriaLocations } from "@/data/nigeria-locations";
 import { nigerianBankOptions } from "@/data/nigerian-banks";
 import { authorizedFetch } from "@/lib/api/client";
 
@@ -84,6 +85,8 @@ function RepEditForm({ rep, campaigns, users }: { rep: Rep; campaigns: Campaign[
   const [targetOutlets, setTargetOutlets] = useState(rep.targetOutlets?.toString() ?? "");
   const [targetConversions, setTargetConversions] = useState(rep.targetConversions?.toString() ?? "");
   const [status, setStatus] = useState<"active" | "inactive">(rep.status);
+  const [state, setState] = useState(rep.state ?? "");
+  const [lga, setLga] = useState(rep.lga ?? "");
   const [notes, setNotes] = useState(rep.notes ?? "");
   const [selectedCampaignIds, setSelectedCampaignIds] = useState<string[]>(rep.campaignIds);
   const [bankName, setBankName] = useState(rep.bankName ?? "");
@@ -92,6 +95,8 @@ function RepEditForm({ rep, campaigns, users }: { rep: Rep; campaigns: Campaign[
   const [paymentType, setPaymentType] = useState(rep.paymentType ?? "");
   const [dailyRate, setDailyRate] = useState(rep.dailyRate?.toString() ?? "");
   const [commissionRate, setCommissionRate] = useState(rep.commissionRate?.toString() ?? "");
+  const selectedState = nigeriaLocations.find((entry) => entry.state === state);
+  const availableLgas = selectedState?.lgas ?? [];
 
   const supervisors = users.filter((u) => u.organizationRole === "supervisor" || u.organizationRole === "org_admin");
 
@@ -102,6 +107,8 @@ function RepEditForm({ rep, campaigns, users }: { rep: Rep; campaigns: Campaign[
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          state: state || null,
+          lga: lga || null,
           targetOutlets: targetOutlets ? Number(targetOutlets) : null,
           targetConversions: targetConversions ? Number(targetConversions) : null,
           assignedSupervisorUserId: assignedSupervisorUserId === "none" ? null : assignedSupervisorUserId,
@@ -140,7 +147,35 @@ function RepEditForm({ rep, campaigns, users }: { rep: Rep; campaigns: Campaign[
           <Field label="Full name"><Input value={rep.fullName} disabled /></Field>
           <Field label="Email"><Input value={rep.email ?? ""} disabled /></Field>
           <Field label="Phone"><Input value={rep.phone ?? ""} disabled /></Field>
-          <Field label="Territory"><Input value={[rep.lga, rep.state].filter(Boolean).join(", ")} disabled /></Field>
+          <Field label="State">
+            <Select
+              value={state || "none"}
+              onValueChange={(value) => {
+                if (value === "none") {
+                  setState("");
+                  setLga("");
+                  return;
+                }
+                setState(value);
+                if (!nigeriaLocations.find((entry) => entry.state === value)?.lgas.includes(lga)) setLga("");
+              }}
+            >
+              <SelectTrigger><SelectValue placeholder="Select state" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                {nigeriaLocations.map((entry) => <SelectItem key={entry.state} value={entry.state}>{entry.state}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="LGA">
+            <Select value={lga || "none"} onValueChange={(value) => setLga(value === "none" ? "" : value)}>
+              <SelectTrigger><SelectValue placeholder={state ? "Select LGA" : "Select state first"} /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                {availableLgas.map((entry) => <SelectItem key={entry} value={entry}>{entry}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Field>
           <Field label="Assigned supervisor">
             <Select value={assignedSupervisorUserId} onValueChange={setAssignedSupervisorUserId}>
               <SelectTrigger><SelectValue placeholder="Select supervisor" /></SelectTrigger>

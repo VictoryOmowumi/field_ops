@@ -57,52 +57,96 @@ export function BrandProvider({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const querySlug = params.get("org")?.trim().toLowerCase() || null;
-    let stored: { slug?: string; name?: string; logoUrl?: string | null } | null = null;
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      stored = raw ? (JSON.parse(raw) as { slug?: string; name?: string; logoUrl?: string | null }) : null;
-    } catch {
-      stored = null;
-    }
+    async function loadBrand() {
+      setBrand((previous) => ({ ...previous, loading: true }));
+      try {
+        const { supabaseClient } = await import("@/lib/supabase/client");
+        const sessionResult = await supabaseClient.auth.getSession();
+        const token = sessionResult.data.session?.access_token;
+        if (token) {
+          const response = await fetch("/api/auth/context", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (response.ok) {
+            const payload = (await response.json()) as {
+              success: boolean;
+              user?: {
+                memberships?: Array<{
+                  status?: string;
+                  organizations?: {
+                    name?: string | null;
+                    slug?: string | null;
+                    logo_url?: string | null;
+                  };
+                }>;
+              };
+            };
+            const activeMembership = (payload.user?.memberships ?? []).find((item) => item.status === "active")
+              ?? (payload.user?.memberships ?? [])[0];
+            const orgName = activeMembership?.organizations?.name?.trim();
+            if (orgName) {
+              const next = {
+                brandName: orgName,
+                logoUrl: activeMembership?.organizations?.logo_url ?? null,
+                orgSlug: activeMembership?.organizations?.slug ?? null,
+                loading: false,
+              };
+              setBrand(next);
+              localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                slug: next.orgSlug,
+                name: next.brandName,
+                logoUrl: next.logoUrl,
+              }));
+              writeBrandCookies({
+                slug: next.orgSlug,
+                name: next.brandName,
+                logoUrl: next.logoUrl,
+              });
+              return;
+            }
+          }
+        }
 
-    if (!querySlug && stored?.name) {
-      writeBrandCookies({ slug: stored.slug ?? null, name: stored.name, logoUrl: stored.logoUrl ?? null });
-      return;
-    }
+        const params = new URLSearchParams(window.location.search);
+        const querySlug = params.get("org")?.trim().toLowerCase() || null;
+        if (querySlug) {
+          const response = await fetch(`/api/public/brand?org=${encodeURIComponent(querySlug)}`);
+          if (response.ok) {
+            const payload = (await response.json()) as { success: boolean; brand?: OrgBrand };
+            if (payload.success && payload.brand) {
+              const next = {
+                brandName: payload.brand.name || APP_NAME,
+                logoUrl: payload.brand.logoUrl ?? null,
+                orgSlug: payload.brand.slug ?? querySlug,
+                loading: false,
+              };
+              setBrand(next);
+              localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                slug: next.orgSlug,
+                name: next.brandName,
+                logoUrl: next.logoUrl,
+              }));
+              writeBrandCookies({
+                slug: next.orgSlug,
+                name: next.brandName,
+                logoUrl: next.logoUrl,
+              });
+              return;
+            }
+          }
+        }
 
-    if (!querySlug) return;
-
-    fetch(`/api/public/brand?org=${encodeURIComponent(querySlug)}`)
-      .then(async (response) => {
-        if (!response.ok) throw new Error("brand-not-found");
-        const payload = (await response.json()) as { success: boolean; brand?: OrgBrand };
-        if (!payload.success || !payload.brand) throw new Error("brand-not-found");
-        const next = {
-          brandName: payload.brand.name || APP_NAME,
-          logoUrl: payload.brand.logoUrl ?? null,
-          orgSlug: payload.brand.slug ?? querySlug,
-          loading: false,
-        };
-        setBrand(next);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({
-          slug: next.orgSlug,
-          name: next.brandName,
-          logoUrl: next.logoUrl,
-        }));
-        writeBrandCookies({
-          slug: next.orgSlug,
-          name: next.brandName,
-          logoUrl: next.logoUrl,
-        });
-      })
-      .catch(() => {
         const fallback = { brandName: APP_NAME, logoUrl: null, orgSlug: null, loading: false };
         setBrand(fallback);
         localStorage.removeItem(STORAGE_KEY);
         writeBrandCookies({ slug: null, name: APP_NAME, logoUrl: null });
-      });
+      } catch {
+        const fallback = { brandName: APP_NAME, logoUrl: null, orgSlug: null, loading: false };
+        setBrand(fallback);
+      }
+    }
+
+    void loadBrand();
   }, []);
 
   const value = useMemo(() => brand, [brand]);

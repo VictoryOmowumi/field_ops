@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
       .maybeSingle(),
     supabase
       .from("organization_users")
-      .select("organization_id, role, status, organizations(name, slug)")
+      .select("organization_id, role, status, organizations(name, slug, logo_url, brand_favicon_ico_url, brand_favicon_16_url, brand_favicon_32_url, brand_apple_touch_icon_url, brand_android_192_url, brand_android_512_url, brand_manifest_url)")
       .eq("user_id", user.id),
   ]);
 

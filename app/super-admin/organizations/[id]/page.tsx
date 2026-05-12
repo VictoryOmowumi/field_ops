@@ -27,6 +27,13 @@ type Org = {
   brand_primary_color?: string | null;
   brand_secondary_color?: string | null;
   logo_url?: string | null;
+  brand_favicon_ico_url?: string | null;
+  brand_favicon_16_url?: string | null;
+  brand_favicon_32_url?: string | null;
+  brand_apple_touch_icon_url?: string | null;
+  brand_android_192_url?: string | null;
+  brand_android_512_url?: string | null;
+  brand_manifest_url?: string | null;
   billing_email?: string | null;
   created_at: string;
   campaignCount: number;
@@ -157,6 +164,29 @@ export default function OrganizationDetailsPage() {
             <Info label="Logo" value={org.logo_url ?? "Not uploaded"}  />
             <Info label="Report Header" value="Default" />
           </div>
+          <div className="mt-4 space-y-3">
+            <AssetPreview label="Logo" url={org.logo_url} />
+            <div className="grid gap-3 sm:grid-cols-3">
+              <AssetPreview label="favicon.ico" url={org.brand_favicon_ico_url} compact />
+              <AssetPreview label="favicon-16x16" url={org.brand_favicon_16_url} compact />
+              <AssetPreview label="favicon-32x32" url={org.brand_favicon_32_url} compact />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <AssetPreview label="apple-touch-icon" url={org.brand_apple_touch_icon_url} compact />
+              <AssetPreview label="android-192" url={org.brand_android_192_url} compact />
+              <AssetPreview label="android-512" url={org.brand_android_512_url} compact />
+            </div>
+            <div className="rounded-3xl bg-muted/35 p-4">
+              <p className="text-xs text-muted-foreground">Manifest</p>
+              {org.brand_manifest_url ? (
+                <a className="mt-1 inline-block text-sm font-medium text-primary hover:underline" href={org.brand_manifest_url} target="_blank" rel="noreferrer">
+                  Open uploaded manifest
+                </a>
+              ) : (
+                <p className="mt-1 font-medium">Not uploaded</p>
+              )}
+            </div>
+          </div>
         </section>
 
         <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60 lg:col-span-6">
@@ -187,6 +217,26 @@ function Info({ label, value }: { label: string; value: string }) {
     <div className="rounded-3xl bg-muted/35 p-4">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-1 font-medium">{value}</p>
+    </div>
+  );
+}
+
+function AssetPreview({ label, url, compact = false }: { label: string; url?: string | null; compact?: boolean }) {
+  return (
+    <div className="rounded-3xl bg-muted/35 p-4">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      {url ? (
+        <div className="mt-2 space-y-2">
+          <div className={`overflow-hidden rounded-xl border border-border/70 bg-background ${compact ? "h-16 w-16" : "h-24 w-full max-w-56"}`}>
+            <img src={url} alt={`${label} preview`} className="h-full w-full object-contain p-1" />
+          </div>
+          <a className="inline-block text-xs text-primary hover:underline" href={url} target="_blank" rel="noreferrer">
+            Open asset
+          </a>
+        </div>
+      ) : (
+        <p className="mt-1 font-medium">Not uploaded</p>
+      )}
     </div>
   );
 }
