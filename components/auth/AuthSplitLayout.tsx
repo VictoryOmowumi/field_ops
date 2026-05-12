@@ -33,7 +33,7 @@ export default function AuthSplitLayout({
                   <img src={resolvedLogo} alt={`${brandName} logo`} className="h-8 w-auto max-w-40 object-contain" />
                 </span>
               ) : (
-                <Image src="/orange-black.png" alt={`${brandName} logo`} width={120} height={120} className="w-full h-auto" />
+                <Image src="/iminnd-logo.png" alt={`${brandName} logo`} width={120} height={120} className="w-full h-auto" />
               )}
             </Link>
           </div>
