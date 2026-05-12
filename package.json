@@ -10,7 +10,8 @@
     "setup:test-accounts": "node scripts/setup-test-accounts.mjs",
     "import:nigeria-locations": "node scripts/import-nigeria-locations.mjs",
     "backfill:campaign-workflow": "node scripts/backfill-campaign-workflow.mjs",
-    "sort:nigeria-locations": "node scripts/sort-nigeria-locations.mjs"
+    "sort:nigeria-locations": "node scripts/sort-nigeria-locations.mjs",
+    "cleanup:handover": "node scripts/handover-cleanup.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.3",

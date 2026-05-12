@@ -28,8 +28,8 @@ export default function AgentHeader() {
           <div className="">
             {logoUrl ? (
               <div className="flex items-center gap-2">
-                <span className="inline-flex items-center rounded-md border border-border/70 bg-taupe-800 dark:bg-transparent! p-1 shadow-xs">
-                  <img src={logoUrl} alt={`${brandName} logo`} className="h-6 w-auto max-w-28 object-contain" />
+                <span className="inline-flex items-center rounded-full bg-white">
+                  <img src={logoUrl} alt={`${brandName} logo`} className="h-8 w-auto max-w-28 object-contain" />
                 </span>
               </div>
             ) : (
