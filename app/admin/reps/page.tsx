@@ -20,6 +20,8 @@ type Rep = {
   targetOutlets: number | null;
   targetConversions: number | null;
   campaigns: Array<{ id: string; name: string }>;
+  lastSignInAt: string | null;
+  lastActivityAt: string | null;
 };
 
 export default function RepsPage() {
@@ -53,14 +55,16 @@ export default function RepsPage() {
                 <th className="px-4 py-3 text-left font-medium">Territory</th>
                 <th className="px-4 py-3 text-left font-medium">Targets</th>
                 <th className="px-4 py-3 text-left font-medium">Status</th>
+                <th className="px-4 py-3 text-left font-medium">Last Sign In</th>
+                <th className="px-4 py-3 text-left font-medium">Last Activity</th>
                 <th className="px-4 py-3 text-right font-medium">Action</th>
               </tr>
             </thead>
             <tbody>
               {query.isLoading ? (
-               <TableLoadingState colSpan={6} title="Loading sales reps..." description="Fetching the latest data for your team." />
+               <TableLoadingState colSpan={8} title="Loading sales reps..." description="Fetching the latest data for your team." />
               ) : (query.data ?? []).length === 0 ? (
-                <TableEmptyStateRow colSpan={6} title="No sales reps found" description="Add sales reps to assign them to campaigns and territories." />
+                <TableEmptyStateRow colSpan={8} title="No sales reps found" description="Add sales reps to assign them to campaigns and territories." />
               ) : (
                 (query.data ?? []).map((rep) => (
                   <tr key={rep.id} className="border-t border-border">
@@ -76,6 +80,12 @@ export default function RepsPage() {
                       {rep.targetOutlets ?? "-"} outlets / {rep.targetConversions ?? "-"} conv
                     </td>
                     <td className="px-4 py-4"><UserStatusBadge status={rep.status} /></td>
+                    <td className="px-4 py-4 text-muted-foreground">
+                      {rep.lastSignInAt ? new Date(rep.lastSignInAt).toLocaleString() : "-"}
+                    </td>
+                    <td className="px-4 py-4 text-muted-foreground">
+                      {rep.lastActivityAt ? new Date(rep.lastActivityAt).toLocaleString() : "-"}
+                    </td>
                     <td className="px-4 py-4 text-right">
                       <Button variant="secondary" size="sm" className="rounded-full" asChild>
                         <Link href={`/admin/reps/${rep.id}`}>View</Link>
@@ -91,4 +101,3 @@ export default function RepsPage() {
     </div>
   );
 }
-

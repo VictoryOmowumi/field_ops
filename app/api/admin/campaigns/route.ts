@@ -97,12 +97,12 @@ export async function GET(request: NextRequest) {
   const [visitsRes, salesRes, assignmentsRes] = await Promise.all([
     supabase
       .from("visits")
-      .select("campaign_id, outcome, created_at")
+      .select("campaign_id, outlet_id, created_at")
       .eq("organization_id", organizationId)
       .in("campaign_id", campaignIds),
     supabase
       .from("sales")
-      .select("campaign_id, created_at")
+      .select("campaign_id, outlet_id, quantity, sales_value, created_at")
       .eq("organization_id", organizationId)
       .in("campaign_id", campaignIds),
     supabase
@@ -112,13 +112,13 @@ export async function GET(request: NextRequest) {
       .in("campaign_id", campaignIds),
   ]);
 
-  const visitsByCampaign = new Map<string, { visits: number; conversions: number; lastVisitAt: string | null }>();
+  const visitsByCampaign = new Map<string, { visits: number; outletIds: Set<string>; lastVisitAt: string | null }>();
   for (const visit of visitsRes.data ?? []) {
     const key = visit.campaign_id ?? "";
     if (!key) continue;
-    const current = visitsByCampaign.get(key) ?? { visits: 0, conversions: 0, lastVisitAt: null };
+    const current = visitsByCampaign.get(key) ?? { visits: 0, outletIds: new Set<string>(), lastVisitAt: null };
     current.visits += 1;
-    if (visit.outcome === "converted") current.conversions += 1;
+    if (visit.outlet_id) current.outletIds.add(visit.outlet_id);
     if (!current.lastVisitAt || new Date(visit.created_at).getTime() > new Date(current.lastVisitAt).getTime()) {
       current.lastVisitAt = visit.created_at;
     }
@@ -126,9 +126,15 @@ export async function GET(request: NextRequest) {
   }
 
   const lastSaleByCampaign = new Map<string, string>();
+  const convertedOutletIdsByCampaign = new Map<string, Set<string>>();
   for (const sale of salesRes.data ?? []) {
     const key = sale.campaign_id ?? "";
     if (!key) continue;
+    if ((Number(sale.quantity ?? 0) > 0 || Number(sale.sales_value ?? 0) > 0) && sale.outlet_id) {
+      const existing = convertedOutletIdsByCampaign.get(key) ?? new Set<string>();
+      existing.add(sale.outlet_id);
+      convertedOutletIdsByCampaign.set(key, existing);
+    }
     const current = lastSaleByCampaign.get(key);
     if (!current || new Date(sale.created_at).getTime() > new Date(current).getTime()) {
       lastSaleByCampaign.set(key, sale.created_at);
@@ -152,7 +158,9 @@ export async function GET(request: NextRequest) {
   }
 
   const enrichedCampaigns = campaigns.map((campaign) => {
-    const visitMetrics = visitsByCampaign.get(campaign.id) ?? { visits: 0, conversions: 0, lastVisitAt: null };
+    const visitMetrics = visitsByCampaign.get(campaign.id) ?? { visits: 0, outletIds: new Set<string>(), lastVisitAt: null };
+    const achievedVisits = visitMetrics.outletIds.size;
+    const conversions = (convertedOutletIdsByCampaign.get(campaign.id) ?? new Set<string>()).size;
     const lastSaleAt = lastSaleByCampaign.get(campaign.id) ?? null;
     const lastActivityAt =
       visitMetrics.lastVisitAt && lastSaleAt
@@ -160,7 +168,7 @@ export async function GET(request: NextRequest) {
           ? visitMetrics.lastVisitAt
           : lastSaleAt
         : visitMetrics.lastVisitAt ?? lastSaleAt;
-    const conversionRate = visitMetrics.visits > 0 ? (visitMetrics.conversions / visitMetrics.visits) * 100 : 0;
+    const conversionRate = achievedVisits > 0 ? (conversions / achievedVisits) * 100 : 0;
 
     return {
       ...campaign,
@@ -168,7 +176,8 @@ export async function GET(request: NextRequest) {
       supervisor_user_ids: supervisorIdsByCampaign.get(campaign.id) ?? [],
       supervisor_count: (supervisorIdsByCampaign.get(campaign.id) ?? []).length,
       visits_count: visitMetrics.visits,
-      conversions_count: visitMetrics.conversions,
+      conversions_count: conversions,
+      achieved_visits: achievedVisits,
       conversion_rate: conversionRate,
       last_activity_at: lastActivityAt,
     };

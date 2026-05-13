@@ -31,6 +31,19 @@ type Rep = {
   paymentType?: string | null;
   dailyRate?: number | null;
   commissionRate?: number | null;
+  lastSignInAt?: string | null;
+  lastActivityAt?: string | null;
+  timeline?: Array<{
+    id: string;
+    type: "visit" | "sale";
+    activityId: string;
+    campaignId: string | null;
+    createdAt: string;
+    campaign: string;
+    outlet: string;
+    status: string;
+    meta: string;
+  }>;
 };
 
 export default function RepDetailsPage() {
@@ -106,6 +119,8 @@ export default function RepDetailsPage() {
           <Info label="Target conversions" value={rep.targetConversions?.toString() ?? "-"} />
           <Info label="Campaigns" value={rep.campaigns.length ? rep.campaigns.map((x) => x.name).join(", ") : "-"} />
           <Info label="Notes" value={rep.notes || "-"} />
+          <Info label="Last sign in" value={rep.lastSignInAt ? new Date(rep.lastSignInAt).toLocaleString() : "-"} />
+          <Info label="Last activity" value={rep.lastActivityAt ? new Date(rep.lastActivityAt).toLocaleString() : "-"} />
         </div>
       </section>
 
@@ -115,7 +130,7 @@ export default function RepDetailsPage() {
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Info label="Bank" value={rep.bankName || "-"} />
           <div className="rounded-3xl bg-background p-4">
-              <p className="text-xs text-muted-foreground">Account number</p>
+            <p className="text-xs text-muted-foreground">Account number</p>
             <div className="flex items-start justify-between gap-3">
               <p className="mt-1 font-medium">{showAccountNumber ? rep.accountNumber || "-" : maskAccountNumber(rep.accountNumber)}</p>
               <TooltipProvider>
@@ -159,27 +174,74 @@ export default function RepDetailsPage() {
         </div>
       </section>
 
-        <div className="mt-3 flex flex-wrap justify-end gap-2">
-          {rep.status === "active" ? (
-            <Button
-              variant="destructive"
-              className="rounded-full"
-              onClick={() => updateStatus("inactive")}
-              disabled={updatingStatus !== null}
-            >
-              {updatingStatus === "inactive" ? "Deactivating..." : "Deactivate"}
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              className="rounded-full bg-green-500/10 text-green-500 border-green-400"
-              onClick={() => updateStatus("active")}
-              disabled={updatingStatus !== null}
-            >
-              {updatingStatus === "active" ? "Activating..." : "Activate Account"}
-            </Button>
-          )}
+      <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60">
+        <h2 className="font-medium">Activity Timeline</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Latest visit and sales events linked to this rep.</p>
+        <div className="mt-4 overflow-hidden rounded-3xl border border-border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50 text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3 text-left font-medium">Type</th>
+                <th className="px-4 py-3 text-left font-medium">Campaign</th>
+                <th className="px-4 py-3 text-left font-medium">Outlet</th>
+                <th className="px-4 py-3 text-left font-medium">Status</th>
+                <th className="px-4 py-3 text-left font-medium">Details</th>
+                <th className="px-4 py-3 text-left font-medium">Time</th>
+                <th className="px-4 py-3 text-left font-medium">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(rep.timeline ?? []).length === 0 ? (
+                <tr className="border-t border-border">
+                  <td className="px-4 py-4 text-muted-foreground" colSpan={7}>No activity yet.</td>
+                </tr>
+              ) : (
+                (rep.timeline ?? []).map((row) => (
+                  <tr key={row.id} className="border-t border-border">
+                    <td className="px-4 py-4 capitalize">{row.type}</td>
+                    <td className="px-4 py-4">{row.campaign}</td>
+                    <td className="px-4 py-4">{row.outlet}</td>
+                    <td className="px-4 py-4 capitalize">{row.status}</td>
+                    <td className="px-4 py-4 text-muted-foreground">{row.meta}</td>
+                    <td className="px-4 py-4 text-muted-foreground">{new Date(row.createdAt).toLocaleString()}</td>
+                    <td className="px-4 py-4">
+                      {row.campaignId ? (
+                        <Button variant="outline" size="sm" className="rounded-full" asChild>
+                          <Link href={`/admin/campaigns/${row.campaignId}/activities/${row.activityId}`}>View details</Link>
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
+      </section>
+
+      <div className="mt-3 flex flex-wrap justify-end gap-2">
+        {rep.status === "active" ? (
+          <Button
+            variant="destructive"
+            className="rounded-full"
+            onClick={() => updateStatus("inactive")}
+            disabled={updatingStatus !== null}
+          >
+            {updatingStatus === "inactive" ? "Deactivating..." : "Deactivate"}
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            className="rounded-full border-green-400 bg-green-500/10 text-green-500"
+            onClick={() => updateStatus("active")}
+            disabled={updatingStatus !== null}
+          >
+            {updatingStatus === "active" ? "Activating..." : "Activate Account"}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

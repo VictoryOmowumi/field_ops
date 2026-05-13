@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
   const supabase = createServerSupabaseClient();
   let query = supabase
     .from("outlets")
-    .select("id, name, outlet_type, contact_person, phone, state, lga, sync_status, campaign_id, created_by, created_at, campaigns(name)", { count: "exact" })
+    .select("id, name, outlet_type, contact_person, phone, address, state, lga, sync_status, campaign_id, created_by, created_at, campaigns(name)", { count: "exact" })
     .eq("organization_id", membership.organizationId)
     .order("created_at", { ascending: false });
 
@@ -62,10 +62,24 @@ export async function GET(request: NextRequest) {
   if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 });
 
   const creatorIds = [...new Set((data ?? []).map((x) => x.created_by).filter(Boolean))] as string[];
+  const outletIds = [...new Set((data ?? []).map((x) => x.id).filter(Boolean))] as string[];
   const { data: profiles } = creatorIds.length
     ? await supabase.from("profiles").select("user_id, full_name").in("user_id", creatorIds)
     : { data: [] as Array<{ user_id: string; full_name: string | null }> };
+  const { data: outletSales } = outletIds.length
+    ? await supabase
+      .from("sales")
+      .select("outlet_id, quantity, sales_value")
+      .eq("organization_id", membership.organizationId)
+      .in("outlet_id", outletIds)
+    : { data: [] as Array<{ outlet_id: string | null; quantity: number | null; sales_value: number | null }> };
   const profileMap = new Map((profiles ?? []).map((p) => [p.user_id, p.full_name ?? "Unknown"]));
+  const convertedOutletIds = new Set(
+    (outletSales ?? [])
+      .filter((sale) => Number(sale.quantity ?? 0) > 0 || Number(sale.sales_value ?? 0) > 0)
+      .map((sale) => sale.outlet_id)
+      .filter(Boolean)
+  );
 
   const outlets = (data ?? []).map((item) => ({
     id: item.id,
@@ -73,10 +87,12 @@ export async function GET(request: NextRequest) {
     type: item.outlet_type ?? "-",
     contact: item.contact_person ?? "-",
     phone: item.phone ?? "-",
+    address: item.address ?? "N/A",
     campaignId: item.campaign_id,
     campaign: (item as { campaigns?: { name?: string } }).campaigns?.name ?? "-",
     rep: item.created_by ? profileMap.get(item.created_by) ?? "-" : "-",
     location: [item.lga, item.state].filter(Boolean).join(", ") || "-",
+    status: convertedOutletIds.has(item.id) ? "Converted" : "Onboarded",
     syncStatus: item.sync_status,
     createdAt: item.created_at,
   }));

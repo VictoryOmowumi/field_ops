@@ -24,6 +24,8 @@ type CreateRepPayload = {
   commissionRate?: number | null;
 };
 
+type OrgMembershipStatus = "active" | "inactive" | "invited" | "suspended";
+
 function unauthorized() {
   return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
 }
@@ -64,7 +66,7 @@ export async function GET(request: NextRequest) {
     .eq("organization_id", membership.organizationId)
     .eq("role", "agent");
 
-  const orgAgentMap = new Map((orgAgentUsers ?? []).map((row) => [row.user_id, row.status ?? "active"]));
+  const orgAgentMap = new Map((orgAgentUsers ?? []).map((row) => [row.user_id, (row.status ?? "active") as OrgMembershipStatus]));
   const repByUserId = new Map((reps ?? []).map((rep) => [rep.user_id, rep]));
   const missingAgentIds: string[] = [];
   for (const agentUserId of orgAgentMap.keys()) {
@@ -105,6 +107,41 @@ export async function GET(request: NextRequest) {
     .eq("role", "agent")
     .in("user_id", repUserIds);
 
+  const [{ data: visitsByRep }, { data: salesByRep }] = await Promise.all([
+    supabase
+      .from("visits")
+      .select("agent_id, created_at")
+      .eq("organization_id", membership.organizationId)
+      .in("agent_id", repUserIds),
+    supabase
+      .from("sales")
+      .select("agent_id, created_at")
+      .eq("organization_id", membership.organizationId)
+      .in("agent_id", repUserIds),
+  ]);
+
+  const lastActivityMap = new Map<string, string>();
+  for (const row of visitsByRep ?? []) {
+    const current = lastActivityMap.get(row.agent_id);
+    if (!current || new Date(row.created_at).getTime() > new Date(current).getTime()) {
+      lastActivityMap.set(row.agent_id, row.created_at);
+    }
+  }
+  for (const row of salesByRep ?? []) {
+    const current = lastActivityMap.get(row.agent_id);
+    if (!current || new Date(row.created_at).getTime() > new Date(current).getTime()) {
+      lastActivityMap.set(row.agent_id, row.created_at);
+    }
+  }
+
+  const authUsersMap = new Map<string, string | null>();
+  await Promise.all(
+    userIds.map(async (repUserId) => {
+      const { data: authUserData } = await supabase.auth.admin.getUserById(repUserId);
+      authUsersMap.set(repUserId, authUserData.user?.last_sign_in_at ?? null);
+    })
+  );
+
   const campaignByUser = new Map<string, Array<{ id: string; name: string }>>();
   for (const row of assignments ?? []) {
     const list = campaignByUser.get(row.user_id) ?? [];
@@ -128,7 +165,7 @@ export async function GET(request: NextRequest) {
       email: repProfile?.email ?? null,
       phone: repProfile?.phone ?? null,
       territory: [rep.lga, rep.state].filter(Boolean).join(", "),
-      status: rep.status,
+      status: orgAgentMap.get(rep.user_id) ?? rep.status,
       targetOutlets: rep.target_outlets,
       targetConversions: rep.target_conversions,
       bankName: rep.bank_name,
@@ -138,6 +175,8 @@ export async function GET(request: NextRequest) {
       dailyRate: rep.daily_rate,
       commissionRate: rep.commission_rate,
       supervisor: supervisorProfile?.full_name ?? null,
+      lastSignInAt: authUsersMap.get(rep.user_id) ?? null,
+      lastActivityAt: lastActivityMap.get(rep.user_id) ?? null,
       campaignIds: (campaignByUser.get(rep.user_id) ?? []).map((x) => x.id),
       campaigns: campaignByUser.get(rep.user_id) ?? [],
     };

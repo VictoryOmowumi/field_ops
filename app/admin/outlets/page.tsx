@@ -18,6 +18,8 @@ type OutletRow = {
   name: string;
   type: string;
   phone: string;
+  address: string;
+  status: "Converted" | "Onboarded";
   campaign: string;
   rep: string;
   location: string;
@@ -107,6 +109,7 @@ export default function OutletsPage() {
                 <th className="px-4 py-3 text-left font-medium">Outlet</th>
                 <th className="px-4 py-3 text-left font-medium">Campaign</th>
                 <th className="px-4 py-3 text-left font-medium">Rep</th>
+                <th className="px-4 py-3 text-left font-medium">Status</th>
                 <th className="px-4 py-3 text-left font-medium">Created</th>
                 <th className="px-4 py-3 text-left font-medium">Location</th>
                 <th className="px-4 py-3 text-left font-medium">Sync</th>
@@ -116,18 +119,24 @@ export default function OutletsPage() {
 
             <tbody>
               {query.isLoading ? (
-                <TableLoadingState colSpan={7} title="Loading outlets..." description="Fetching outlet records and sync status." />
+                <TableLoadingState colSpan={8} title="Loading outlets..." description="Fetching outlet records and sync status." />
               ) : (query.data?.outlets ?? []).length === 0 ? (
-                <TableEmptyStateRow colSpan={7} title="No outlets yet" description="Outlets will appear here when reps start capturing in the field." />
+                <TableEmptyStateRow colSpan={8} title="No outlets yet" description="Outlets will appear here when reps start capturing in the field." />
               ) : (
                 (query.data?.outlets ?? []).map((outlet) => (
                   <tr key={outlet.id} className="border-t border-border">
                     <td className="px-4 py-4">
                       <p className="font-medium">{outlet.name}</p>
-                      <p className="text-xs text-muted-foreground">{outlet.type} · {outlet.phone}</p>
+                      <p className="text-xs text-muted-foreground">{outlet.type} · {outlet.phone || "N/A"}</p>
+                      <p className="text-xs text-muted-foreground">{outlet.address || "N/A"}</p>
                     </td>
                     <td className="px-4 py-4 text-muted-foreground">{outlet.campaign}</td>
                     <td className="px-4 py-4 text-muted-foreground">{outlet.rep}</td>
+                    <td className="px-4 py-4">
+                      <Badge className={`rounded-full ${outlet.status === "Converted" ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"}`}>
+                        {outlet.status}
+                      </Badge>
+                    </td>
                     <td className="px-4 py-4 text-muted-foreground">{new Date(outlet.createdAt).toLocaleString()}</td>
                     <td className="px-4 py-4 text-muted-foreground">{outlet.location}</td>
                     <td className="px-4 py-4"><SyncBadge status={outlet.syncStatus} /></td>

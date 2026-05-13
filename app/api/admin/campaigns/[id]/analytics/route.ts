@@ -24,12 +24,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   const { id } = await context.params;
   const supabase = createServerSupabaseClient();
+  const dateFrom = request.nextUrl.searchParams.get("dateFrom");
+  const dateTo = request.nextUrl.searchParams.get("dateTo");
 
   const [summary, mapPoints] = await Promise.all([
-    getCampaignAnalyticsSummary(supabase, membership.organizationId, id),
-    getCampaignMapPoints(supabase, membership.organizationId, id),
+    getCampaignAnalyticsSummary(supabase, membership.organizationId, id, { dateFrom, dateTo }),
+    getCampaignMapPoints(supabase, membership.organizationId, id, { dateFrom, dateTo }),
   ]);
 
   return NextResponse.json({ success: true, summary, mapPoints });
 }
-

@@ -86,6 +86,8 @@ export function useCampaignDetailsPage(campaignId?: string) {
   const [activityPage, setActivityPage] = useState(1);
   const [activitySearch, setActivitySearch] = useState("");
   const [activityStatusFilter, setActivityStatusFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [savingAssignments, setSavingAssignments] = useState(false);
   const [registerRepOpen, setRegisterRepOpen] = useState(false);
@@ -129,6 +131,8 @@ export function useCampaignDetailsPage(campaignId?: string) {
       });
       if (nextSearch.trim()) params.set("search", nextSearch.trim());
       if (nextStatus !== "all") params.set("status", nextStatus);
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
       const response = await fetch(`/api/admin/campaigns/${campaignId}/activities?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -145,14 +149,17 @@ export function useCampaignDetailsPage(campaignId?: string) {
       setActivities(result.activities ?? []);
       setActivitiesTotal(result.total ?? 0);
     },
-    [campaignId]
+    [campaignId, dateFrom, dateTo]
   );
 
   const loadCampaignIntelligence = useCallback(
     async (token: string) => {
       if (!campaignId) return;
       const [analyticsResponse, evidenceResponse, shareLinksResponse] = await Promise.all([
-        fetch(`/api/admin/campaigns/${campaignId}/analytics`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`/api/admin/campaigns/${campaignId}/analytics?${new URLSearchParams({
+          ...(dateFrom ? { dateFrom } : {}),
+          ...(dateTo ? { dateTo } : {}),
+        }).toString()}`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`/api/admin/campaigns/${campaignId}/evidence`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`/api/admin/campaigns/${campaignId}/share-links`, { headers: { Authorization: `Bearer ${token}` } }),
       ]);
@@ -173,7 +180,7 @@ export function useCampaignDetailsPage(campaignId?: string) {
       const shareLinksResult = (await shareLinksResponse.json()) as { success: boolean; shareLinks?: CampaignShareLink[] };
       if (shareLinksResponse.ok && shareLinksResult.success) setShareLinks(shareLinksResult.shareLinks ?? []);
     },
-    [campaignId]
+    [campaignId, dateFrom, dateTo]
   );
 
   useEffect(() => {
@@ -222,6 +229,18 @@ export function useCampaignDetailsPage(campaignId?: string) {
 
     void loadCampaign();
   }, [campaignId, loadActivities, loadCampaignIntelligence]);
+
+  useEffect(() => {
+    async function reloadForDateRange() {
+      if (!campaignId) return;
+      const { data } = await supabaseClient.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+      await Promise.all([loadActivities(token, 1, activitySearch, activityStatusFilter), loadCampaignIntelligence(token)]);
+      setActivityPage(1);
+    }
+    void reloadForDateRange();
+  }, [campaignId, dateFrom, dateTo, loadActivities, loadCampaignIntelligence, activitySearch, activityStatusFilter]);
 
   async function refreshAssignableUsersAndAssignments(token: string) {
     if (!campaignId) return;
@@ -303,7 +322,13 @@ export function useCampaignDetailsPage(campaignId?: string) {
       const token = data.session?.access_token;
       if (!token) throw new Error("Session expired. Please sign in again.");
 
-      const response = await fetch(`/api/admin/reports/export?type=campaign-activities&campaignId=${campaign.id}`, {
+      const params = new URLSearchParams({
+        type: "campaign-activities",
+        campaignId: campaign.id,
+      });
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
+      const response = await fetch(`/api/admin/reports/export?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) {
@@ -588,6 +613,8 @@ export function useCampaignDetailsPage(campaignId?: string) {
     activityPage,
     activitySearch,
     activityStatusFilter,
+    dateFrom,
+    dateTo,
     assignDialogOpen,
     selectedSupervisors,
     supervisors,
@@ -610,6 +637,8 @@ export function useCampaignDetailsPage(campaignId?: string) {
     setActivityPage,
     setActivitySearch,
     setActivityStatusFilter,
+    setDateFrom,
+    setDateTo,
     setAssignDialogOpen,
     toggleSupervisor,
     setShareDialogOpen,

@@ -60,6 +60,14 @@ export default function CampaignDetailsPage() {
         onActivitySearchChange={vm.setActivitySearch}
         activityStatusFilter={vm.activityStatusFilter}
         onActivityStatusFilterChange={vm.setActivityStatusFilter}
+        dateFrom={vm.dateFrom}
+        onDateFromChange={vm.setDateFrom}
+        dateTo={vm.dateTo}
+        onDateToChange={vm.setDateTo}
+        onClearDateFilter={() => {
+          vm.setDateFrom("");
+          vm.setDateTo("");
+        }}
         onApplyFilters={async () => {
           const { data } = await supabaseClient.auth.getSession();
           const token = data.session?.access_token;

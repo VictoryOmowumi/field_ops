@@ -61,12 +61,92 @@ export async function GET(request: NextRequest, context: RouteContext) {
     .eq("user_id", rep.user_id)
     .maybeSingle();
 
+  const [{ data: orgMembership }, { data: authUserData }] = await Promise.all([
+    supabase
+      .from("organization_users")
+      .select("status")
+      .eq("organization_id", membership.organizationId)
+      .eq("user_id", rep.user_id)
+      .maybeSingle(),
+    supabase.auth.admin.getUserById(rep.user_id),
+  ]);
+
   const { data: assignments } = await supabase
     .from("campaign_assignments")
     .select("campaign_id, campaigns(name)")
     .eq("organization_id", membership.organizationId)
     .eq("role", "agent")
     .eq("user_id", rep.user_id);
+
+  const [{ data: visits }, { data: sales }] = await Promise.all([
+    supabase
+      .from("visits")
+      .select("id, created_at, campaign_id, outlet_id, task_type, outcome")
+      .eq("organization_id", membership.organizationId)
+      .eq("agent_id", rep.user_id)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    supabase
+      .from("sales")
+      .select("id, created_at, campaign_id, outlet_id, quantity, sales_value, conversion_status")
+      .eq("organization_id", membership.organizationId)
+      .eq("agent_id", rep.user_id)
+      .order("created_at", { ascending: false })
+      .limit(100),
+  ]);
+
+  const outletIds = [
+    ...new Set([...(visits ?? []).map((item) => item.outlet_id), ...(sales ?? []).map((item) => item.outlet_id)].filter(Boolean)),
+  ] as string[];
+  const campaignIds = [
+    ...new Set([...(visits ?? []).map((item) => item.campaign_id), ...(sales ?? []).map((item) => item.campaign_id)].filter(Boolean)),
+  ] as string[];
+  const [{ data: outlets }, { data: campaigns }] = await Promise.all([
+    outletIds.length
+      ? supabase.from("outlets").select("id, name").in("id", outletIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
+    campaignIds.length
+      ? supabase.from("campaigns").select("id, name").in("id", campaignIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
+  ]);
+  const outletMap = new Map((outlets ?? []).map((item) => [item.id, item.name]));
+  const campaignMap = new Map((campaigns ?? []).map((item) => [item.id, item.name]));
+
+  const timeline = [
+    ...(visits ?? []).map((item) => ({
+      id: `visit-${item.id}`,
+      type: "visit" as const,
+      activityId: `visit-${item.id}`,
+      campaignId: item.campaign_id ?? null,
+      createdAt: item.created_at,
+      campaign: item.campaign_id ? campaignMap.get(item.campaign_id) ?? "-" : "-",
+      outlet: item.outlet_id ? outletMap.get(item.outlet_id) ?? "-" : "-",
+      status: item.outcome ?? "pending",
+      meta: item.task_type?.replaceAll("_", " ") ?? "visit",
+    })),
+    ...(sales ?? []).map((item) => ({
+      id: `sale-${item.id}`,
+      type: "sale" as const,
+      activityId: `sale-${item.id}`,
+      campaignId: item.campaign_id ?? null,
+      createdAt: item.created_at,
+      campaign: item.campaign_id ? campaignMap.get(item.campaign_id) ?? "-" : "-",
+      outlet: item.outlet_id ? outletMap.get(item.outlet_id) ?? "-" : "-",
+      status: item.conversion_status ?? "pending",
+      meta: `qty ${item.quantity ?? 0}${item.sales_value ? ` · NGN ${item.sales_value}` : ""}`,
+    })),
+  ]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 100);
+
+  const lastVisitAt = (visits ?? [])[0]?.created_at ?? null;
+  const lastSaleAt = (sales ?? [])[0]?.created_at ?? null;
+  const lastActivityAt =
+    lastVisitAt && lastSaleAt
+      ? new Date(lastVisitAt).getTime() > new Date(lastSaleAt).getTime()
+        ? lastVisitAt
+        : lastSaleAt
+      : lastVisitAt ?? lastSaleAt;
 
   return NextResponse.json({
     success: true,
@@ -83,7 +163,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
       targetConversions: rep.target_conversions,
       assignedSupervisorUserId: rep.assigned_supervisor_user_id,
       notes: rep.notes,
-      status: rep.status,
+      status: orgMembership?.status ?? rep.status,
+      lastSignInAt: authUserData.user?.last_sign_in_at ?? null,
+      lastActivityAt,
       bankName: rep.bank_name,
       accountNumber: rep.account_number,
       accountName: rep.account_name,
@@ -95,6 +177,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         id: x.campaign_id,
         name: (x as { campaigns?: { name?: string } }).campaigns?.name ?? "Campaign",
       })),
+      timeline,
     },
   });
 }

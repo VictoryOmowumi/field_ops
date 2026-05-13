@@ -64,6 +64,7 @@ type CampaignActivity = {
   taskType?: string;
   status: string;
   customer?: string;
+  outletPhone?: string;
   outlet: string;
   area?: string;
   products?: string;
@@ -93,6 +94,11 @@ type CampaignDetailsSectionsProps = {
   onActivitySearchChange: (value: string) => void;
   activityStatusFilter: string;
   onActivityStatusFilterChange: (value: string) => void;
+  dateFrom: string;
+  onDateFromChange: (value: string) => void;
+  dateTo: string;
+  onDateToChange: (value: string) => void;
+  onClearDateFilter: () => void;
   onApplyFilters: () => void;
   activities: CampaignActivity[];
   activityPage: number;
@@ -121,6 +127,11 @@ export function CampaignDetailsSections({
   onActivitySearchChange,
   activityStatusFilter,
   onActivityStatusFilterChange,
+  dateFrom,
+  onDateFromChange,
+  dateTo,
+  onDateToChange,
+  onClearDateFilter,
   onApplyFilters,
   activities,
   activityPage,
@@ -195,12 +206,23 @@ export function CampaignDetailsSections({
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Info label="Total submissions" value={String(summary?.totalSubmissions ?? 0)} />
-        <Info label="Unique outlets" value={String(summary?.uniqueOutlets ?? 0)} />
+        <Info label="Unique outlets" value={String(summary?.achievedVisits ?? summary?.uniqueOutlets ?? 0)} />
         <Info label="Areas covered" value={String(summary?.areasCovered ?? 0)} />
         <Info label="Conversion rate" value={`${(summary?.conversionRate ?? 0).toFixed(1)}%`} />
         <Info label="Sync health" value={`${(summary?.syncHealth ?? 0).toFixed(1)}%`} />
         {posmConfigured ? <Info label="POSM deployed" value={String(summary?.posmDeployed ?? 0)} /> : null}
         {posmConfigured ? <Info label="POSM units" value={String(summary?.posmUnits ?? 0)} /> : null}
+      </section>
+
+      <section className="grid gap-4 sm:grid-cols-2">
+        <Info
+          label="Visit achievement"
+          value={`${summary?.achievedVisits ?? 0}/${campaign.target_outlets ?? 0} (${campaign.target_outlets ? (((summary?.achievedVisits ?? 0) / campaign.target_outlets) * 100).toFixed(1) : "0.0"}%)`}
+        />
+        <Info
+          label="Conversion achievement"
+          value={`${summary?.convertedOutlets ?? 0}/${campaign.target_conversions ?? 0} (${campaign.target_conversions ? (((summary?.convertedOutlets ?? 0) / campaign.target_conversions) * 100).toFixed(1) : "0.0"}%)`}
+        />
       </section>
 
       <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60">
@@ -332,6 +354,23 @@ export function CampaignDetailsSections({
       <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60">
         <h2 className="font-semibold">Campaign Activities</h2>
         <p className="mt-1 text-sm text-muted-foreground">Latest visit events grouped with related sales lines.</p>
+        <div className="mt-3 grid gap-2 md:grid-cols-3">
+          <input
+            type="date"
+            className="h-11 rounded-full border border-border bg-background px-4 text-sm"
+            value={dateFrom}
+            onChange={(event) => onDateFromChange(event.target.value)}
+          />
+          <input
+            type="date"
+            className="h-11 rounded-full border border-border bg-background px-4 text-sm"
+            value={dateTo}
+            onChange={(event) => onDateToChange(event.target.value)}
+          />
+          <Button variant="outline" className="h-11 rounded-full" onClick={onClearDateFilter}>
+            Clear Date Filter
+          </Button>
+        </div>
         <div className="mt-4 flex flex-wrap gap-2 ">
           <input
             className="h-11 rounded-full border border-border bg-background px-4 text-sm"
@@ -361,6 +400,7 @@ export function CampaignDetailsSections({
               <tr>
                 <th className="px-4 py-3 text-left font-medium">Activity</th>
                 <th className="px-4 py-3 text-left font-medium">Customer</th>
+                <th className="px-4 py-3 text-left font-medium">Customer Phone</th>
                 <th className="px-4 py-3 text-left font-medium">Outlet</th>
                 <th className="px-4 py-3 text-left font-medium">Area</th>
                 <th className="px-4 py-3 text-left font-medium">Products</th>
@@ -374,7 +414,7 @@ export function CampaignDetailsSections({
             <tbody>
               {activities.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td className="px-4 py-6 text-muted-foreground" colSpan={10}>
+                  <td className="px-4 py-6 text-muted-foreground" colSpan={11}>
                     No activities yet for this campaign.
                   </td>
                 </tr>
@@ -383,6 +423,7 @@ export function CampaignDetailsSections({
                   <tr key={item.id} className="border-t border-border hover:bg-muted/30">
                     <td className="px-4 py-4 capitalize">{item.taskType ?? (item.type === "visit" ? "visit" : "sale")}</td>
                     <td className="px-4 py-4">{item.customer ?? "-"}</td>
+                    <td className="px-4 py-4">{item.outletPhone ?? "N/A"}</td>
                     <td className="px-4 py-4">{item.outlet}</td>
                     <td className="px-4 py-4">{item.area ?? "-"}</td>
                     <td className="px-4 py-4">{item.products ?? "-"}</td>

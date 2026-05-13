@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
 import { Download, Moon, Sun } from "lucide-react";
+import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 
 import EvidenceGallery from "@/components/shared/EvidenceGallery";
 import { Button } from "@/components/ui/button";
@@ -112,12 +113,17 @@ export default function SharedCampaignPage() {
   const [search, setSearch] = useState("");
   const [areaFilter, setAreaFilter] = useState("all");
   const [actorFilter, setActorFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(1);
   const [selectedActivity, setSelectedActivity] = useState<CampaignActivityRow | null>(null);
 
   useEffect(() => {
     async function load() {
-      const response = await fetch(`/api/shared/campaigns/${token}`, { cache: "no-store" });
+      const params = new URLSearchParams();
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
+      const response = await fetch(`/api/shared/campaigns/${token}${params.toString() ? `?${params.toString()}` : ""}`, { cache: "no-store" });
       const result = await response.json();
       setLoading(false);
       if (!response.ok || !result.success) {
@@ -131,7 +137,7 @@ export default function SharedCampaignPage() {
       setEvidence(result.evidence ?? []);
     }
     void load();
-  }, [token]);
+  }, [token, dateFrom, dateTo]);
 
   const evidenceByVisit = useMemo(() => {
     const map = new Map<string, CampaignEvidenceItem[]>();
@@ -228,7 +234,7 @@ export default function SharedCampaignPage() {
   }
 
   if (loading) {
-    return <main className="mx-auto max-w-7xl space-y-4 p-6 text-sm text-muted-foreground">Loading shared campaign...</main>;
+    return <main className="mx-auto max-w-7xl h-screen flex justify-center items-center space-y-4 p-6 text-sm text-muted-foreground">Loading shared campaign...</main>;
   }
 
   if (error || !campaign || !summary) {
@@ -243,8 +249,8 @@ export default function SharedCampaignPage() {
   }
 
   return (
-    <main className="mx-auto max-w-7xl space-y-6 p-6 pb-10">
-      <header className="sticky top-3 z-40 flex items-center justify-between rounded-2xl border border-border bg-card/95 px-4 py-3 backdrop-blur">
+    <main className="mx-auto container space-y-6 p-2 lg:p-6 pb-10">
+      <header className="sticky top-3 z-40 flex items-center justify-between  px-4 py-3 backdrop-blur">
         <BackofficeBrand homeHref="/" />
         <div className="flex items-center gap-2">
           <Button variant="outline" className="rounded-full" onClick={exportRawDataCsv}>
@@ -257,23 +263,52 @@ export default function SharedCampaignPage() {
         </div>
       </header>
 
-      <section className="rounded-3xl border border-border bg-card p-6">
+      <section className="">
         <p className="text-xs uppercase tracking-wide text-muted-foreground">Shared Campaign View</p>
         <h1 className="mt-2 text-3xl font-semibold">{campaign.name}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{campaign.description ?? "No campaign description."}</p>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Stat label="Total submissions" value={String(summary.totalSubmissions)} />
-        <Stat label="Unique outlets" value={String(summary.uniqueOutlets)} />
-        <Stat label="Areas covered" value={String(summary.areasCovered)} />
-        <Stat label="Conversion rate" value={`${summary.conversionRate.toFixed(1)}%`} />
-        <Stat label="Sync health" value={`${summary.syncHealth.toFixed(1)}%`} />
+      <section className="rounded-3xl border border-border bg-card p-4">
+        <div className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+          <Input
+            type="date"
+            aria-label="Date range start"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+          />
+          <Input
+            type="date"
+            aria-label="Date range end"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+          />
+          <Button variant="outline" className="rounded-full" onClick={() => {
+            setDateFrom("");
+            setDateTo("");
+          }}>
+            Clear date range
+          </Button>
+        </div>
+      </section>
+
+      <section className="grid gap-4 grid-cols-2 lg:grid-cols-5">
+        <Stat label="Total submissions" value={String(summary.totalSubmissions)} trend={summary.recentTrend} dataKey="submissions" />
+        <Stat label="Unique outlets" value={String(summary.uniqueOutlets)} trend={summary.recentTrend} dataKey="submissions" />
+        <Stat label="Areas covered" value={String(summary.areasCovered)} trend={summary.recentTrend} dataKey="submissions" />
+        <Stat label="Conversion rate" value={`${summary.conversionRate.toFixed(1)}%`} trend={summary.recentTrend} dataKey="conversions" />
+        <Stat label="Sync health" value={`${summary.syncHealth.toFixed(1)}%`} trend={summary.recentTrend} dataKey="submissions" />
+      </section>
+
+      <section className="grid gap-4 sm:grid-cols-3">
+        <Stat label="Converted visits" value={String(summary.conversions)} trend={summary.recentTrend} dataKey="conversions" />
+        <Stat label="POSM deployed" value={String(summary.posmDeployed)} trend={summary.recentTrend} dataKey="submissions" />
+        <Stat label="POSM units" value={String(summary.posmUnits)} trend={summary.recentTrend} dataKey="submissions" />
       </section>
 
       <section className="rounded-3xl border border-border bg-card p-5">
         <h2 className="font-semibold">Coverage Map</h2>
-        <p className="text-sm text-muted-foreground">Plotted coordinates from visit and sales activity.</p>
+        <p className="text-sm text-muted-foreground">Plotted coordinates from visit activity. Tooltip shows sale quantity when available.</p>
         <div className="mt-4">
           <CampaignPointMap points={mapPoints} />
         </div>
@@ -324,7 +359,7 @@ export default function SharedCampaignPage() {
         </div>
 
         <div className="mt-4 overflow-hidden rounded-2xl border border-border">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm overflow-x-auto">
             <thead className="bg-muted/50 text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 text-left">Type</th>
@@ -390,20 +425,22 @@ export default function SharedCampaignPage() {
       </section>
 
       <Dialog open={Boolean(selectedActivity)} onOpenChange={(open) => !open && setSelectedActivity(null)}>
-        <DialogContent className="max-w-5xl! h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-5xl! max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Activity Details</DialogTitle>
           </DialogHeader>
           {selectedActivity ? (
-            <div className="space-y-3 text-sm">
-              <p><strong>Customer:</strong> {selectedActivity.customer ?? "-"}</p>
-              <p><strong>Outlet:</strong> {selectedActivity.outlet}</p>
-              <p><strong>Area:</strong> {selectedActivity.area ?? "-"}</p>
-              <p><strong>Products:</strong> {selectedActivity.products ?? "-"}</p>
-              <p><strong>Location:</strong> {selectedActivity.location ?? "-"}</p>
-              <p><strong>Actor:</strong> {selectedActivity.actor}</p>
-              <p><strong>Status:</strong> {selectedActivity.status}</p>
-              <p><strong>Date:</strong> {new Date(selectedActivity.createdAt).toLocaleString()}</p>
+            <div className="space-y-4 text-sm">
+              <div className="grid gap-3 md:grid-cols-3">
+                <Detail label="Customer" value={selectedActivity.customer ?? "-"} />
+                <Detail label="Outlet" value={selectedActivity.outlet} />
+                <Detail label="Area" value={selectedActivity.area ?? "-"} />
+                <Detail label="Products" value={selectedActivity.products ?? "-"} />
+                <Detail label="Location" value={selectedActivity.location ?? "-"} />
+                <Detail label="Actor" value={selectedActivity.actor} />
+                <Detail label="Status" value={selectedActivity.status} />
+                <Detail label="Date" value={new Date(selectedActivity.createdAt).toLocaleString()} />
+              </div>
               <div className="rounded-xl border border-border bg-muted/30 p-3">
                 <p className="mb-2 text-xs uppercase text-muted-foreground">Captured form details</p>
                 {selectedDetails.length === 0 ? (
@@ -440,11 +477,68 @@ export default function SharedCampaignPage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  label,
+  value,
+  trend,
+  dataKey,
+}: {
+  label: string;
+  value: string;
+  trend: Array<{ day: string; submissions: number; conversions: number }>;
+  dataKey: "submissions" | "conversions";
+}) {
+  const normalizedTrend = useMemo(() => {
+    if (!trend || trend.length === 0) {
+      return [
+        { day: "Start", submissions: 0, conversions: 0 },
+        { day: "Now", submissions: 0, conversions: 0 },
+      ];
+    }
+    if (trend.length === 1) {
+      const only = trend[0];
+      return [
+        { day: "Prev", submissions: 0, conversions: 0 },
+        only,
+      ];
+    }
+    return trend;
+  }, [trend]);
+
   return (
     <div className="rounded-2xl border border-border bg-card p-4">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-2 text-2xl font-semibold">{value}</p>
+      <div className="mt-3 h-12">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={normalizedTrend}>
+            <RechartsTooltip
+              cursor={false}
+              contentStyle={{ borderRadius: 10, borderColor: "var(--border)", background: "var(--card)" }}
+              labelStyle={{ color: "var(--muted-foreground)" }}
+            />
+            <Area
+              type="monotone"
+              dataKey={dataKey}
+              stroke="var(--color-chart-1)"
+              strokeWidth={2}
+              fill="var(--color-chart-1)"
+              fillOpacity={0.16}
+              dot={false}
+              activeDot={{ r: 3 }}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-muted/30 px-3 py-2">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-sm font-medium">{value}</p>
     </div>
   );
 }

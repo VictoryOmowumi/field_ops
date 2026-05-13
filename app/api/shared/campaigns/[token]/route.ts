@@ -32,6 +32,8 @@ function isRateLimited(ip: string | null) {
 
 export async function GET(request: NextRequest, context: RouteContext) {
   const { token } = await context.params;
+  const dateFrom = request.nextUrl.searchParams.get("dateFrom");
+  const dateTo = request.nextUrl.searchParams.get("dateTo");
   const ip = extractClientIp(request);
   if (isRateLimited(ip)) {
     return NextResponse.json({ success: false, message: "Too many requests." }, { status: 429 });
@@ -73,10 +75,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
   }
 
   const [{ rows: activities, total }, summary, mapPoints, evidence] = await Promise.all([
-    getCampaignActivities(supabase, shareLink.organization_id, shareLink.campaign_id, { page: 1, pageSize: 2000 }),
-    getCampaignAnalyticsSummary(supabase, shareLink.organization_id, shareLink.campaign_id),
-    getCampaignMapPoints(supabase, shareLink.organization_id, shareLink.campaign_id),
-    getCampaignEvidence(supabase, shareLink.organization_id, shareLink.campaign_id),
+    getCampaignActivities(supabase, shareLink.organization_id, shareLink.campaign_id, { page: 1, pageSize: 2000, dateFrom, dateTo }),
+    getCampaignAnalyticsSummary(supabase, shareLink.organization_id, shareLink.campaign_id, { dateFrom, dateTo }),
+    getCampaignMapPoints(supabase, shareLink.organization_id, shareLink.campaign_id, { source: "visits_only", dateFrom, dateTo }),
+    getCampaignEvidence(supabase, shareLink.organization_id, shareLink.campaign_id, { dateFrom, dateTo }),
   ]);
 
   const now = new Date().toISOString();

@@ -1,5 +1,8 @@
 export type CampaignAnalyticsSummary = {
   totalSubmissions: number;
+  conversions: number;
+  convertedOutlets: number;
+  achievedVisits: number;
   uniqueOutlets: number;
   areasCovered: number;
   conversionRate: number;
@@ -22,6 +25,8 @@ export type CampaignMapPoint = {
   status: string;
   syncStatus: string;
   createdAt: string;
+  saleCount?: number;
+  saleQuantityTotal?: number;
 };
 
 export type CampaignActivityRow = {
@@ -31,6 +36,9 @@ export type CampaignActivityRow = {
   status: string;
   customer?: string;
   outlet: string;
+  outletPhone?: string;
+  outletAddress?: string;
+  outletStatus?: "Converted" | "Onboarded";
   area?: string;
   products?: string;
   location?: string;

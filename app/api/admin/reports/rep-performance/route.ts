@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 
   let visitsQuery = supabase
     .from("visits")
-    .select("agent_id, outcome")
+    .select("id, agent_id")
     .eq("organization_id", organizationId);
   if (campaignId && campaignId !== "all") visitsQuery = visitsQuery.eq("campaign_id", campaignId);
   if (dateFrom) visitsQuery = visitsQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
 
   let salesQuery = supabase
     .from("sales")
-    .select("agent_id, sales_value")
+    .select("agent_id, sales_value, quantity, visit_id")
     .eq("organization_id", organizationId);
   if (campaignId && campaignId !== "all") salesQuery = salesQuery.eq("campaign_id", campaignId);
   if (dateFrom) salesQuery = salesQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
@@ -55,6 +55,13 @@ export async function GET(request: NextRequest) {
   const territoryMap = new Map((repProfiles ?? []).map((p) => [p.user_id, [p.lga, p.state].filter(Boolean).join(", ")]));
   const rows = new Map<string, { rep: string; territory: string; visits: number; conversions: number; salesValue: number }>();
 
+  const convertedVisitIds = new Set(
+    (sales ?? [])
+      .filter((sale) => Number(sale.quantity ?? 0) > 0 || Number(sale.sales_value ?? 0) > 0)
+      .map((sale) => sale.visit_id)
+      .filter(Boolean)
+  );
+
   for (const visit of visits ?? []) {
     if (!visit.agent_id) continue;
     const existing = rows.get(visit.agent_id) ?? {
@@ -65,7 +72,7 @@ export async function GET(request: NextRequest) {
       salesValue: 0,
     };
     existing.visits += 1;
-    if (visit.outcome === "converted") existing.conversions += 1;
+    if (convertedVisitIds.has(visit.id)) existing.conversions += 1;
     rows.set(visit.agent_id, existing);
   }
 

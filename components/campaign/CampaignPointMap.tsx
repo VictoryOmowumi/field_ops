@@ -65,6 +65,13 @@ export default function CampaignPointMap({ points }: { points: CampaignMapPoint[
                   <p className="text-muted-foreground">{point.lga || "LGA not captured"}</p>
                   <p>{point.agent}</p>
                   <p className="capitalize">{point.status}</p>
+                  {point.source === "visit" ? (
+                    <p>
+                      {point.saleCount && point.saleCount > 0
+                        ? `Sales qty: ${point.saleQuantityTotal ?? 0}`
+                        : "Sales: none"}
+                    </p>
+                  ) : null}
                 </div>
               </Tooltip>
             </Marker>

@@ -133,9 +133,6 @@ export async function GET(request: NextRequest) {
   for (const visit of visits as Array<{ outlet_id?: string | null }>) {
     if (visit.outlet_id) coveredOutletIds.add(visit.outlet_id);
   }
-  for (const sale of sales as Array<{ outlet_id?: string | null }>) {
-    if (sale.outlet_id) coveredOutletIds.add(sale.outlet_id);
-  }
   const activeRepIds = new Set<string>();
   for (const visit of visits as Array<{ agent_id?: string | null }>) {
     if (visit.agent_id) activeRepIds.add(visit.agent_id);
@@ -144,7 +141,13 @@ export async function GET(request: NextRequest) {
     if (sale.agent_id) activeRepIds.add(sale.agent_id);
   }
 
-  const convertedCount = convertedVisitIds.size;
+  const convertedOutletIds = new Set(
+    (sales as Array<{ outlet_id?: string | null; quantity?: number | null; sales_value?: number | null }>)
+      .filter((sale) => (Number(sale.quantity ?? 0) > 0 || Number(sale.sales_value ?? 0) > 0) && Boolean(sale.outlet_id))
+      .map((sale) => sale.outlet_id)
+      .filter(Boolean)
+  );
+  const convertedCount = convertedOutletIds.size;
   const totalVisits = canonical.summary.totalSubmissions;
   const totalSales = sales.reduce((sum, item) => sum + Number(item.sales_value ?? 0), 0);
   const conversionRate = canonical.summary.conversionRate;

@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 
   let visitsQuery = supabase
     .from("visits")
-    .select("id, created_at, outcome")
+    .select("id, created_at, outlet_id")
     .eq("organization_id", membership.organizationId);
   if (campaignId && campaignId !== "all") visitsQuery = visitsQuery.eq("campaign_id", campaignId);
   if (dateFrom) visitsQuery = visitsQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
 
   let salesQuery = supabase
     .from("sales")
-    .select("id, created_at, product_name, quantity, sales_value, conversion_status")
+    .select("id, created_at, product_name, quantity, sales_value, visit_id, outlet_id")
     .eq("organization_id", membership.organizationId);
   if (campaignId && campaignId !== "all") salesQuery = salesQuery.eq("campaign_id", campaignId);
   if (dateFrom) salesQuery = salesQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
@@ -49,18 +49,31 @@ export async function GET(request: NextRequest) {
 
   const byDay = new Map<string, { visits: number; conversions: number }>();
   const byProduct = new Map<string, number>();
-  let converted = 0;
+  const convertedVisitIds = new Set(
+    (sales ?? [])
+      .filter((item) => Number(item.quantity ?? 0) > 0 || Number(item.sales_value ?? 0) > 0)
+      .map((item) => item.visit_id)
+      .filter(Boolean)
+  );
+  const convertedOutletIds = new Set(
+    (sales ?? [])
+      .filter((item) => Number(item.quantity ?? 0) > 0 || Number(item.sales_value ?? 0) > 0)
+      .map((item) => item.outlet_id)
+      .filter(Boolean)
+  );
+  const achievedOutletIds = new Set<string>();
   let totalValue = 0;
 
   for (const item of visits ?? []) {
+    const typed = item as { id: string; created_at: string; outlet_id?: string | null };
     const day = new Date(item.created_at).toLocaleDateString("en-US", { weekday: "short" });
     const bucket = byDay.get(day) ?? { visits: 0, conversions: 0 };
     bucket.visits += 1;
-    if (item.outcome === "converted") {
+    if (convertedVisitIds.has(typed.id)) {
       bucket.conversions += 1;
-      converted += 1;
     }
     byDay.set(day, bucket);
+    if (typed.outlet_id) achievedOutletIds.add(typed.outlet_id);
   }
 
   for (const item of sales ?? []) {
@@ -79,8 +92,8 @@ export async function GET(request: NextRequest) {
     success: true,
     overview: {
       totalVisits: (visits ?? []).length,
-      conversions: converted,
-      conversionRate: (visits ?? []).length ? (converted / (visits ?? []).length) * 100 : 0,
+      conversions: convertedOutletIds.size,
+      conversionRate: achievedOutletIds.size ? (convertedOutletIds.size / achievedOutletIds.size) * 100 : 0,
       salesValue: totalValue,
       trend,
       products,
