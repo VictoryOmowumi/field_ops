@@ -16,6 +16,138 @@ type ActivityFilters = {
   search?: string | null;
 };
 
+type MetricsVisitRow = {
+  id: string;
+  created_at: string;
+  sync_status?: string | null;
+  outlet_id?: string | null;
+  state?: string | null;
+  lga?: string | null;
+  task_payload?: unknown;
+};
+
+type MetricsSaleRow = {
+  id: string;
+  visit_id?: string | null;
+  created_at: string;
+  quantity?: number | null;
+  sales_value?: number | null;
+};
+
+type MetricsDiagnostics = {
+  totalVisits: number;
+  qualifyingSalesRows: number;
+  convertedVisitIds: string[];
+  posmChecks: number;
+  posmDeployed: number;
+  posmUnits: number;
+};
+
+const METRICS_DEBUG_ENABLED = process.env.METRICS_DEBUG === "1";
+
+export function isQualifyingSaleForConversion(sale: Pick<MetricsSaleRow, "quantity" | "sales_value">) {
+  return Number(sale.quantity ?? 0) > 0 || Number(sale.sales_value ?? 0) > 0;
+}
+
+export function extractPosmFromVisits(visits: MetricsVisitRow[]) {
+  let posmChecks = 0;
+  let posmDeployed = 0;
+  let posmUnits = 0;
+  for (const visit of visits) {
+    const payload = (visit.task_payload ?? {}) as {
+      activities?: Array<{ activityId?: string; payload?: Record<string, unknown> }>;
+    };
+    const posm = payload.activities?.find((item) => item.activityId === "posm_deployment");
+    if (!posm) continue;
+    posmChecks += 1;
+    const deployed = Boolean(posm.payload?.deployed);
+    if (deployed) {
+      posmDeployed += 1;
+      const quantity = Number(posm.payload?.quantity ?? 0);
+      if (Number.isFinite(quantity) && quantity > 0) posmUnits += quantity;
+    }
+  }
+  return {
+    posmChecks,
+    posmDeployed,
+    posmUnits,
+    posmDeploymentRate: posmChecks > 0 ? (posmDeployed / posmChecks) * 100 : 0,
+  };
+}
+
+export function computeMetricsFromRows(
+  visits: MetricsVisitRow[],
+  sales: MetricsSaleRow[],
+  debugLabel?: string
+): { summary: CampaignAnalyticsSummary; convertedVisitIds: Set<string>; diagnostics: MetricsDiagnostics } {
+  const totalSubmissions = visits.length;
+  const uniqueOutlets = new Set(visits.map((item) => item.outlet_id).filter(Boolean)).size;
+  const areasCovered = new Set(
+    visits.map((item) => `${item.state ?? ""}|${item.lga ?? ""}`).filter((key) => key !== "|")
+  ).size;
+
+  const convertedVisitIds = new Set<string>();
+  let qualifyingSalesRows = 0;
+  for (const sale of sales) {
+    if (!sale.visit_id) continue;
+    if (!isQualifyingSaleForConversion(sale)) continue;
+    qualifyingSalesRows += 1;
+    convertedVisitIds.add(sale.visit_id);
+  }
+  const conversions = convertedVisitIds.size;
+  const conversionRate = totalSubmissions > 0 ? (conversions / totalSubmissions) * 100 : 0;
+
+  const syncedVisits = visits.filter((item) => item.sync_status === "synced").length;
+  const syncHealth = totalSubmissions > 0 ? (syncedVisits / totalSubmissions) * 100 : 100;
+
+  const posm = extractPosmFromVisits(visits);
+
+  const trendMap = new Map<string, { day: string; submissions: number; conversions: number }>();
+  for (const row of visits) {
+    const key = new Date(row.created_at).toISOString().slice(0, 10);
+    const bucket = trendMap.get(key) ?? {
+      day: new Date(row.created_at).toLocaleDateString("en-US", { month: "short", day: "2-digit" }),
+      submissions: 0,
+      conversions: 0,
+    };
+    bucket.submissions += 1;
+    if (convertedVisitIds.has(row.id)) bucket.conversions += 1;
+    trendMap.set(key, bucket);
+  }
+  const recentTrend = Array.from(trendMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .slice(-14)
+    .map(([, value]) => value);
+
+  const summary: CampaignAnalyticsSummary = {
+    totalSubmissions,
+    uniqueOutlets,
+    areasCovered,
+    conversionRate,
+    syncHealth,
+    posmChecks: posm.posmChecks,
+    posmDeployed: posm.posmDeployed,
+    posmUnits: posm.posmUnits,
+    posmDeploymentRate: posm.posmDeploymentRate,
+    recentTrend,
+  };
+
+  const diagnostics: MetricsDiagnostics = {
+    totalVisits: totalSubmissions,
+    qualifyingSalesRows,
+    convertedVisitIds: [...convertedVisitIds],
+    posmChecks: posm.posmChecks,
+    posmDeployed: posm.posmDeployed,
+    posmUnits: posm.posmUnits,
+  };
+
+  if (METRICS_DEBUG_ENABLED && debugLabel) {
+    console.info(`[metrics-debug:${debugLabel}]`, diagnostics);
+  }
+
+  return { summary, convertedVisitIds, diagnostics };
+}
+
 export async function getCampaignAnalyticsSummary(
   supabase: SupabaseClient,
   organizationId: string,
@@ -29,68 +161,39 @@ export async function getCampaignAnalyticsSummary(
       .eq("campaign_id", campaignId),
     supabase
       .from("sales")
-      .select("id, created_at, conversion_status")
+      .select("id, created_at, visit_id, quantity, sales_value")
       .eq("organization_id", organizationId)
       .eq("campaign_id", campaignId),
   ]);
+  return computeMetricsFromRows(
+    (visits ?? []) as MetricsVisitRow[],
+    (sales ?? []) as MetricsSaleRow[],
+    `campaign:${campaignId}`
+  ).summary;
+}
 
-  const visitRows = visits ?? [];
-  const saleRows = sales ?? [];
-  const totalSubmissions = visitRows.length + saleRows.length;
-  const uniqueOutlets = new Set(visitRows.map((item) => item.outlet_id).filter(Boolean)).size;
-  const areasCovered = new Set(
-    visitRows.map((item) => `${item.state ?? ""}|${item.lga ?? ""}`).filter((key) => key !== "|")
-  ).size;
-  const converted = visitRows.filter((item) => item.outcome === "converted").length;
-  const conversionRate = visitRows.length > 0 ? (converted / visitRows.length) * 100 : 0;
-  const syncedVisits = visitRows.filter((item) => item.sync_status === "synced").length;
-  const syncHealth = visitRows.length > 0 ? (syncedVisits / visitRows.length) * 100 : 100;
-  let posmChecks = 0;
-  let posmDeployed = 0;
-  let posmUnits = 0;
-  for (const visit of visitRows) {
-    const payload = (visit.task_payload ?? {}) as { activities?: Array<{ activityId?: string; payload?: Record<string, unknown> }> };
-    const posm = payload.activities?.find((item) => item.activityId === "posm_deployment");
-    if (!posm) continue;
-    posmChecks += 1;
-    const deployed = Boolean(posm.payload?.deployed);
-    if (deployed) {
-      posmDeployed += 1;
-      const qty = Number(posm.payload?.quantity ?? 0);
-      if (Number.isFinite(qty) && qty > 0) posmUnits += qty;
-    }
-  }
-  const posmDeploymentRate = posmChecks > 0 ? (posmDeployed / posmChecks) * 100 : 0;
-
-  const trendMap = new Map<string, { day: string; submissions: number; conversions: number }>();
-  for (const row of visitRows) {
-    const key = new Date(row.created_at).toISOString().slice(0, 10);
-    const bucket = trendMap.get(key) ?? {
-      day: new Date(row.created_at).toLocaleDateString("en-US", { month: "short", day: "2-digit" }),
-      submissions: 0,
-      conversions: 0,
-    };
-    bucket.submissions += 1;
-    if (row.outcome === "converted") bucket.conversions += 1;
-    trendMap.set(key, bucket);
-  }
-  const recentTrend = Array.from(trendMap.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .slice(-14)
-    .map(([, value]) => value);
-
-  return {
-    totalSubmissions,
-    uniqueOutlets,
-    areasCovered,
-    conversionRate,
-    syncHealth,
-    posmChecks,
-    posmDeployed,
-    posmUnits,
-    posmDeploymentRate,
-    recentTrend,
-  };
+export async function getCampaignMetricsDiagnostics(
+  supabase: SupabaseClient,
+  organizationId: string,
+  campaignId: string
+): Promise<MetricsDiagnostics> {
+  const [{ data: visits }, { data: sales }] = await Promise.all([
+    supabase
+      .from("visits")
+      .select("id, created_at, sync_status, outlet_id, state, lga, task_payload")
+      .eq("organization_id", organizationId)
+      .eq("campaign_id", campaignId),
+    supabase
+      .from("sales")
+      .select("id, created_at, visit_id, quantity, sales_value")
+      .eq("organization_id", organizationId)
+      .eq("campaign_id", campaignId),
+  ]);
+  return computeMetricsFromRows(
+    (visits ?? []) as MetricsVisitRow[],
+    (sales ?? []) as MetricsSaleRow[],
+    `campaign-diagnostics:${campaignId}`
+  ).diagnostics;
 }
 
 export async function getCampaignMapPoints(

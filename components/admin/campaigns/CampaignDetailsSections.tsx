@@ -199,7 +199,6 @@ export function CampaignDetailsSections({
         <Info label="Areas covered" value={String(summary?.areasCovered ?? 0)} />
         <Info label="Conversion rate" value={`${(summary?.conversionRate ?? 0).toFixed(1)}%`} />
         <Info label="Sync health" value={`${(summary?.syncHealth ?? 0).toFixed(1)}%`} />
-        {posmConfigured ? <Info label="POSM checks" value={String(summary?.posmChecks ?? 0)} /> : null}
         {posmConfigured ? <Info label="POSM deployed" value={String(summary?.posmDeployed ?? 0)} /> : null}
         {posmConfigured ? <Info label="POSM units" value={String(summary?.posmUnits ?? 0)} /> : null}
       </section>

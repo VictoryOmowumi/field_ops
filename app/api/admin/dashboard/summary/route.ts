@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-access";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
+import { computeMetricsFromRows } from "@/lib/campaign/intelligence";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 function unauthorized() {
@@ -49,32 +50,6 @@ function padLastSevenDays(
   return result;
 }
 
-function extractPosmMetrics(visits: Array<{ task_payload?: unknown }>) {
-  let posmChecks = 0;
-  let posmDeployed = 0;
-  let posmUnits = 0;
-  for (const visit of visits) {
-    const taskPayload = (visit.task_payload ?? {}) as {
-      activities?: Array<{ activityId?: string; payload?: Record<string, unknown> }>;
-    };
-    const posm = taskPayload.activities?.find((item) => item.activityId === "posm_deployment");
-    if (!posm) continue;
-    posmChecks += 1;
-    const deployed = Boolean(posm.payload?.deployed);
-    if (deployed) {
-      posmDeployed += 1;
-      const qty = Number(posm.payload?.quantity ?? 0);
-      if (Number.isFinite(qty) && qty > 0) posmUnits += qty;
-    }
-  }
-  return {
-    posmChecks,
-    posmDeployed,
-    posmUnits,
-    posmDeploymentRate: posmChecks > 0 ? (posmDeployed / posmChecks) * 100 : 0,
-  };
-}
-
 export async function GET(request: NextRequest) {
   const user = await getAuthenticatedUserFromRequest(request);
   if (!user) return unauthorized();
@@ -93,16 +68,11 @@ export async function GET(request: NextRequest) {
 
   let salesQuery = supabase
     .from("sales")
-    .select("id, conversion_status, sales_value, created_at, campaign_id, agent_id")
+    .select("id, conversion_status, sales_value, created_at, campaign_id, agent_id, visit_id, outlet_id, quantity")
     .eq("organization_id", organizationId);
   if (campaignId && campaignId !== "all") salesQuery = salesQuery.eq("campaign_id", campaignId);
   if (dateFrom) salesQuery = salesQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
   if (dateTo) salesQuery = salesQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);
-
-  let syncedSalesQuery = supabase.from("sales").select("id").eq("organization_id", organizationId).eq("sync_status", "synced");
-  if (campaignId && campaignId !== "all") syncedSalesQuery = syncedSalesQuery.eq("campaign_id", campaignId);
-  if (dateFrom) syncedSalesQuery = syncedSalesQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
-  if (dateTo) syncedSalesQuery = syncedSalesQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);
 
   let recentQuery = supabase
     .from("visits")
@@ -116,26 +86,49 @@ export async function GET(request: NextRequest) {
 
   let visitsQuery = supabase
     .from("visits")
-    .select("id, created_at, campaign_id, outcome, lga, state, latitude, longitude, task_payload, agent_id, outlet_id")
+    .select("id, created_at, campaign_id, outcome, lga, state, latitude, longitude, task_payload, agent_id, outlet_id, sync_status")
     .eq("organization_id", organizationId);
   if (campaignId && campaignId !== "all") visitsQuery = visitsQuery.eq("campaign_id", campaignId);
   if (dateFrom) visitsQuery = visitsQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
   if (dateTo) visitsQuery = visitsQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);
 
-  const [campaignsRes, salesRes, syncRes, recentRes, visitsRes] = await Promise.all([
+  const [campaignsRes, salesRes, recentRes, visitsRes] = await Promise.all([
     campaignsQuery,
     salesQuery,
-    syncedSalesQuery,
     recentQuery,
     visitsQuery,
   ]);
 
   const campaigns = campaignsRes.data ?? [];
   const sales = salesRes.data ?? [];
-  const syncedSales = syncRes.data ?? [];
   const recent = recentRes.data ?? [];
   const visits = visitsRes.data ?? [];
-  const posm = extractPosmMetrics(visits);
+  const canonical = computeMetricsFromRows(
+    visits.map((visit) => ({
+      id: visit.id,
+      created_at: visit.created_at,
+      sync_status: visit.sync_status ?? null,
+      outlet_id: visit.outlet_id ?? null,
+      state: visit.state ?? null,
+      lga: visit.lga ?? null,
+      task_payload: visit.task_payload ?? null,
+    })),
+    sales.map((sale) => ({
+      id: sale.id,
+      visit_id: sale.visit_id ?? null,
+      created_at: sale.created_at,
+      quantity: sale.quantity ?? null,
+      sales_value: sale.sales_value ?? null,
+    })),
+    `dashboard:${organizationId}:${campaignId ?? "all"}:${dateFrom ?? "-"}:${dateTo ?? "-"}`
+  );
+  const posm = {
+    posmChecks: canonical.summary.posmChecks,
+    posmDeployed: canonical.summary.posmDeployed,
+    posmUnits: canonical.summary.posmUnits,
+    posmDeploymentRate: canonical.summary.posmDeploymentRate,
+  };
+  const convertedVisitIds = canonical.convertedVisitIds;
   const coveredOutletIds = new Set<string>();
   for (const visit of visits as Array<{ outlet_id?: string | null }>) {
     if (visit.outlet_id) coveredOutletIds.add(visit.outlet_id);
@@ -151,11 +144,11 @@ export async function GET(request: NextRequest) {
     if (sale.agent_id) activeRepIds.add(sale.agent_id);
   }
 
-  const convertedCount = sales.filter((s) => s.conversion_status === "converted").length;
-  const totalVisits = visits.length;
+  const convertedCount = convertedVisitIds.size;
+  const totalVisits = canonical.summary.totalSubmissions;
   const totalSales = sales.reduce((sum, item) => sum + Number(item.sales_value ?? 0), 0);
-  const conversionRate = sales.length ? (convertedCount / sales.length) * 100 : 0;
-  const syncHealth = sales.length ? (syncedSales.length / sales.length) * 100 : 100;
+  const conversionRate = canonical.summary.conversionRate;
+  const syncHealth = canonical.summary.syncHealth;
 
   const outletIds = [...new Set(recent.map((x) => x.outlet_id).filter(Boolean))] as string[];
   const repIds = [...new Set(recent.map((x) => x.agent_id).filter(Boolean))] as string[];
@@ -180,7 +173,7 @@ export async function GET(request: NextRequest) {
       conversions: 0,
     };
     bucket.visits += 1;
-    if (visit.outcome === "converted") bucket.conversions += 1;
+    if (convertedVisitIds.has(visit.id)) bucket.conversions += 1;
     trendBuckets.set(key, bucket);
   }
   const trend = padLastSevenDays(
@@ -206,7 +199,7 @@ export async function GET(request: NextRequest) {
       geoCount: 0,
     };
     existing.visits += 1;
-    if (visit.outcome === "converted") existing.conversions += 1;
+    if (convertedVisitIds.has(visit.id)) existing.conversions += 1;
     if (typeof visit.latitude === "number" && typeof visit.longitude === "number") {
       existing.latSum += visit.latitude;
       existing.lngSum += visit.longitude;

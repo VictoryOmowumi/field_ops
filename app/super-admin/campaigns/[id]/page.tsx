@@ -71,8 +71,8 @@ export default function SuperAdminCampaignDetailPage() {
       </div>
 
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Assigned reps" value={campaign.reps} />
-        <Stat label="Outlets covered" value={campaign.outlets} />
+        <Stat label="Total submissions" value={campaign.totalSubmissions} />
+        <Stat label="Unique outlets" value={campaign.uniqueOutlets} />
         <Stat label="Conversions" value={campaign.conversions} />
         <Stat label="Pending uploads" value={campaign.pendingUploads} />
       </div>
@@ -86,6 +86,17 @@ export default function SuperAdminCampaignDetailPage() {
             <Info label="Organization ID" value={campaign.organizationId} />
             <Info label="Organization" value={campaign.organization} />
             <Info label="Sync Health" value={campaign.sync} />
+            <Info label="Assigned reps" value={campaign.reps.toLocaleString()} />
+            <Info label="Areas covered" value={campaign.areasCovered.toLocaleString()} />
+            <Info label="Conversion rate" value={`${campaign.conversionRate.toFixed(1)}%`} />
+            <Info label="Sales value" value={`NGN ${campaign.salesValue.toLocaleString()}`} />
+            <Info label="POSM checks" value={campaign.posmChecks.toLocaleString()} />
+            <Info label="POSM deployed" value={campaign.posmDeployed.toLocaleString()} />
+            <Info label="POSM units" value={campaign.posmUnits.toLocaleString()} />
+            <Info
+              label="Unique outlets definition"
+              value="Distinct outlet IDs that appear in campaign visit submissions."
+            />
           </div>
         </section>
 
@@ -165,4 +176,3 @@ function Health({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-

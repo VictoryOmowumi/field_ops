@@ -44,9 +44,16 @@ export type PlatformCampaignDetail = {
   description: string;
   startDate: string;
   endDate: string;
+  totalSubmissions: number;
+  uniqueOutlets: number;
+  areasCovered: number;
+  conversionRate: number;
   reps: number;
-  outlets: number;
   conversions: number;
+  salesValue: number;
+  posmChecks: number;
+  posmDeployed: number;
+  posmUnits: number;
   pendingUploads: number;
   recentActivity: Array<{ rep: string; outlet: string; status: string; time: string }>;
 };
@@ -75,4 +82,3 @@ export type PlatformSettingItem = {
   key: string;
   value: string;
 };
-
