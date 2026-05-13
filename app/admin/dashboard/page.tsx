@@ -21,6 +21,7 @@ type DashboardSummary = {
   totalCampaigns: number;
   activeReps: number;
   totalOutlets: number;
+  totalVisits: number;
   totalSalesRecords: number;
   conversions: number;
   conversionRate: number;
@@ -64,7 +65,7 @@ export default function AdminDashboardPage() {
   const campaignsQuery = useQuery({
     queryKey: ["admin-dashboard-campaigns"],
     queryFn: async () => {
-      const result = await authorizedFetch<{ success: boolean; campaigns: Array<{ id: string; name: string }> }>("/api/admin/campaigns");
+      const result = await authorizedFetch<{ success: boolean; campaigns: Array<{ id: string; name: string }> }>("/api/admin/campaigns?lite=1");
       return result.campaigns ?? [];
     },
   });
@@ -90,7 +91,7 @@ export default function AdminDashboardPage() {
   }, [query.error]);
 
   const summary = query.data?.summary;
-  const trend = query.data?.trend ?? [];
+  const trend = useMemo(() => query.data?.trend ?? [], [query.data?.trend]);
   const territoryPerformance = useMemo(
     () => query.data?.territoryPerformance ?? [],
     [query.data?.territoryPerformance]
@@ -107,6 +108,10 @@ export default function AdminDashboardPage() {
     [territoryPerformance, territoryStateFilter]
   );
   const pendingUploads = Math.max(0, (summary?.totalSalesRecords ?? 0) - Math.round(((summary?.syncHealth ?? 100) / 100) * (summary?.totalSalesRecords ?? 0)));
+  const failedUploadsTrend = useMemo(
+    () => trend.map((item) => ({ ...item, failedUploads: pendingUploads })),
+    [trend, pendingUploads]
+  );
 
   return (
     <div className="flex flex-col gap-6 pb-10">
@@ -159,7 +164,7 @@ export default function AdminDashboardPage() {
           <h2 className="font-semibold">Visit Trend</h2>
           <p className="text-sm text-muted-foreground">Last 7 days visits and conversions.</p>
           <div className="mt-4 mb-5 grid grid-cols-2 gap-4">
-            <MetricMini label="Total visits" value={String(summary?.totalSalesRecords ?? 0)} trend="Live" />
+            <MetricMini label="Total visits" value={String(summary?.totalVisits ?? 0)} trend="Live" />
             <MetricMini label="Conversions" value={String(summary?.conversions ?? 0)} trend={`${summary?.conversionRate.toFixed(1) ?? "0"}%`} />
           </div>
           <div className="h-52 rounded-[1.5rem] bg-background p-4">
@@ -179,7 +184,7 @@ export default function AdminDashboardPage() {
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
             <InsightCard icon={UserGroupIcon} title="Active reps" value={String(summary?.activeReps ?? 0)} data={trend} dataKey="visits" />
             <InsightCard icon={Store01Icon} title="Outlets covered" value={String(summary?.totalOutlets ?? 0)} data={trend} dataKey="conversions" />
-            <DarkInsightCard failedUploads={pendingUploads} data={trend} />
+            <DarkInsightCard failedUploads={pendingUploads} data={failedUploadsTrend} />
           </div>
         </div>
       </section>
@@ -293,6 +298,7 @@ function InsightCard({ icon, title, value, data, dataKey }: { icon: unknown; tit
       <div className="mt-4 h-20">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data}>
+            <Tooltip cursor={false} formatter={(val) => [String(val), dataKey]} />
             <Area type="monotone" dataKey={dataKey} stroke="var(--color-chart-1)" strokeWidth={2} fill="var(--color-chart-1)" fillOpacity={0.18} />
           </AreaChart>
         </ResponsiveContainer>
@@ -301,7 +307,7 @@ function InsightCard({ icon, title, value, data, dataKey }: { icon: unknown; tit
   );
 }
 
-function DarkInsightCard({ failedUploads, data }: { failedUploads: number; data: TrendPoint[] }) {
+function DarkInsightCard({ failedUploads, data }: { failedUploads: number; data: Array<TrendPoint & { failedUploads: number }> }) {
   return (
     <div className="rounded-[1.6rem] bg-foreground p-5 text-background">
       <div className="mb-4 flex items-center gap-2">
@@ -314,7 +320,8 @@ function DarkInsightCard({ failedUploads, data }: { failedUploads: number; data:
       <div className="mt-4 h-20">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data}>
-            <Area type="monotone" dataKey="conversions" stroke="var(--color-chart-1)" strokeWidth={2} fill="var(--color-chart-1)" fillOpacity={0.25} />
+            <Tooltip cursor={false} formatter={(val) => [String(val), "failed uploads"]} />
+            <Area type="monotone" dataKey="failedUploads" stroke="var(--color-chart-1)" strokeWidth={2} fill="var(--color-chart-1)" fillOpacity={0.25} />
           </AreaChart>
         </ResponsiveContainer>
       </div>

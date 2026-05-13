@@ -7,7 +7,7 @@ import AppQueryProvider from "@/components/providers/AppQueryProvider";
 export default function SuperAdminLayout({ children }: { children: ReactNode }) {
   return (
     <RequireRole allowedRoles={["super_admin"]}>
-      <AppQueryProvider>
+      <AppQueryProvider liveMode>
         <BackofficeShell role="super_admin">{children}</BackofficeShell>
       </AppQueryProvider>
     </RequireRole>

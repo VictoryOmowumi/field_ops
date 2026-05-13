@@ -10,7 +10,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       allowedOrgRoles={["org_admin", "supervisor"]}
       redirectOnOrgDeniedTo="/admin/unauthorized"
     >
-      <AppQueryProvider>
+      <AppQueryProvider liveMode>
         <BackofficeShell role="admin">{children}</BackofficeShell>
       </AppQueryProvider>
     </RequireRole>

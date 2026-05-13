@@ -1,13 +1,15 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { authorizedFetch } from "@/lib/api/client";
 
@@ -28,6 +30,7 @@ type OutletVisit = {
   location_accuracy?: number | null;
   created_at?: string | null;
   agent_name?: string | null;
+  task_payload?: unknown;
   evidence?: Array<{
     id: string;
     file_name?: string | null;
@@ -63,6 +66,7 @@ type OutletPayload = {
 export default function OutletDetailsPage() {
   const params = useParams<{ id: string }>();
   const outletId = params.id;
+  const [previewImage, setPreviewImage] = useState<{ src: string; name: string } | null>(null);
 
   const query = useQuery({
     queryKey: ["admin-outlet", outletId],
@@ -124,7 +128,6 @@ export default function OutletDetailsPage() {
           <Button variant="outline" className="rounded-full" asChild>
             <Link href="/admin/outlets">Back</Link>
           </Button>
-          <Button className="rounded-full px-5">Flag for Review</Button>
         </div>
       </div>
 
@@ -196,72 +199,116 @@ export default function OutletDetailsPage() {
                 No visit activities yet.
               </div>
             ) : (
-              visits.map((visit) => (
-                <div key={visit.id} className="rounded-3xl border border-border bg-background p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium">
-                        {formatTask(visit.task_type)} · {formatStatus(visit.outcome)}
-                      </p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {visit.notes?.trim() || "No additional notes."}
-                      </p>
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      {visit.created_at ? new Date(visit.created_at).toLocaleTimeString() : "-"}
-                    </span>
-                  </div>
-                  {visit.campaign_id ? (
-                    <div className="mt-2">
-                      <Link
-                        href={`/admin/campaigns/${visit.campaign_id}/activities/visit-${visit.id}`}
-                        className="text-xs font-medium text-primary underline"
-                      >
-                        View campaign activity details
-                      </Link>
-                    </div>
-                  ) : null}
-
-                  {(visit.sales?.length ?? 0) > 0 ? (
-                    <div className="mt-3 rounded-2xl border border-border p-3">
-                      <p className="text-xs text-muted-foreground">Sales recorded</p>
-                      <div className="mt-1 space-y-1">
-                        {visit.sales?.map((sale) => (
-                          <p key={sale.id} className="text-sm">
-                            {sale.product_name ?? "Product"} · Qty {sale.quantity ?? 0}
-                            {sale.sales_value ? ` · NGN ${sale.sales_value}` : ""}
-                          </p>
-                        ))}
+              visits.map((visit) => {
+                const capturedDetails = summarizeVisitPayload(visit);
+                return (
+                  <div key={visit.id} className="rounded-3xl border border-border bg-background p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium">
+                          {formatTask(visit.task_type)} · {formatStatus(visit.outcome)}
+                        </p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {visit.notes?.trim() || "No additional notes."}
+                        </p>
                       </div>
+                      <span className="text-xs text-muted-foreground">
+                        {visit.created_at ? new Date(visit.created_at).toLocaleTimeString() : "-"}
+                      </span>
                     </div>
-                  ) : null}
-
-                  <div className="mt-3">
-                    <p className="text-xs text-muted-foreground">Photo Evidence</p>
-                    {(visit.evidence?.length ?? 0) === 0 ? (
-                      <p className="mt-1 text-sm text-muted-foreground">No photos uploaded for this visit.</p>
-                    ) : (
-                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                        {visit.evidence?.map((photo) => (
-                          <a
-                            key={photo.id}
-                            href={photo.signed_url ?? "#"}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="rounded-2xl border border-border px-3 py-2 text-sm hover:bg-muted/30"
-                          >
-                            {photo.file_name ?? "Uploaded image"}
-                          </a>
-                        ))}
+                    {visit.campaign_id ? (
+                      <div className="mt-2">
+                        <Link
+                          href={`/admin/campaigns/${visit.campaign_id}/activities/visit-${visit.id}`}
+                          className="text-xs font-medium text-primary underline"
+                        >
+                          View campaign activity details
+                        </Link>
                       </div>
-                    )}
+                    ) : null}
+
+                    {(visit.sales?.length ?? 0) > 0 ? (
+                      <div className="mt-3 rounded-2xl border border-border p-3">
+                        <p className="text-xs text-muted-foreground">Sales recorded</p>
+                        <div className="mt-1 space-y-1">
+                          {visit.sales?.map((sale) => (
+                            <p key={sale.id} className="text-sm">
+                              {sale.product_name ?? "Product"} · Qty {sale.quantity ?? 0}
+                              {sale.sales_value ? ` · NGN ${sale.sales_value}` : ""}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {capturedDetails.length > 0 ? (
+                      <div className="mt-3 rounded-2xl border border-border p-3">
+                        <p className="text-xs text-muted-foreground">Captured details</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {capturedDetails.map((item, index) => (
+                            <span key={`${visit.id}-summary-${index}`} className="rounded-full bg-muted px-2.5 py-1 text-xs">
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="mt-3">
+                      <p className="text-xs text-muted-foreground">Photo Evidence</p>
+                      {(visit.evidence?.length ?? 0) === 0 ? (
+                        <p className="mt-1 text-sm text-muted-foreground">No photos uploaded for this visit.</p>
+                      ) : (
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                          {visit.evidence?.map((photo) => (
+                            <button
+                              key={photo.id}
+                              type="button"
+                              onClick={() => {
+                                if (!photo.signed_url) return;
+                                setPreviewImage({
+                                  src: photo.signed_url,
+                                  name: photo.file_name ?? "Uploaded image",
+                                });
+                              }}
+                              className="overflow-hidden rounded-2xl border border-border text-left hover:bg-muted/30 disabled:opacity-50"
+                              disabled={!photo.signed_url}
+                            >
+                              <div className="h-28 w-full bg-muted/30">
+                                {photo.signed_url ? (
+                                  <img
+                                    src={photo.signed_url}
+                                    alt={photo.file_name ?? "Evidence preview"}
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : null}
+                              </div>
+                              <p className="truncate px-3 py-2 text-sm">{photo.file_name ?? "Uploaded image"}</p>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </section>
       </div>
+
+      <Dialog open={Boolean(previewImage)} onOpenChange={(open) => !open && setPreviewImage(null)}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>{previewImage?.name ?? "Evidence preview"}</DialogTitle>
+          </DialogHeader>
+          {previewImage ? (
+            <div className="max-h-[70vh] overflow-auto rounded-2xl border border-border">
+              <img src={previewImage.src} alt={previewImage.name} className="h-auto w-full object-contain" />
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -312,4 +359,57 @@ function formatStatus(status?: string | null) {
   if (status === "no_sale") return "No Sale";
   if (status === "no_interest") return "No Interest";
   return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function summarizeVisitPayload(visit: OutletVisit) {
+  const payload = visit.task_payload as
+    | {
+        activities?: Array<{
+          activityId?: string;
+          payload?: Record<string, unknown>;
+        }>;
+      }
+    | undefined;
+  const activities = payload?.activities ?? [];
+  if (activities.length === 0) return [];
+
+  const summary: string[] = [];
+  for (const item of activities) {
+    const activityId = item.activityId ?? "";
+    const activityPayload = item.payload ?? {};
+    if (activityId === "availability_survey") {
+      const products = Array.isArray(activityPayload.products) ? activityPayload.products : [];
+      const availableCount = products.filter((product) => Boolean((product as { available?: boolean }).available)).length;
+      summary.push(`Availability: ${availableCount}/${products.length || 0} in stock`);
+      continue;
+    }
+    if (activityId === "price_survey") {
+      const products = Array.isArray(activityPayload.products) ? activityPayload.products : [];
+      summary.push(`Prices captured: ${products.length}`);
+      continue;
+    }
+    if (activityId === "product_survey") {
+      const products = Array.isArray(activityPayload.products) ? activityPayload.products : [];
+      const qty = products.reduce((acc, product) => acc + Number((product as { quantity?: number }).quantity ?? 0), 0);
+      summary.push(`Quantity recorded: ${qty}`);
+      continue;
+    }
+    if (activityId === "posm_deployment") {
+      const deployed = Boolean(activityPayload.deployed);
+      const qty = Number(activityPayload.quantity ?? 0);
+      summary.push(deployed ? `POSM deployed: ${qty}` : "POSM not deployed");
+      continue;
+    }
+    if (activityId === "register_outlet") {
+      summary.push("Outlet registration captured");
+      continue;
+    }
+    if (activityId === "sell_to_outlet") {
+      const qty = Number(activityPayload.quantity ?? 0);
+      const price = Number(activityPayload.price ?? 0);
+      summary.push(`Sale captured: Qty ${qty}${price > 0 ? ` · NGN ${price}` : ""}`);
+      continue;
+    }
+  }
+  return summary.slice(0, 6);
 }

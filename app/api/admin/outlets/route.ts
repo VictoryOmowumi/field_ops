@@ -35,12 +35,29 @@ export async function GET(request: NextRequest) {
   const membership = await getOrgMembershipForUser(user.id);
   if (!membership || !hasAllowedOrgRole(membership.role, ["org_admin", "supervisor"])) return forbidden();
 
+  const page = Math.max(1, Number(request.nextUrl.searchParams.get("page") ?? "1") || 1);
+  const pageSize = Math.min(50, Math.max(1, Number(request.nextUrl.searchParams.get("pageSize") ?? "20") || 20));
+  const search = (request.nextUrl.searchParams.get("search") ?? "").trim();
+  const syncStatus = (request.nextUrl.searchParams.get("syncStatus") ?? "all").trim();
+  const stateFilter = (request.nextUrl.searchParams.get("state") ?? "all").trim();
+
   const supabase = createServerSupabaseClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("outlets")
-    .select("id, name, outlet_type, contact_person, phone, state, lga, sync_status, campaign_id, created_by, created_at, campaigns(name)")
+    .select("id, name, outlet_type, contact_person, phone, state, lga, sync_status, campaign_id, created_by, created_at, campaigns(name)", { count: "exact" })
     .eq("organization_id", membership.organizationId)
     .order("created_at", { ascending: false });
+
+  if (syncStatus !== "all") query = query.eq("sync_status", syncStatus);
+  if (stateFilter !== "all") query = query.eq("state", stateFilter);
+  if (search) {
+    const escaped = search.replace(/,/g, "\\,");
+    query = query.or(`name.ilike.%${escaped}%,phone.ilike.%${escaped}%,state.ilike.%${escaped}%,lga.ilike.%${escaped}%`);
+  }
+
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const { data, error, count } = await query.range(from, to);
 
   if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 });
 
@@ -64,7 +81,13 @@ export async function GET(request: NextRequest) {
     createdAt: item.created_at,
   }));
 
-  return NextResponse.json({ success: true, outlets });
+  const { data: stateRows } = await supabase
+    .from("outlets")
+    .select("state")
+    .eq("organization_id", membership.organizationId);
+  const states = [...new Set((stateRows ?? []).map((item) => item.state).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b));
+
+  return NextResponse.json({ success: true, outlets, total: count ?? 0, page, pageSize, states });
 }
 
 export async function POST(request: NextRequest) {
@@ -105,4 +128,3 @@ export async function POST(request: NextRequest) {
   if (error || !data) return NextResponse.json({ success: false, message: error?.message ?? "Failed to create outlet." }, { status: 500 });
   return NextResponse.json({ success: true, outlet: data }, { status: 201 });
 }
-

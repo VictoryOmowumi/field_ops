@@ -63,6 +63,19 @@ export async function GET(request: NextRequest) {
     organizationId = request.nextUrl.searchParams.get("organizationId");
     if (!organizationId) return badRequest("organizationId query parameter is required for super_admin.");
   }
+  const isLite = request.nextUrl.searchParams.get("lite") === "1";
+
+  if (isLite) {
+    const { data, error } = await supabase
+      .from("campaigns")
+      .select("id, name, status, created_at")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false });
+    if (error) {
+      return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+    }
+    return NextResponse.json({ success: true, campaigns: data ?? [] });
+  }
 
   const { data, error } = await supabase
     .from("campaigns")

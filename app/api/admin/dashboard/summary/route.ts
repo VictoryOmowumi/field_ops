@@ -23,6 +23,32 @@ type TerritoryBucket = {
   longitude: number;
 };
 
+function toIsoDay(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function padLastSevenDays(
+  trend: Array<{ isoDay: string; day: string; visits: number; conversions: number }>
+) {
+  const now = new Date();
+  const buckets = new Map(trend.map((item) => [item.isoDay, item]));
+  const result: Array<{ day: string; visits: number; conversions: number }> = [];
+  for (let i = 6; i >= 0; i -= 1) {
+    const d = new Date(now);
+    d.setUTCDate(d.getUTCDate() - i);
+    const isoDay = toIsoDay(d);
+    const existing = buckets.get(isoDay);
+    result.push(
+      existing ?? {
+        day: d.toLocaleDateString("en-US", { weekday: "short" }),
+        visits: 0,
+        conversions: 0,
+      }
+    );
+  }
+  return result;
+}
+
 function extractPosmMetrics(visits: Array<{ task_payload?: unknown }>) {
   let posmChecks = 0;
   let posmDeployed = 0;
@@ -65,12 +91,9 @@ export async function GET(request: NextRequest) {
   let campaignsQuery = supabase.from("campaigns").select("id, status").eq("organization_id", organizationId);
   if (campaignId && campaignId !== "all") campaignsQuery = campaignsQuery.eq("id", campaignId);
 
-  let outletsQuery = supabase.from("outlets").select("id").eq("organization_id", organizationId);
-  if (campaignId && campaignId !== "all") outletsQuery = outletsQuery.eq("campaign_id", campaignId);
-
   let salesQuery = supabase
     .from("sales")
-    .select("id, conversion_status, sales_value, created_at, campaign_id")
+    .select("id, conversion_status, sales_value, created_at, campaign_id, agent_id")
     .eq("organization_id", organizationId);
   if (campaignId && campaignId !== "all") salesQuery = salesQuery.eq("campaign_id", campaignId);
   if (dateFrom) salesQuery = salesQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
@@ -82,8 +105,8 @@ export async function GET(request: NextRequest) {
   if (dateTo) syncedSalesQuery = syncedSalesQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);
 
   let recentQuery = supabase
-    .from("sales")
-    .select("id, conversion_status, created_at, outlet_id, agent_id, campaign_id")
+    .from("visits")
+    .select("id, created_at, outlet_id, agent_id, campaign_id, outcome")
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false })
     .limit(10);
@@ -93,16 +116,14 @@ export async function GET(request: NextRequest) {
 
   let visitsQuery = supabase
     .from("visits")
-    .select("id, created_at, campaign_id, outcome, lga, state, latitude, longitude, task_payload")
+    .select("id, created_at, campaign_id, outcome, lga, state, latitude, longitude, task_payload, agent_id, outlet_id")
     .eq("organization_id", organizationId);
   if (campaignId && campaignId !== "all") visitsQuery = visitsQuery.eq("campaign_id", campaignId);
   if (dateFrom) visitsQuery = visitsQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
   if (dateTo) visitsQuery = visitsQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);
 
-  const [campaignsRes, repsRes, outletsRes, salesRes, syncRes, recentRes, visitsRes] = await Promise.all([
+  const [campaignsRes, salesRes, syncRes, recentRes, visitsRes] = await Promise.all([
     campaignsQuery,
-    supabase.from("rep_profiles").select("id, status").eq("organization_id", organizationId),
-    outletsQuery,
     salesQuery,
     syncedSalesQuery,
     recentQuery,
@@ -110,15 +131,28 @@ export async function GET(request: NextRequest) {
   ]);
 
   const campaigns = campaignsRes.data ?? [];
-  const reps = repsRes.data ?? [];
-  const outlets = outletsRes.data ?? [];
   const sales = salesRes.data ?? [];
   const syncedSales = syncRes.data ?? [];
   const recent = recentRes.data ?? [];
   const visits = visitsRes.data ?? [];
   const posm = extractPosmMetrics(visits);
+  const coveredOutletIds = new Set<string>();
+  for (const visit of visits as Array<{ outlet_id?: string | null }>) {
+    if (visit.outlet_id) coveredOutletIds.add(visit.outlet_id);
+  }
+  for (const sale of sales as Array<{ outlet_id?: string | null }>) {
+    if (sale.outlet_id) coveredOutletIds.add(sale.outlet_id);
+  }
+  const activeRepIds = new Set<string>();
+  for (const visit of visits as Array<{ agent_id?: string | null }>) {
+    if (visit.agent_id) activeRepIds.add(visit.agent_id);
+  }
+  for (const sale of sales as Array<{ agent_id?: string | null }>) {
+    if (sale.agent_id) activeRepIds.add(sale.agent_id);
+  }
 
   const convertedCount = sales.filter((s) => s.conversion_status === "converted").length;
+  const totalVisits = visits.length;
   const totalSales = sales.reduce((sum, item) => sum + Number(item.sales_value ?? 0), 0);
   const conversionRate = sales.length ? (convertedCount / sales.length) * 100 : 0;
   const syncHealth = sales.length ? (syncedSales.length / sales.length) * 100 : 100;
@@ -136,10 +170,11 @@ export async function GET(request: NextRequest) {
   const outletMap = new Map((outletNames ?? []).map((x) => [x.id, x.name]));
   const repMap = new Map((repNames ?? []).map((x) => [x.user_id, x.full_name ?? "Unknown"]));
 
-  const trendBuckets = new Map<string, { day: string; visits: number; conversions: number }>();
+  const trendBuckets = new Map<string, { isoDay: string; day: string; visits: number; conversions: number }>();
   for (const visit of visits) {
     const key = new Date(visit.created_at).toISOString().slice(0, 10);
     const bucket = trendBuckets.get(key) ?? {
+      isoDay: key,
       day: new Date(visit.created_at).toLocaleDateString("en-US", { weekday: "short" }),
       visits: 0,
       conversions: 0,
@@ -148,10 +183,12 @@ export async function GET(request: NextRequest) {
     if (visit.outcome === "converted") bucket.conversions += 1;
     trendBuckets.set(key, bucket);
   }
-  const trend = Array.from(trendBuckets.entries())
+  const trend = padLastSevenDays(
+    Array.from(trendBuckets.entries())
     .sort(([a], [b]) => (a < b ? -1 : 1))
     .slice(-7)
-    .map(([, value]) => value);
+    .map(([, value]) => value)
+  );
 
   const territoryMap = new Map<string, { state: string; lga: string; visits: number; conversions: number; latSum: number; lngSum: number; geoCount: number }>();
   for (const visit of visits) {
@@ -198,8 +235,9 @@ export async function GET(request: NextRequest) {
     summary: {
       activeCampaigns: campaigns.filter((c) => c.status === "active").length,
       totalCampaigns: campaigns.length,
-      activeReps: reps.filter((r) => r.status === "active").length,
-      totalOutlets: outlets.length,
+      activeReps: activeRepIds.size,
+      totalOutlets: coveredOutletIds.size,
+      totalVisits,
       totalSalesRecords: sales.length,
       conversions: convertedCount,
       conversionRate,
@@ -215,7 +253,7 @@ export async function GET(request: NextRequest) {
     recentActivity: recent.map((item) => ({
       id: item.id,
       campaignId: item.campaign_id ?? null,
-      status: item.conversion_status,
+      status: item.outcome ?? "submitted",
       time: item.created_at,
       outlet: item.outlet_id ? outletMap.get(item.outlet_id) ?? "-" : "-",
       rep: item.agent_id ? repMap.get(item.agent_id) ?? "-" : "-",

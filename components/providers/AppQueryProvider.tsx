@@ -3,14 +3,21 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 
-export default function AppQueryProvider({ children }: { children: React.ReactNode }) {
+export default function AppQueryProvider({
+  children,
+  liveMode = false,
+}: {
+  children: React.ReactNode;
+  liveMode?: boolean;
+}) {
   const [queryClient] = useState(
     () =>
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 30_000,
-            refetchOnWindowFocus: false,
+            staleTime: liveMode ? 10_000 : 30_000,
+            refetchOnWindowFocus: liveMode,
+            refetchOnReconnect: liveMode,
           },
         },
       })
@@ -18,4 +25,3 @@ export default function AppQueryProvider({ children }: { children: React.ReactNo
 
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }
-
