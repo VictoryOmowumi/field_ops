@@ -82,6 +82,8 @@ type CampaignDetailsSectionsProps = {
   supervisorRows: SupervisorRow[];
   assignedRepRows: AssignedRepRow[];
   evidence: CampaignEvidenceItem[];
+  deletingEvidenceId: string | null;
+  onDeleteEvidence: (evidenceId: string) => void;
   exportingActivities: boolean;
   launching: boolean;
   deletingCampaign: boolean;
@@ -115,6 +117,8 @@ export function CampaignDetailsSections({
   supervisorRows,
   assignedRepRows,
   evidence,
+  deletingEvidenceId,
+  onDeleteEvidence,
   exportingActivities,
   launching,
   deletingCampaign,
@@ -143,6 +147,11 @@ export function CampaignDetailsSections({
   const posmConfigured =
     Boolean(campaign.form_requirements?.requirePosmDeployment) ||
     (campaign.campaign_tasks ?? []).includes("posm_deployment");
+  const freeSampleConfig = (
+    (campaign.runtime_form_config as { tasks?: Record<string, Record<string, unknown>> } | null)?.tasks
+    ?.free_sample_distribution ?? {}
+  ) as Record<string, unknown>;
+  const freeSampleEnabled = Boolean(freeSampleConfig.enabled);
 
   return (
     <>
@@ -214,7 +223,7 @@ export function CampaignDetailsSections({
         {posmConfigured ? <Info label="POSM units" value={String(summary?.posmUnits ?? 0)} /> : null}
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2">
+      <section className="grid gap-4 sm:grid-cols-4 lg:grid-cols-4">
         <Info
           label="Visit achievement"
           value={`${summary?.achievedVisits ?? 0}/${campaign.target_outlets ?? 0} (${campaign.target_outlets ? (((summary?.achievedVisits ?? 0) / campaign.target_outlets) * 100).toFixed(1) : "0.0"}%)`}
@@ -223,6 +232,18 @@ export function CampaignDetailsSections({
           label="Conversion achievement"
           value={`${summary?.convertedOutlets ?? 0}/${campaign.target_conversions ?? 0} (${campaign.target_conversions ? (((summary?.convertedOutlets ?? 0) / campaign.target_conversions) * 100).toFixed(1) : "0.0"}%)`}
         />
+        {freeSampleEnabled ? (
+          <Info
+            label="Free sample achievement"
+            value={`${summary?.distributedFreeSamples ?? 0}/${summary?.plannedFreeSamples ?? 0} (${(summary?.freeSampleAchievementRate ?? 0).toFixed(1)}%)`}
+          />
+        ) : null}
+        {freeSampleEnabled ? (
+          <Info
+            label="Free samples remaining"
+            value={String(summary?.remainingFreeSamples ?? 0)}
+          />
+        ) : null}
       </section>
 
       <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60">
@@ -430,7 +451,9 @@ export function CampaignDetailsSections({
                     <td className="px-4 py-4 text-muted-foreground">{item.location ?? "-"}</td>
                     <td className="px-4 py-4">{item.actor}</td>
                     <td className="px-4 py-4">
-                      <Badge className="rounded-full capitalize">{item.status}</Badge>
+                      <Badge className={`rounded-full capitalize ${activityStatusBadgeClass(item.status)}`}>
+                        {item.status}
+                      </Badge>
                     </td>
                     <td className="px-4 py-4 text-muted-foreground">{new Date(item.createdAt).toLocaleString()}</td>
                     <td className="px-4 py-4">
@@ -464,7 +487,7 @@ export function CampaignDetailsSections({
         <h2 className="font-semibold">Photo Evidence Gallery</h2>
         <p className="mt-1 text-sm text-muted-foreground">All uploaded campaign evidence with signed preview links.</p>
         <div className="mt-4">
-          <EvidenceGallery evidence={evidence} />
+          <EvidenceGallery evidence={evidence} onDelete={onDeleteEvidence} deletingId={deletingEvidenceId} />
         </div>
       </section>
 
@@ -496,6 +519,14 @@ function statusBadgeClass(status: string) {
   if (status === "active") return "bg-emerald-500/10 text-emerald-600";
   if (status === "invited") return "bg-amber-500/10 text-amber-600";
   if (status === "suspended") return "bg-red-500/10 text-red-600";
+  return "bg-muted text-muted-foreground";
+}
+
+function activityStatusBadgeClass(status: string) {
+  if (status === "converted") return "bg-emerald-500/10 text-emerald-600";
+  if (status === "onboarded") return "bg-sky-500/10 text-sky-600";
+  if (status === "pending") return "bg-amber-500/10 text-amber-600";
+  if (status === "revisit") return "bg-violet-500/10 text-violet-600";
   return "bg-muted text-muted-foreground";
 }
 

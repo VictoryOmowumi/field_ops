@@ -77,6 +77,22 @@ export function extractPosmFromVisits(visits: MetricsVisitRow[]) {
   };
 }
 
+function extractDistributedFreeSamplesFromVisits(visits: MetricsVisitRow[]) {
+  let distributedFreeSamples = 0;
+  for (const visit of visits) {
+    const payload = (visit.task_payload ?? {}) as {
+      activities?: Array<{ activityId?: string; payload?: Record<string, unknown> }>;
+    };
+    const freeSample = payload.activities?.find((item) => item.activityId === "free_sample_distribution");
+    if (!freeSample) continue;
+    const given = Boolean(freeSample.payload?.given);
+    if (!given) continue;
+    const quantity = Number(freeSample.payload?.quantity ?? 0);
+    if (Number.isFinite(quantity) && quantity > 0) distributedFreeSamples += quantity;
+  }
+  return distributedFreeSamples;
+}
+
 export function computeMetricsFromRows(
   visits: MetricsVisitRow[],
   sales: MetricsSaleRow[],
@@ -106,6 +122,7 @@ export function computeMetricsFromRows(
   const syncHealth = totalSubmissions > 0 ? (syncedVisits / totalSubmissions) * 100 : 100;
 
   const posm = extractPosmFromVisits(visits);
+  const distributedFreeSamples = extractDistributedFreeSamplesFromVisits(visits);
 
   const trendMap = new Map<string, { day: string; submissions: number; conversions: number }>();
   for (const row of visits) {
@@ -137,6 +154,10 @@ export function computeMetricsFromRows(
     posmDeployed: posm.posmDeployed,
     posmUnits: posm.posmUnits,
     posmDeploymentRate: posm.posmDeploymentRate,
+    plannedFreeSamples: 0,
+    distributedFreeSamples,
+    remainingFreeSamples: 0,
+    freeSampleAchievementRate: 0,
     recentTrend,
   };
 
@@ -181,12 +202,32 @@ export async function getCampaignAnalyticsSummary(
     visitsQuery = visitsQuery.lte("created_at", `${filters.dateTo}T23:59:59.999Z`);
     salesQuery = salesQuery.lte("created_at", `${filters.dateTo}T23:59:59.999Z`);
   }
-  const [{ data: visits }, { data: sales }] = await Promise.all([visitsQuery, salesQuery]);
-  return computeMetricsFromRows(
+  const [{ data: visits }, { data: sales }, { data: campaign }] = await Promise.all([
+    visitsQuery,
+    salesQuery,
+    supabase
+      .from("campaigns")
+      .select("runtime_form_config")
+      .eq("organization_id", organizationId)
+      .eq("id", campaignId)
+      .maybeSingle(),
+  ]);
+  const summary = computeMetricsFromRows(
     (visits ?? []) as MetricsVisitRow[],
     (sales ?? []) as MetricsSaleRow[],
     `campaign:${campaignId}`
   ).summary;
+  const tasks = ((campaign?.runtime_form_config as { tasks?: Record<string, Record<string, unknown>> } | null)?.tasks ?? {});
+  const freeSampleConfig = tasks.free_sample_distribution ?? {};
+  const plannedValue = Number(freeSampleConfig.targetQuantity ?? 0);
+  const plannedFreeSamples = Number.isFinite(plannedValue) && plannedValue > 0 ? plannedValue : 0;
+  const distributedFreeSamples = summary.distributedFreeSamples ?? 0;
+  return {
+    ...summary,
+    plannedFreeSamples,
+    remainingFreeSamples: Math.max(0, plannedFreeSamples - distributedFreeSamples),
+    freeSampleAchievementRate: plannedFreeSamples > 0 ? (distributedFreeSamples / plannedFreeSamples) * 100 : 0,
+  };
 }
 
 export async function getCampaignMetricsDiagnostics(
@@ -329,15 +370,15 @@ export async function getCampaignActivities(
     visitIds.length
       ? supabase
           .from("sales")
-          .select("id, visit_id, product_name, quantity, conversion_status")
+          .select("id, visit_id, product_name, quantity, sales_value, conversion_status")
           .eq("organization_id", organizationId)
           .in("visit_id", visitIds)
-      : Promise.resolve({ data: [] as Array<{ id: string; visit_id: string; product_name: string | null; quantity: number | null; conversion_status: string | null }> }),
+      : Promise.resolve({ data: [] as Array<{ id: string; visit_id: string; product_name: string | null; quantity: number | null; sales_value: number | null; conversion_status: string | null }> }),
     outletIds.length ? supabase.from("outlets").select("id, name, contact_person, lga, phone, address").in("id", outletIds) : Promise.resolve({ data: [] as Array<{ id: string; name: string; contact_person: string | null; lga: string | null; phone: string | null; address: string | null }> }),
     userIds.length ? supabase.from("profiles").select("user_id, full_name").in("user_id", userIds) : Promise.resolve({ data: [] as Array<{ user_id: string; full_name: string | null }> }),
   ]);
 
-  const saleByVisit = new Map<string, Array<{ id: string; product_name: string | null; quantity: number | null; conversion_status: string | null }>>();
+  const saleByVisit = new Map<string, Array<{ id: string; product_name: string | null; quantity: number | null; sales_value: number | null; conversion_status: string | null }>>();
   const convertedOutletIds = new Set<string>();
   for (const item of salesRows ?? []) {
     const list = saleByVisit.get(item.visit_id) ?? [];
@@ -345,6 +386,7 @@ export async function getCampaignActivities(
       id: item.id,
       product_name: item.product_name ?? null,
       quantity: item.quantity ?? null,
+      sales_value: item.sales_value ?? null,
       conversion_status: item.conversion_status ?? null,
     });
     saleByVisit.set(item.visit_id, list);
@@ -358,6 +400,7 @@ export async function getCampaignActivities(
 
   let rows: CampaignActivityRow[] = visitRows.map((row) => {
     const saleLines = saleByVisit.get(row.id) ?? [];
+    const hasValidSale = saleLines.some((line) => Number(line.quantity ?? 0) > 0 || Number(line.sales_value ?? 0) > 0);
     const outlet = row.outlet_id ? outletMap.get(row.outlet_id) : null;
     const taskPayload = (row.task_payload ?? {}) as { activities?: Array<{ activityId?: string; payload?: Record<string, unknown> }> };
     const activityProducts = (taskPayload.activities ?? [])
@@ -374,13 +417,13 @@ export async function getCampaignActivities(
       id: `visit-${row.id}`,
       type: "visit",
       taskType: row.task_type ?? "visit",
-      status: row.outcome ?? "-",
+      status: hasValidSale ? "converted" : "onboarded",
       createdAt: row.created_at,
       customer: outlet?.contact_person ?? "-",
       outlet: outlet?.name ?? "-",
       outletPhone: outlet?.phone ?? "N/A",
       outletAddress: outlet?.address ?? "N/A",
-      outletStatus: row.outlet_id && convertedOutletIds.has(row.outlet_id) ? "Converted" : "Onboarded",
+      outletStatus: hasValidSale || (row.outlet_id ? convertedOutletIds.has(row.outlet_id) : false) ? "Converted" : "Onboarded",
       area: row.lga ?? outlet?.lga ?? "-",
       products: products.length > 0 ? products.join(", ") : "-",
       location: coords,
@@ -413,15 +456,6 @@ export async function getCampaignEvidence(
   campaignId: string,
   filters?: { dateFrom?: string | null; dateTo?: string | null }
 ): Promise<CampaignEvidenceItem[]> {
-  const { data: evidenceRows } = await supabase
-    .from("visit_evidence")
-    .select("id, visit_id, file_url, created_at")
-    .eq("organization_id", organizationId)
-    .order("created_at", { ascending: false })
-    .limit(300);
-
-  const filtered = (evidenceRows ?? []).filter((row) => Boolean(row.visit_id));
-  const visitIds = [...new Set(filtered.map((row) => row.visit_id))] as string[];
   let visitsForEvidenceQuery = supabase
       .from("visits")
       .select("id, campaign_id, outlet_id, agent_id")
@@ -429,12 +463,20 @@ export async function getCampaignEvidence(
       .eq("campaign_id", campaignId);
   if (filters?.dateFrom) visitsForEvidenceQuery = visitsForEvidenceQuery.gte("created_at", `${filters.dateFrom}T00:00:00.000Z`);
   if (filters?.dateTo) visitsForEvidenceQuery = visitsForEvidenceQuery.lte("created_at", `${filters.dateTo}T23:59:59.999Z`);
-  const { data: visits } = visitIds.length
-    ? await visitsForEvidenceQuery.in("id", visitIds)
-    : { data: [] as Array<{ id: string; campaign_id: string; outlet_id: string | null; agent_id: string | null }> };
+  const { data: visits } = await visitsForEvidenceQuery.limit(3000);
 
   const visitMap = new Map((visits ?? []).map((item) => [item.id, item]));
-  const scopedEvidence = filtered.filter((row) => visitMap.has(row.visit_id));
+  const visitIds = [...visitMap.keys()];
+  const { data: evidenceRows } = visitIds.length
+    ? await supabase
+        .from("visit_evidence")
+        .select("id, visit_id, file_url, created_at")
+        .eq("organization_id", organizationId)
+        .is("deleted_at", null)
+        .in("visit_id", visitIds)
+        .order("created_at", { ascending: false })
+    : { data: [] as Array<{ id: string; visit_id: string; file_url: string; created_at: string }> };
+  const scopedEvidence = (evidenceRows ?? []).filter((row) => visitMap.has(row.visit_id));
 
   const outletIds = [...new Set((visits ?? []).map((item) => item.outlet_id).filter(Boolean))] as string[];
   const userIds = [...new Set((visits ?? []).map((item) => item.agent_id).filter(Boolean))] as string[];

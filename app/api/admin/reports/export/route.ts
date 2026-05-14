@@ -29,6 +29,8 @@ function normalizeTaskPayload(taskPayload: unknown) {
         sales?: Array<Record<string, unknown>>;
         deployed?: boolean;
         quantity?: number;
+        given?: boolean;
+        productName?: string;
       };
     }>;
   };
@@ -168,7 +170,7 @@ export async function GET(request: NextRequest) {
   if (type === "campaign-activities") {
     if (exportMode === "summary") {
       const lines = [
-        "ActivityId,Campaign,Outlet Name,Outlet Address,Outlet Phone Number,Outlet Status,POSM Installed,POSM Units,Agent,Area,Visit Timestamp,Activities Completed,Products Checked,Availability Summary,Price Survey Summary,Product Survey Summary,Quantity Sold,Total Sales Value,Buying Price Summary,Selling Price Summary",
+        "ActivityId,Campaign,Outlet Name,Outlet Address,Outlet Phone Number,Outlet Status,POSM Installed,POSM Units,Free Sample Given,Free Sample Product,Free Sample Quantity,Agent,Area,Visit Timestamp,Activities Completed,Products Checked,Availability Summary,Price Survey Summary,Product Survey Summary,Quantity Sold,Total Sales Value,Buying Price Summary,Selling Price Summary",
       ];
 
       for (const visit of visits ?? []) {
@@ -183,6 +185,9 @@ export async function GET(request: NextRequest) {
         const sellingPriceSummary = new Set<string>();
         let posmInstalled: "Yes" | "No" = "No";
         let posmUnits = 0;
+        let freeSampleGiven: "Yes" | "No" = "No";
+        let freeSampleProduct = "";
+        let freeSampleQuantity = 0;
 
         for (const activity of payload.activities ?? []) {
           const activityId = activity.activityId ?? "-";
@@ -230,6 +235,16 @@ export async function GET(request: NextRequest) {
               if (Number.isFinite(qty) && qty > 0) posmUnits += qty;
             }
           }
+          if (activityId === "free_sample_distribution") {
+            const given = Boolean(activity.payload?.given);
+            if (given) {
+              freeSampleGiven = "Yes";
+              const qty = Number(activity.payload?.quantity ?? 0);
+              if (Number.isFinite(qty) && qty > 0) freeSampleQuantity += qty;
+            }
+            const productName = String(activity.payload?.productName ?? "").trim();
+            if (productName) freeSampleProduct = productName;
+          }
         }
 
         const visitSales = salesByVisit.get(visit.id) ?? [];
@@ -253,6 +268,9 @@ export async function GET(request: NextRequest) {
           csvEscape(outletStatus),
           csvEscape(posmInstalled),
           csvEscape(posmUnits),
+          csvEscape(freeSampleGiven),
+          csvEscape(freeSampleProduct || "-"),
+          csvEscape(freeSampleQuantity),
           csvEscape(profileMap.get(visit.agent_id ?? "") ?? "-"),
           csvEscape(context?.area ?? "N/A"),
           csvEscape(visit.created_at),
@@ -279,7 +297,7 @@ export async function GET(request: NextRequest) {
     }
 
     const lines = [
-      "ActivityType,ActivityId,Campaign,Outlet,Outlet Address,Outlet Phone Number,Outlet Status,POSM Installed,POSM Units,Agent,Area,Timestamp,Status,TaskType,Activity,Product,Availability,Quantity,BuyingPrice,SellingPrice,SalesValue",
+      "ActivityType,ActivityId,Campaign,Outlet,Outlet Address,Outlet Phone Number,Outlet Status,POSM Installed,POSM Units,Free Sample Given,Free Sample Product,Free Sample Quantity,Agent,Area,Timestamp,Status,TaskType,Activity,Product,Availability,Quantity,BuyingPrice,SellingPrice,SalesValue",
     ];
 
     for (const visit of visits ?? []) {
@@ -303,9 +321,26 @@ export async function GET(request: NextRequest) {
 
       const payload = normalizeTaskPayload(visit.task_payload);
       const activities = Array.isArray(payload.activities) ? payload.activities : [];
+      const freeSampleActivity = activities.find((item) => item.activityId === "free_sample_distribution");
+      const freeSampleGiven = Boolean(freeSampleActivity?.payload?.given) ? "Yes" : "No";
+      const freeSampleProduct = String(freeSampleActivity?.payload?.productName ?? "").trim() || "-";
+      const freeSampleQuantityValue = Number(freeSampleActivity?.payload?.quantity ?? 0);
+      const freeSampleQuantity = Number.isFinite(freeSampleQuantityValue) && freeSampleQuantityValue > 0 ? freeSampleQuantityValue : 0;
 
       if (activities.length === 0) {
-        lines.push([...base, csvEscape(""), csvEscape(""), csvEscape(""), csvEscape(""), csvEscape(""), csvEscape(""), csvEscape("")].join(","));
+        lines.push([
+          ...base,
+          csvEscape(freeSampleGiven),
+          csvEscape(freeSampleProduct),
+          csvEscape(freeSampleQuantity),
+          csvEscape(""),
+          csvEscape(""),
+          csvEscape(""),
+          csvEscape(""),
+          csvEscape(""),
+          csvEscape(""),
+          csvEscape(""),
+        ].join(","));
         continue;
       }
 
@@ -323,6 +358,9 @@ export async function GET(request: NextRequest) {
           const salesValue = typedRow.price ?? "";
           lines.push([
             ...base,
+            csvEscape(freeSampleGiven),
+            csvEscape(freeSampleProduct),
+            csvEscape(freeSampleQuantity),
             csvEscape(activityName),
             csvEscape(String(typedRow.productName ?? "-")),
             csvEscape(String(availability)),
@@ -347,6 +385,9 @@ export async function GET(request: NextRequest) {
         csvEscape(context?.status ?? "Onboarded"),
         csvEscape(context?.posmInstalled ?? "No"),
         csvEscape(context?.posmUnits ?? 0),
+        csvEscape("No"),
+        csvEscape("-"),
+        csvEscape(0),
         csvEscape(profileMap.get(sale.agent_id ?? "") ?? "-"),
         csvEscape(context?.area ?? "N/A"),
         csvEscape(sale.created_at),

@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
 type EvidenceItem = {
   id: string;
@@ -16,10 +18,19 @@ type EvidenceItem = {
   signed_url?: string | null;
 };
 
-export default function EvidenceGallery({ evidence }: { evidence: EvidenceItem[] }) {
+export default function EvidenceGallery({
+  evidence,
+  onDelete,
+  deletingId,
+}: {
+  evidence: EvidenceItem[];
+  onDelete?: (id: string) => void;
+  deletingId?: string | null;
+}) {
   const [selected, setSelected] = useState<EvidenceItem | null>(null);
   const [loadedThumbIds, setLoadedThumbIds] = useState<Record<string, boolean>>({});
   const [previewLoaded, setPreviewLoaded] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   if (evidence.length === 0) {
     return <p className="text-xs text-muted-foreground">No evidence uploaded.</p>;
@@ -50,6 +61,20 @@ export default function EvidenceGallery({ evidence }: { evidence: EvidenceItem[]
                   height={250}
                   onLoad={() => setLoadedThumbIds((prev) => ({ ...prev, [item.id]: true }))}
                 />
+                {onDelete ? (
+                  <button
+                    type="button"
+                    className="absolute right-2 top-2 grid size-7 place-items-center rounded-full bg-background/80 text-foreground hover:bg-background"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setConfirmDeleteId(item.id);
+                    }}
+                    disabled={deletingId === item.id}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                ) : null}
               </div>
               <p className="truncate px-2 py-1 text-[11px] text-muted-foreground">
                 {new Date(item.created_at).toLocaleString()}
@@ -79,6 +104,30 @@ export default function EvidenceGallery({ evidence }: { evidence: EvidenceItem[]
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={Boolean(confirmDeleteId)} onOpenChange={(open) => !open && setConfirmDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Evidence Image?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the image from campaign details, shared view, and reports.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={Boolean(confirmDeleteId && deletingId === confirmDeleteId)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={!confirmDeleteId || Boolean(deletingId && confirmDeleteId === deletingId)}
+              onClick={() => {
+                if (confirmDeleteId && onDelete) onDelete(confirmDeleteId);
+                setConfirmDeleteId(null);
+              }}
+            >
+              {confirmDeleteId && deletingId === confirmDeleteId ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

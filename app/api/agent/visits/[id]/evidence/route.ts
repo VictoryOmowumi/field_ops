@@ -57,6 +57,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       .eq("organization_id", membership.organizationId)
       .eq("visit_id", visitId)
       .eq("file_name", file.name)
+      .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();

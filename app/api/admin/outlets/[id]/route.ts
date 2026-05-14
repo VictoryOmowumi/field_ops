@@ -75,6 +75,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           .from("visit_evidence")
           .select("id, visit_id, file_url, file_name, file_type, file_size, created_at")
           .eq("organization_id", membership.organizationId)
+          .is("deleted_at", null)
           .in("visit_id", visitIds)
       : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
     agentIds.length

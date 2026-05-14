@@ -55,7 +55,8 @@ export async function GET(
     supabase
       .from("visit_evidence")
       .select("file_size")
-      .eq("organization_id", id),
+      .eq("organization_id", id)
+      .is("deleted_at", null),
     supabase
       .from("visits")
       .select("id", { count: "exact", head: true })

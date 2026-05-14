@@ -70,6 +70,10 @@ export default function NewCampaignPage() {
     requirePosmDeployment: false,
     requirePosmQuantityWhenDeployed: true,
   });
+  const [freeSampleEnabled, setFreeSampleEnabled] = useState(false);
+  const [freeSampleRequired, setFreeSampleRequired] = useState(false);
+  const [freeSampleProductName, setFreeSampleProductName] = useState("");
+  const [freeSampleTargetQuantity, setFreeSampleTargetQuantity] = useState("");
 
   const [savingDraft, setSavingDraft] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -92,6 +96,12 @@ export default function NewCampaignPage() {
     if (campaignTasks.includes("sell_to_outlet")) return "Products / SKUs for Sales Capture";
     return "Products / SKUs";
   }, [campaignTasks]);
+  const hasPriceSurveyTask = campaignTasks.includes("price_survey");
+  const hasAvailabilitySurveyTask = campaignTasks.includes("availability_survey");
+  const freeSampleProductOptions = useMemo(
+    () => mapSelectedProductsToPayload(selectedProducts).map((item) => item.name).filter(Boolean),
+    [selectedProducts]
+  );
 
   useEffect(() => {
     async function loadUsers() {
@@ -147,6 +157,14 @@ export default function NewCampaignPage() {
       toast.error("Add at least one product for the selected task(s).");
       return;
     }
+    if (freeSampleEnabled && !freeSampleProductName.trim()) {
+      toast.error("Free sample product is required when free sample tracking is enabled.");
+      return;
+    }
+    if (freeSampleEnabled && Number(freeSampleTargetQuantity || 0) < 0) {
+      toast.error("Free sample planned quantity cannot be negative.");
+      return;
+    }
 
     setCreating(true);
     const { data } = await supabaseClient.auth.getSession();
@@ -179,10 +197,11 @@ export default function NewCampaignPage() {
         ],
       },
     });
-    const workflow = withPosmActivity(workflowBase, {
+      const workflow = withPosmActivity(workflowBase, {
       enabled: formRequirements.requirePosmDeployment,
       requireQuantity: formRequirements.requirePosmQuantityWhenDeployed,
     });
+    const workflowWithFreeSample = withFreeSampleActivity(workflow, { enabled: freeSampleEnabled, required: freeSampleRequired });
 
     const response = await fetch("/api/admin/campaigns", {
       method: "POST",
@@ -207,7 +226,7 @@ export default function NewCampaignPage() {
         formRequirements,
         campaignTasks,
         campaignWorkflowTemplate: workflowTemplate,
-        campaignWorkflow: workflow,
+        campaignWorkflow: workflowWithFreeSample,
         runtimeFormConfig: {
           global: {
             requireGpsBeforeSubmit: true,
@@ -247,6 +266,12 @@ export default function NewCampaignPage() {
             posm_deployment: {
               enabled: formRequirements.requirePosmDeployment,
               requireQuantityWhenDeployed: formRequirements.requirePosmQuantityWhenDeployed,
+            },
+            free_sample_distribution: {
+              enabled: freeSampleEnabled,
+              required: freeSampleRequired,
+              productName: freeSampleProductName.trim() || null,
+              targetQuantity: freeSampleTargetQuantity ? Number(freeSampleTargetQuantity) : 0,
             },
           },
         },
@@ -385,7 +410,37 @@ export default function NewCampaignPage() {
             <ToggleField label="Allow revisit status" value={formRequirements.allowRevisitStatus} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, allowRevisitStatus: checked }))} />
             <ToggleField label="Capture POSM deployment" value={formRequirements.requirePosmDeployment} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, requirePosmDeployment: checked }))} />
             <ToggleField label="Require POSM quantity (when yes)" value={formRequirements.requirePosmQuantityWhenDeployed} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, requirePosmQuantityWhenDeployed: checked }))} />
-            {campaignTasks.includes("price_survey") ? (
+          </div>
+
+          <div className="mt-5">
+            <ToggleField label="Enable free sample tracking" value={freeSampleEnabled} onChange={setFreeSampleEnabled} />
+          </div>
+
+          {freeSampleEnabled ? (
+            <div className="mt-5 rounded-2xl border border-border/70 p-4">
+              <p className="text-sm font-medium">Free Sample Tracking</p>
+              <div className="mt-3 grid gap-4 md:grid-cols-2">
+                <ToggleField label="Require free sample entry" value={freeSampleRequired} onChange={setFreeSampleRequired} />
+                <div />
+                <Field label="Free sample product">
+                  <Select value={freeSampleProductName} onValueChange={setFreeSampleProductName}>
+                    <SelectTrigger><SelectValue placeholder="Select product" /></SelectTrigger>
+                    <SelectContent>
+                      {freeSampleProductOptions.map((productName) => (
+                        <SelectItem key={productName} value={productName}>{productName}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Planned free sample quantity">
+                  <Input type="number" value={freeSampleTargetQuantity} onChange={(e) => setFreeSampleTargetQuantity(e.target.value)} />
+                </Field>
+              </div>
+            </div>
+          ) : null}
+
+          <div className={`mt-5 grid gap-5 ${hasPriceSurveyTask && hasAvailabilitySurveyTask ? "md:grid-cols-2" : "md:grid-cols-1"}`}>
+            {hasPriceSurveyTask ? (
               <Field label="Price Survey Mode">
                 <Select value={priceMode} onValueChange={(value: "buying" | "selling" | "both") => setPriceMode(value)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -397,7 +452,7 @@ export default function NewCampaignPage() {
                 </Select>
               </Field>
             ) : null}
-            {campaignTasks.includes("availability_survey") ? (
+            {hasAvailabilitySurveyTask ? (
               <Field label="Availability Questions (comma-separated)">
                 <Textarea className="min-h-20" value={availabilityQuestionsCsv} onChange={(e) => setAvailabilityQuestionsCsv(e.target.value)} />
               </Field>
@@ -524,6 +579,31 @@ function withPosmActivity(
     workflow.activities = workflow.activities.map((item) =>
       item.id === "posm_deployment"
         ? { ...item, settings: { ...(item.settings ?? {}), requireQuantityWhenDeployed: options.requireQuantity } }
+        : item
+    );
+  }
+  return workflow;
+}
+
+function withFreeSampleActivity(
+  workflow: ReturnType<typeof buildWorkflowConfigFromTemplate>,
+  options: { enabled: boolean; required: boolean }
+) {
+  const hasFreeSample = workflow.activities.some((item) => item.id === "free_sample_distribution");
+  if (options.enabled && !hasFreeSample) {
+    workflow.activities.push({
+      id: "free_sample_distribution",
+      required: options.required,
+      settings: { required: options.required },
+    });
+  }
+  if (!options.enabled && hasFreeSample) {
+    workflow.activities = workflow.activities.filter((item) => item.id !== "free_sample_distribution");
+  }
+  if (options.enabled && hasFreeSample) {
+    workflow.activities = workflow.activities.map((item) =>
+      item.id === "free_sample_distribution"
+        ? { ...item, required: options.required, settings: { ...(item.settings ?? {}), required: options.required } }
         : item
     );
   }

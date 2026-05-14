@@ -109,6 +109,7 @@ export function useCampaignDetailsPage(campaignId?: string) {
   const [creatingShareLink, setCreatingShareLink] = useState(false);
   const [sendingShareLink, setSendingShareLink] = useState(false);
   const [deletingCampaign, setDeletingCampaign] = useState(false);
+  const [deletingEvidenceId, setDeletingEvidenceId] = useState<string | null>(null);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [selectedSupervisors, setSelectedSupervisors] = useState<string[]>([]);
 
@@ -431,6 +432,39 @@ export function useCampaignDetailsPage(campaignId?: string) {
     }
   }
 
+  async function deleteEvidence(evidenceId: string) {
+    const { data } = await supabaseClient.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) {
+      toast.error("Session expired. Please sign in again.");
+      return;
+    }
+    setDeletingEvidenceId(evidenceId);
+    try {
+      const response = await fetch(`/api/admin/evidence/${evidenceId}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ reason: "Removed by admin from campaign evidence gallery" }),
+      });
+      const result = (await response.json()) as { success: boolean; message?: string; storageWarning?: string | null };
+      if (!response.ok || !result.success) {
+        toast.error(result.message ?? "Failed to delete evidence.");
+        return;
+      }
+      setEvidence((prev) => prev.filter((item) => item.id !== evidenceId));
+      if (result.storageWarning) {
+        toast.warning(`Evidence hidden. Storage cleanup warning: ${result.storageWarning}`);
+      } else {
+        toast.success("Evidence deleted.");
+      }
+    } finally {
+      setDeletingEvidenceId(null);
+    }
+  }
+
   function resetAssignDialogFromCurrent() {
     setSelectedAgents(assignments.filter((row) => row.role === "agent").map((row) => row.user_id));
     setSelectedSupervisors(assignments.filter((row) => row.role === "supervisor").map((row) => row.user_id));
@@ -632,6 +666,7 @@ export function useCampaignDetailsPage(campaignId?: string) {
     creatingShareLink,
     sendingShareLink,
     deletingCampaign,
+    deletingEvidenceId,
     generatedShareUrl,
     shareLinks,
     setActivityPage,
@@ -651,6 +686,7 @@ export function useCampaignDetailsPage(campaignId?: string) {
     createShareLink,
     copyShareUrl,
     revokeShareLink,
+    deleteEvidence,
     refreshShareLinks,
     openAssignDialog,
     openRegisterRepDialog,

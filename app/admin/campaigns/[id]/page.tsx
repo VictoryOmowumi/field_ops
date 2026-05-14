@@ -48,12 +48,14 @@ export default function CampaignDetailsPage() {
         supervisorRows={vm.supervisorRows}
         assignedRepRows={vm.assignedRepRows}
         evidence={vm.evidence}
+        deletingEvidenceId={vm.deletingEvidenceId}
         exportingActivities={vm.exportingActivities}
         launching={vm.launching}
         deletingCampaign={vm.deletingCampaign}
         onExportActivities={() => void vm.downloadCampaignActivitiesExport()}
         onLaunchCampaign={() => void vm.launchCampaign()}
         onDeleteCampaign={() => void vm.deleteCampaign()}
+        onDeleteEvidence={(evidenceId) => void vm.deleteEvidence(evidenceId)}
         onOpenShareDialog={() => vm.setShareDialogOpen(true)}
         onOpenAssignDialog={vm.openAssignDialog}
         activitySearch={vm.activitySearch}

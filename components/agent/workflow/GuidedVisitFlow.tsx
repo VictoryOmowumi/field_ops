@@ -66,6 +66,8 @@ export default function GuidedVisitFlow({
     productOptions.map((item) => ({ productName: item.name ?? item.sku ?? "" }))
   );
   const [notes, setNotes] = useState("");
+  const [freeSampleGiven, setFreeSampleGiven] = useState<"yes" | "no" | "">("");
+  const [freeSampleQuantityInput, setFreeSampleQuantityInput] = useState("");
   const [posmDeployed, setPosmDeployed] = useState<"yes" | "no" | "">("");
   const [posmQuantityInput, setPosmQuantityInput] = useState("");
   const [availabilityAnswers, setAvailabilityAnswers] = useState<AvailabilityAnswer[]>([]);
@@ -91,6 +93,11 @@ export default function GuidedVisitFlow({
   const hasPosmDeployment = Boolean(posmActivity);
   const requirePosmQuantityWhenDeployed = Boolean(posmActivity?.settings?.requireQuantityWhenDeployed);
   const posmQuantityValue = posmQuantityInput.trim() ? Number.parseInt(posmQuantityInput, 10) : undefined;
+  const freeSampleActivity = workflow.activities.find((item) => item.id === "free_sample_distribution");
+  const hasFreeSample = Boolean(freeSampleActivity);
+  const freeSampleRequired = Boolean(freeSampleActivity?.required || freeSampleActivity?.settings?.required);
+  const freeSampleConfiguredProduct = String(freeSampleActivity?.settings?.productName ?? "").trim();
+  const freeSampleQuantityValue = freeSampleQuantityInput.trim() ? Number.parseInt(freeSampleQuantityInput, 10) : undefined;
   const hasValidSales = sales.some((row) => row.productName.trim() && row.quantity > 0);
   const resolvedOutcomeCode = hasSalesStep && hasValidSales ? "products_sold" : "no_sale";
   const gpsRequired = workflow.validationRules.requireGpsBeforeSubmit;
@@ -135,6 +142,22 @@ export default function GuidedVisitFlow({
     }
     if (hasPosmDeployment && !posmDeployed) {
       toast.error("Please select whether POSM was deployed.");
+      return;
+    }
+    if (hasFreeSample && !freeSampleGiven) {
+      toast.error("Please select whether free sample was given.");
+      return;
+    }
+    if (hasFreeSample && freeSampleRequired && freeSampleGiven !== "yes") {
+      toast.error("This campaign requires free sample entry.");
+      return;
+    }
+    if (
+      hasFreeSample
+      && freeSampleGiven === "yes"
+      && (!freeSampleQuantityValue || Number.isNaN(freeSampleQuantityValue) || freeSampleQuantityValue < 1)
+    ) {
+      toast.error("Enter free sample quantity when marked yes.");
       return;
     }
     if (
@@ -207,6 +230,16 @@ export default function GuidedVisitFlow({
     if (hasNotesStep && notes.trim()) {
       activityPayloads.push({ activityId: "notes", payload: { notes: notes.trim() } });
     }
+    if (hasFreeSample) {
+      activityPayloads.push({
+        activityId: "free_sample_distribution",
+        payload: {
+          given: freeSampleGiven === "yes",
+          productName: freeSampleConfiguredProduct || null,
+          quantity: freeSampleGiven === "yes" ? freeSampleQuantityValue ?? 0 : 0,
+        },
+      });
+    }
     if (hasPosmDeployment) {
       activityPayloads.push({
         activityId: "posm_deployment",
@@ -270,6 +303,12 @@ export default function GuidedVisitFlow({
     if (hasPosmDeployment && !posmDeployed) {
       return toast.error("Please select whether POSM was deployed.");
     }
+    if (hasFreeSample && !freeSampleGiven) {
+      return toast.error("Please select whether free sample was given.");
+    }
+    if (hasFreeSample && freeSampleRequired && freeSampleGiven !== "yes") {
+      return toast.error("This campaign requires free sample entry.");
+    }
     if (hasAvailability && availabilityQuestions.length > 0) {
       const allAnswered = availabilityQuestions.every((question, index) => {
         const answer = availabilityAnswers[index]?.answer ?? "";
@@ -286,6 +325,13 @@ export default function GuidedVisitFlow({
       && (!posmQuantityValue || Number.isNaN(posmQuantityValue) || posmQuantityValue < 1)
     ) {
       return toast.error("Enter POSM quantity when deployment is marked yes.");
+    }
+    if (
+      hasFreeSample
+      && freeSampleGiven === "yes"
+      && (!freeSampleQuantityValue || Number.isNaN(freeSampleQuantityValue) || freeSampleQuantityValue < 1)
+    ) {
+      return toast.error("Enter free sample quantity when marked yes.");
     }
     if (!stableSubmissionKeyRef.current) {
       stableSubmissionKeyRef.current =
@@ -333,6 +379,33 @@ export default function GuidedVisitFlow({
           <Textarea className="col-span-2" placeholder="Outlet address" value={outletAddress} onChange={(event) => setOutletAddress(event.target.value)} />
         </div>
       </section>
+
+      {hasFreeSample ? (
+        <section className="space-y-3 rounded-3xl border border-border/70 bg-card p-4">
+          <h3 className="text-base font-medium">Free Sample Distribution</h3>
+          {freeSampleConfiguredProduct ? (
+            <p className="text-xs text-muted-foreground">Configured product: {freeSampleConfiguredProduct}</p>
+          ) : null}
+          <div className="grid grid-cols-2 gap-2">
+            <Button type="button" variant={freeSampleGiven === "yes" ? "default" : "outline"} onClick={() => setFreeSampleGiven("yes")}>
+              Yes
+            </Button>
+            <Button type="button" variant={freeSampleGiven === "no" ? "default" : "outline"} onClick={() => setFreeSampleGiven("no")}>
+              No
+            </Button>
+          </div>
+          {freeSampleGiven === "yes" ? (
+            <Input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              placeholder="Quantity distributed"
+              value={freeSampleQuantityInput}
+              onChange={(event) => setFreeSampleQuantityInput(event.target.value)}
+            />
+          ) : null}
+        </section>
+      ) : null}
 
       {(hasAvailability || hasPriceSurvey || hasProductSurvey) ? (
         <section className="space-y-3 rounded-3xl border border-border/70 bg-card p-4">

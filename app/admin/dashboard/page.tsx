@@ -24,6 +24,8 @@ type DashboardSummary = {
   totalVisits: number;
   totalSalesRecords: number;
   conversions: number;
+  salesCount: number;
+  unitsSold: number;
   conversionRate: number;
   salesValue: number;
   syncHealth: number;
@@ -31,6 +33,10 @@ type DashboardSummary = {
   posmDeployed: number;
   posmUnits: number;
   posmDeploymentRate: number;
+  plannedFreeSamples: number;
+  distributedFreeSamples: number;
+  remainingFreeSamples: number;
+  freeSampleAchievementRate: number;
 };
 
 type RecentActivity = { id: string; campaignId: string | null; rep: string; outlet: string; status: string; time: string };
@@ -127,7 +133,7 @@ export default function AdminDashboardPage() {
       </div>
 
       {showFilters ? (
-        <section className="rounded-[2rem] bg-card p-5 shadow-sm ring-1 ring-border/60">
+        <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60">
           <div className="mb-3 flex items-center gap-2">
             <HugeiconsIcon icon={FilterHorizontalIcon} size={16} />
             <h2 className="font-semibold">Filters</h2>
@@ -160,14 +166,14 @@ export default function AdminDashboardPage() {
       ) : null}
 
       <section className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-        <div className="rounded-[2rem] bg-card p-5 shadow-sm ring-1 ring-border/60 lg:col-span-5">
+        <div className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60 lg:col-span-5">
           <h2 className="font-semibold">Visit Trend</h2>
           <p className="text-sm text-muted-foreground">Last 7 days visits and conversions.</p>
           <div className="mt-4 mb-5 grid grid-cols-2 gap-4">
             <MetricMini label="Total visits" value={String(summary?.totalVisits ?? 0)} trend="Live" />
             <MetricMini label="Conversions" value={String(summary?.conversions ?? 0)} trend={`${summary?.conversionRate.toFixed(1) ?? "0"}%`} />
           </div>
-          <div className="h-52 rounded-[1.5rem] bg-background p-4">
+          <div className="h-52 rounded-3xl bg-background p-4">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={trend}>
                 <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "var(--color-muted-foreground)" }} />
@@ -178,7 +184,7 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        <div className="rounded-[2rem] bg-card p-5 shadow-sm ring-1 ring-border/60 lg:col-span-7">
+        <div className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60 lg:col-span-7">
           <h2 className="font-semibold">Operational Health</h2>
           <p className="text-sm text-muted-foreground">Core data points from filtered records.</p>
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -192,19 +198,31 @@ export default function AdminDashboardPage() {
       <section className="grid grid-cols-1 gap-5 lg:grid-cols-12">
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:col-span-5">
           <SmallStat icon={Chart01Icon} label="Conversion rate" value={`${summary?.conversionRate.toFixed(1) ?? "0"}%`} trend="Live" />
+          <SmallStat
+            icon={Chart01Icon}
+            label="Sales count with units sold"
+            value={`${summary?.salesCount ?? 0} (${summary?.unitsSold ?? 0})`}
+            trend="units sold"
+          />
+          <SmallStat
+            icon={CloudUploadIcon}
+            label="Free samples"
+            value={String(summary?.distributedFreeSamples ?? 0)}
+            trend={`${(summary?.freeSampleAchievementRate ?? 0).toFixed(1)}% of ${summary?.plannedFreeSamples ?? 0}`}
+          />
+          <SmallStat icon={Store01Icon} label="Active campaigns" value={String(summary?.activeCampaigns ?? 0)} trend={`${summary?.totalCampaigns ?? 0} total`} />
           <SmallStat icon={CloudUploadIcon} label="Field sync health" value={`${summary?.syncHealth.toFixed(1) ?? "100"}%`} trend="Live" />
           <SmallStat icon={Alert01Icon} label="Pending uploads" value={String(pendingUploads)} trend="Derived" />
-          <SmallStat icon={Store01Icon} label="Active campaigns" value={String(summary?.activeCampaigns ?? 0)} trend={`${summary?.totalCampaigns ?? 0} total`} />
         </div>
 
-        <div className="rounded-[2rem] bg-card p-5 shadow-sm ring-1 ring-border/60 lg:col-span-7">
+        <div className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60 lg:col-span-7">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="font-semibold">City Performance</h2>
               <p className="text-sm text-muted-foreground">Conversion rate by territory (map coverage).</p>
             </div>
             <Select value={territoryStateFilter} onValueChange={setTerritoryStateFilter}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-45">
                 <SelectValue placeholder="All states" />
               </SelectTrigger>
               <SelectContent>
@@ -228,10 +246,10 @@ export default function AdminDashboardPage() {
         </div>
       </section>
 
-      <section className="rounded-[2rem] bg-card p-5 shadow-sm ring-1 ring-border/60">
+      <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60">
         <h2 className="font-semibold">Recent Field Activity</h2>
         <p className="text-sm text-muted-foreground">Latest submissions from sales reps.</p>
-        <div className="mt-4 overflow-hidden rounded-[1.5rem] border border-border">
+        <div className="mt-4 overflow-hidden rounded-3xl border border-border">
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-muted-foreground">
               <tr>

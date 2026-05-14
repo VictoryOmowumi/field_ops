@@ -85,6 +85,8 @@ function toStepTitle(activityId: WorkflowActivityId): string {
       return "Sales Capture";
     case "posm_deployment":
       return "POSM Deployment";
+    case "free_sample_distribution":
+      return "Free Sample";
     case "photo_evidence":
       return "Photo Evidence";
     case "notes":

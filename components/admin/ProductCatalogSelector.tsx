@@ -50,7 +50,7 @@ export default function ProductCatalogSelector({ value, onChange }: ProductCatal
   const selectedSet = useMemo(() => new Set(value.map((item) => item.toLowerCase())), [value]);
   const normalizedQuery = query.trim().toLowerCase();
   const filtered = useMemo(() => {
-    if (!normalizedQuery) return products.slice(0, 25);
+    if (!normalizedQuery) return [];
     return products.filter((item) => item.name.toLowerCase().includes(normalizedQuery)).slice(0, 25);
   }, [normalizedQuery, products]);
 
@@ -108,6 +108,8 @@ export default function ProductCatalogSelector({ value, onChange }: ProductCatal
       <div className="rounded-2xl border border-border bg-background p-3">
         {catalogQuery.isLoading ? (
           <p className="text-sm text-muted-foreground">Loading product catalog...</p>
+        ) : !normalizedQuery ? (
+          <p className="text-sm text-muted-foreground">Type to search and select products.</p>
         ) : filtered.length === 0 ? (
           <p className="text-sm text-muted-foreground">No products found.</p>
         ) : (

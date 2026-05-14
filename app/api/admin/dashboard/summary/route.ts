@@ -24,6 +24,28 @@ type TerritoryBucket = {
   longitude: number;
 };
 
+function extractFreeSampleFromVisitPayload(taskPayload: unknown) {
+  const activities = ((taskPayload as { activities?: Array<{ activityId?: string; payload?: Record<string, unknown> }> } | null)
+    ?.activities ?? []);
+  const freeSample = activities.find((item) => item.activityId === "free_sample_distribution");
+  if (!freeSample) return { given: false, quantity: 0 };
+  const given = Boolean(freeSample.payload?.given);
+  const quantity = Number(freeSample.payload?.quantity ?? 0);
+  return {
+    given,
+    quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 0,
+  };
+}
+
+function extractFreeSampleTarget(runtimeFormConfig: unknown) {
+  const tasks = ((runtimeFormConfig as { tasks?: Record<string, Record<string, unknown>> } | null)?.tasks ?? {});
+  const config = tasks.free_sample_distribution ?? {};
+  const enabled = Boolean(config.enabled);
+  if (!enabled) return 0;
+  const target = Number(config.targetQuantity ?? 0);
+  return Number.isFinite(target) && target > 0 ? target : 0;
+}
+
 function toIsoDay(date: Date) {
   return date.toISOString().slice(0, 10);
 }
@@ -63,7 +85,7 @@ export async function GET(request: NextRequest) {
   const dateFrom = request.nextUrl.searchParams.get("dateFrom");
   const dateTo = request.nextUrl.searchParams.get("dateTo");
 
-  let campaignsQuery = supabase.from("campaigns").select("id, status").eq("organization_id", organizationId);
+  let campaignsQuery = supabase.from("campaigns").select("id, status, runtime_form_config").eq("organization_id", organizationId);
   if (campaignId && campaignId !== "all") campaignsQuery = campaignsQuery.eq("id", campaignId);
 
   let salesQuery = supabase
@@ -116,6 +138,7 @@ export async function GET(request: NextRequest) {
     sales.map((sale) => ({
       id: sale.id,
       visit_id: sale.visit_id ?? null,
+      outlet_id: sale.outlet_id ?? null,
       created_at: sale.created_at,
       quantity: sale.quantity ?? null,
       sales_value: sale.sales_value ?? null,
@@ -148,10 +171,27 @@ export async function GET(request: NextRequest) {
       .filter(Boolean)
   );
   const convertedCount = convertedOutletIds.size;
+  const salesCount = sales.filter((sale) => Number(sale.quantity ?? 0) > 0 || Number(sale.sales_value ?? 0) > 0).length;
+  const unitsSold = sales.reduce((sum, sale) => {
+    const quantity = Number(sale.quantity ?? 0);
+    if (!Number.isFinite(quantity) || quantity <= 0) return sum;
+    return sum + quantity;
+  }, 0);
   const totalVisits = canonical.summary.totalSubmissions;
   const totalSales = sales.reduce((sum, item) => sum + Number(item.sales_value ?? 0), 0);
   const conversionRate = canonical.summary.conversionRate;
   const syncHealth = canonical.summary.syncHealth;
+  const distributedFreeSamples = visits.reduce((sum, visit) => {
+    const sample = extractFreeSampleFromVisitPayload(visit.task_payload);
+    if (!sample.given || sample.quantity <= 0) return sum;
+    return sum + sample.quantity;
+  }, 0);
+  const plannedFreeSamples = (campaigns as Array<{ runtime_form_config?: unknown }>).reduce(
+    (sum, campaign) => sum + extractFreeSampleTarget(campaign.runtime_form_config),
+    0
+  );
+  const remainingFreeSamples = Math.max(0, plannedFreeSamples - distributedFreeSamples);
+  const freeSampleAchievementRate = plannedFreeSamples > 0 ? (distributedFreeSamples / plannedFreeSamples) * 100 : 0;
 
   const outletIds = [...new Set(recent.map((x) => x.outlet_id).filter(Boolean))] as string[];
   const repIds = [...new Set(recent.map((x) => x.agent_id).filter(Boolean))] as string[];
@@ -236,6 +276,8 @@ export async function GET(request: NextRequest) {
       totalVisits,
       totalSalesRecords: sales.length,
       conversions: convertedCount,
+      salesCount,
+      unitsSold,
       conversionRate,
       salesValue: totalSales,
       syncHealth,
@@ -243,6 +285,10 @@ export async function GET(request: NextRequest) {
       posmDeployed: posm.posmDeployed,
       posmUnits: posm.posmUnits,
       posmDeploymentRate: posm.posmDeploymentRate,
+      plannedFreeSamples,
+      distributedFreeSamples,
+      remainingFreeSamples,
+      freeSampleAchievementRate,
     },
     trend,
     territoryPerformance,

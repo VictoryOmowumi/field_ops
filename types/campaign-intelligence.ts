@@ -11,6 +11,10 @@ export type CampaignAnalyticsSummary = {
   posmDeployed: number;
   posmUnits: number;
   posmDeploymentRate: number;
+  plannedFreeSamples?: number;
+  distributedFreeSamples?: number;
+  remainingFreeSamples?: number;
+  freeSampleAchievementRate?: number;
   recentTrend: Array<{ day: string; submissions: number; conversions: number }>;
 };
 
@@ -46,7 +50,7 @@ export type CampaignActivityRow = {
   createdAt: string;
   taskPayload?: Record<string, unknown> | null;
   saleCount?: number;
-  saleLines?: Array<{ id: string; product_name: string | null; quantity: number | null; conversion_status?: string | null }>;
+  saleLines?: Array<{ id: string; product_name: string | null; quantity: number | null; sales_value?: number | null; conversion_status?: string | null }>;
 };
 
 export type CampaignEvidenceItem = {

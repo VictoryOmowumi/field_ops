@@ -16,7 +16,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       supabase.from("organization_users").select("id", { count: "exact", head: true }).eq("organization_id", id).eq("role", "agent"),
       supabase.from("outlets").select("id", { count: "exact", head: true }).eq("organization_id", id),
       supabase.from("sales").select("id", { count: "exact", head: true }).eq("organization_id", id),
-      supabase.from("visit_evidence").select("file_size").eq("organization_id", id),
+      supabase.from("visit_evidence").select("file_size").eq("organization_id", id).is("deleted_at", null),
       supabase.from("visits").select("id", { count: "exact", head: true }).eq("organization_id", id).gte("created_at", new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()),
       supabase.from("sales").select("id", { count: "exact", head: true }).eq("organization_id", id).gte("created_at", new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()),
     ]);

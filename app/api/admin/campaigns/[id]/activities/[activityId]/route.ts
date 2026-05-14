@@ -59,6 +59,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         .select("id, file_url, created_at")
         .eq("organization_id", membership.organizationId)
         .eq("visit_id", visit.id)
+        .is("deleted_at", null)
         .order("created_at", { ascending: false });
       const { data: salesRows } = await supabase
         .from("sales")
