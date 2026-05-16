@@ -2,6 +2,8 @@ export type CampaignAnalyticsSummary = {
   totalSubmissions: number;
   conversions: number;
   convertedOutlets: number;
+  salesCount?: number;
+  unitsSold?: number;
   achievedVisits: number;
   uniqueOutlets: number;
   areasCovered: number;
@@ -61,6 +63,20 @@ export type CampaignEvidenceItem = {
   created_at: string;
   file_url: string;
   signed_url: string | null;
+  file_name?: string | null;
+  file_type?: string | null;
+  file_size?: number | null;
+  original_file_name?: string | null;
+  original_file_size?: number | null;
+  compressed_file_size?: number | null;
+  mime_type?: string | null;
+};
+
+export type CampaignEvidencePagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  hasMore: boolean;
 };
 
 export type ShareLinkStatus = "active" | "revoked" | "expired";

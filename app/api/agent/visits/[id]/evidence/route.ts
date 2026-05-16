@@ -43,6 +43,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const formData = await request.formData();
   const file = formData.get("file");
   const idempotencyKey = String(formData.get("idempotencyKey") ?? "").trim();
+  const originalFileName = String(formData.get("originalFileName") ?? "").trim();
+  const originalFileSizeRaw = Number(formData.get("originalFileSize") ?? NaN);
+  const compressedFileSizeRaw = Number(formData.get("compressedFileSize") ?? NaN);
+  const uploadedMimeType = String(formData.get("mimeType") ?? "").trim();
+  const originalFileSize = Number.isFinite(originalFileSizeRaw) && originalFileSizeRaw > 0 ? originalFileSizeRaw : null;
+  const compressedFileSize = Number.isFinite(compressedFileSizeRaw) && compressedFileSizeRaw > 0 ? compressedFileSizeRaw : null;
   if (!(file instanceof File)) {
     return NextResponse.json({ success: false, message: "file is required." }, { status: 400 });
   }
@@ -53,7 +59,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   if (idempotencyKey) {
     const { data: duplicateEvidence } = await supabase
       .from("visit_evidence")
-      .select("id, file_url, file_name, file_type, file_size, created_at")
+      .select("id, file_url, file_name, file_type, file_size, original_file_name, original_file_size, compressed_file_size, mime_type, created_at")
       .eq("organization_id", membership.organizationId)
       .eq("visit_id", visitId)
       .eq("file_name", file.name)
@@ -87,8 +93,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       file_name: file.name,
       file_type: file.type || null,
       file_size: file.size,
+      original_file_name: originalFileName || file.name,
+      original_file_size: originalFileSize,
+      compressed_file_size: compressedFileSize ?? file.size,
+      mime_type: uploadedMimeType || file.type || null,
     })
-    .select("id, file_url, file_name, file_type, file_size, created_at")
+    .select("id, file_url, file_name, file_type, file_size, original_file_name, original_file_size, compressed_file_size, mime_type, created_at")
     .single();
 
   if (evidenceError || !data) {

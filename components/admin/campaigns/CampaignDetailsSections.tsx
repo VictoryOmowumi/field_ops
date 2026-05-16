@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import CampaignPointMap from "@/components/campaign/CampaignPointMap";
 import EvidenceGallery from "@/components/shared/EvidenceGallery";
-import type { CampaignAnalyticsSummary, CampaignEvidenceItem, CampaignMapPoint } from "@/types/campaign-intelligence";
+import type { CampaignAnalyticsSummary, CampaignEvidenceItem, CampaignEvidencePagination, CampaignMapPoint } from "@/types/campaign-intelligence";
 
 type Campaign = {
   id: string;
@@ -82,8 +82,11 @@ type CampaignDetailsSectionsProps = {
   supervisorRows: SupervisorRow[];
   assignedRepRows: AssignedRepRow[];
   evidence: CampaignEvidenceItem[];
+  evidencePagination: CampaignEvidencePagination;
+  loadingMoreEvidence: boolean;
   deletingEvidenceId: string | null;
   onDeleteEvidence: (evidenceId: string) => void;
+  onLoadMoreEvidence: () => void;
   exportingActivities: boolean;
   launching: boolean;
   deletingCampaign: boolean;
@@ -117,8 +120,11 @@ export function CampaignDetailsSections({
   supervisorRows,
   assignedRepRows,
   evidence,
+  evidencePagination,
+  loadingMoreEvidence,
   deletingEvidenceId,
   onDeleteEvidence,
+  onLoadMoreEvidence,
   exportingActivities,
   launching,
   deletingCampaign,
@@ -489,6 +495,13 @@ export function CampaignDetailsSections({
         <div className="mt-4">
           <EvidenceGallery evidence={evidence} onDelete={onDeleteEvidence} deletingId={deletingEvidenceId} />
         </div>
+        {evidencePagination.hasMore ? (
+          <div className="mt-3">
+            <Button variant="outline" className="rounded-full" disabled={loadingMoreEvidence} onClick={onLoadMoreEvidence}>
+              {loadingMoreEvidence ? "Loading..." : "Load more"}
+            </Button>
+          </div>
+        ) : null}
       </section>
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>

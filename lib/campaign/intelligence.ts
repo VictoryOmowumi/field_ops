@@ -4,6 +4,7 @@ import type {
   CampaignActivityRow,
   CampaignAnalyticsSummary,
   CampaignEvidenceItem,
+  CampaignEvidencePagination,
   CampaignMapPoint,
 } from "@/types/campaign-intelligence";
 
@@ -108,9 +109,12 @@ export function computeMetricsFromRows(
   const convertedVisitIds = new Set<string>();
   const convertedOutletIds = new Set<string>();
   let qualifyingSalesRows = 0;
+  let unitsSold = 0;
   for (const sale of sales) {
     if (!isQualifyingSaleForConversion(sale)) continue;
     qualifyingSalesRows += 1;
+    const quantity = Number(sale.quantity ?? 0);
+    if (Number.isFinite(quantity) && quantity > 0) unitsSold += quantity;
     if (sale.visit_id) convertedVisitIds.add(sale.visit_id);
     if (sale.outlet_id) convertedOutletIds.add(sale.outlet_id);
   }
@@ -145,6 +149,8 @@ export function computeMetricsFromRows(
     totalSubmissions,
     conversions,
     convertedOutlets,
+    salesCount: qualifyingSalesRows,
+    unitsSold,
     achievedVisits,
     uniqueOutlets,
     areasCovered,
@@ -346,7 +352,7 @@ export async function getCampaignActivities(
   filters: ActivityFilters
 ): Promise<{ rows: CampaignActivityRow[]; total: number }> {
   const page = Math.max(1, filters.page ?? 1);
-  const pageSize = Math.min(200, Math.max(10, filters.pageSize ?? 50));
+  const pageSize = Math.min(1000, Math.max(10, filters.pageSize ?? 50));
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
@@ -454,8 +460,17 @@ export async function getCampaignEvidence(
   supabase: SupabaseClient,
   organizationId: string,
   campaignId: string,
-  filters?: { dateFrom?: string | null; dateTo?: string | null }
-): Promise<CampaignEvidenceItem[]> {
+  filters?: {
+    dateFrom?: string | null;
+    dateTo?: string | null;
+    page?: number;
+    pageSize?: number;
+    includeSigned?: boolean;
+  }
+): Promise<{ items: CampaignEvidenceItem[]; pagination: CampaignEvidencePagination }> {
+  const page = Math.max(1, filters?.page ?? 1);
+  const pageSize = Math.min(20, Math.max(1, filters?.pageSize ?? 20));
+  const includeSigned = filters?.includeSigned ?? true;
   let visitsForEvidenceQuery = supabase
       .from("visits")
       .select("id, campaign_id, outlet_id, agent_id")
@@ -467,15 +482,29 @@ export async function getCampaignEvidence(
 
   const visitMap = new Map((visits ?? []).map((item) => [item.id, item]));
   const visitIds = [...visitMap.keys()];
-  const { data: evidenceRows } = visitIds.length
+  const { data: evidenceRows, count: total } = visitIds.length
     ? await supabase
         .from("visit_evidence")
-        .select("id, visit_id, file_url, created_at")
+        .select("id, visit_id, file_url, created_at, file_name, file_type, file_size, original_file_name, original_file_size, compressed_file_size, mime_type", { count: "exact" })
         .eq("organization_id", organizationId)
         .is("deleted_at", null)
         .in("visit_id", visitIds)
         .order("created_at", { ascending: false })
-    : { data: [] as Array<{ id: string; visit_id: string; file_url: string; created_at: string }> };
+        .order("id", { ascending: false })
+        .range((page - 1) * pageSize, (page - 1) * pageSize + pageSize - 1)
+    : { data: [] as Array<{
+      id: string;
+      visit_id: string;
+      file_url: string;
+      created_at: string;
+      file_name?: string | null;
+      file_type?: string | null;
+      file_size?: number | null;
+      original_file_name?: string | null;
+      original_file_size?: number | null;
+      compressed_file_size?: number | null;
+      mime_type?: string | null;
+    }>, count: 0 };
   const scopedEvidence = (evidenceRows ?? []).filter((row) => visitMap.has(row.visit_id));
 
   const outletIds = [...new Set((visits ?? []).map((item) => item.outlet_id).filter(Boolean))] as string[];
@@ -485,14 +514,14 @@ export async function getCampaignEvidence(
     userIds.length ? supabase.from("profiles").select("user_id, full_name").in("user_id", userIds) : Promise.resolve({ data: [] as Array<{ user_id: string; full_name: string | null }> }),
   ]);
 
-  const signed = scopedEvidence.length > 0
+  const signed = includeSigned && scopedEvidence.length > 0
     ? await supabase.storage.from("evidence").createSignedUrls(scopedEvidence.map((row) => row.file_url), 60 * 60)
     : { data: [] as Array<{ path: string; signedUrl: string }> };
   const signedMap = new Map((signed.data ?? []).map((row) => [row.path, row.signedUrl]));
   const outletMap = new Map((outlets ?? []).map((item) => [item.id, item.name]));
   const profileMap = new Map((profiles ?? []).map((item) => [item.user_id, item.full_name ?? "Unknown"]));
 
-  return scopedEvidence.map((row) => {
+  const items = scopedEvidence.map((row) => {
     const visit = visitMap.get(row.visit_id);
     return {
       id: row.id,
@@ -500,8 +529,26 @@ export async function getCampaignEvidence(
       created_at: row.created_at,
       file_url: row.file_url,
       signed_url: signedMap.get(row.file_url) ?? null,
+      file_name: row.file_name ?? null,
+      file_type: row.file_type ?? null,
+      file_size: row.file_size ?? null,
+      original_file_name: row.original_file_name ?? null,
+      original_file_size: row.original_file_size ?? null,
+      compressed_file_size: row.compressed_file_size ?? null,
+      mime_type: row.mime_type ?? null,
       outlet: visit?.outlet_id ? outletMap.get(visit.outlet_id) ?? "-" : "-",
       actor: visit?.agent_id ? profileMap.get(visit.agent_id) ?? "-" : "-",
     };
   });
+
+  const totalCount = total ?? items.length;
+  return {
+    items,
+    pagination: {
+      page,
+      pageSize,
+      total: totalCount,
+      hasMore: page * pageSize < totalCount,
+    },
+  };
 }

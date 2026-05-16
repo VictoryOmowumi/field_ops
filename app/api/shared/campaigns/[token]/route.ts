@@ -34,6 +34,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const { token } = await context.params;
   const dateFrom = request.nextUrl.searchParams.get("dateFrom");
   const dateTo = request.nextUrl.searchParams.get("dateTo");
+  const evidenceOnly = request.nextUrl.searchParams.get("evidenceOnly") === "1";
+  const evidencePage = Math.max(1, Number(request.nextUrl.searchParams.get("evidencePage") ?? "1"));
+  const evidencePageSize = Math.min(20, Math.max(1, Number(request.nextUrl.searchParams.get("evidencePageSize") ?? "20")));
   const ip = extractClientIp(request);
   if (isRateLimited(ip)) {
     return NextResponse.json({ success: false, message: "Too many requests." }, { status: 429 });
@@ -74,11 +77,24 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ success: false, message: "Campaign not found." }, { status: 404 });
   }
 
-  const [{ rows: activities, total }, summary, mapPoints, evidence] = await Promise.all([
+  if (evidenceOnly) {
+    const evidenceResult = await getCampaignEvidence(
+      supabase,
+      shareLink.organization_id,
+      shareLink.campaign_id,
+      { dateFrom, dateTo, page: evidencePage, pageSize: evidencePageSize }
+    );
+    return NextResponse.json(
+      { success: true, evidence: evidenceResult.items, items: evidenceResult.items, pagination: evidenceResult.pagination },
+      { headers: { "Cache-Control": "no-store, max-age=0" } }
+    );
+  }
+
+  const [{ rows: activities, total }, summary, mapPoints, evidenceResult] = await Promise.all([
     getCampaignActivities(supabase, shareLink.organization_id, shareLink.campaign_id, { page: 1, pageSize: 2000, dateFrom, dateTo }),
     getCampaignAnalyticsSummary(supabase, shareLink.organization_id, shareLink.campaign_id, { dateFrom, dateTo }),
     getCampaignMapPoints(supabase, shareLink.organization_id, shareLink.campaign_id, { source: "visits_only", dateFrom, dateTo }),
-    getCampaignEvidence(supabase, shareLink.organization_id, shareLink.campaign_id, { dateFrom, dateTo }),
+    getCampaignEvidence(supabase, shareLink.organization_id, shareLink.campaign_id, { dateFrom, dateTo, page: 1, pageSize: 20 }),
   ]);
 
   const now = new Date().toISOString();
@@ -105,7 +121,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
       mapPoints,
       activities,
       totalActivities: total,
-      evidence,
+      evidence: evidenceResult.items,
+      evidencePagination: evidenceResult.pagination,
     },
     {
       headers: {

@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useThemeMode } from "@/hooks/useThemeMode";
-import type { CampaignActivityRow, CampaignAnalyticsSummary, CampaignEvidenceItem, CampaignMapPoint } from "@/types/campaign-intelligence";
+import type { CampaignActivityRow, CampaignAnalyticsSummary, CampaignEvidenceItem, CampaignEvidencePagination, CampaignMapPoint } from "@/types/campaign-intelligence";
 import BackofficeBrand from "@/components/backoffice/BackofficeBrand";
 const CampaignPointMap = dynamic(() => import("@/components/campaign/CampaignPointMap"), {
   ssr: false,
@@ -109,6 +109,13 @@ export default function SharedCampaignPage() {
   const [mapPoints, setMapPoints] = useState<CampaignMapPoint[]>([]);
   const [activities, setActivities] = useState<CampaignActivityRow[]>([]);
   const [evidence, setEvidence] = useState<CampaignEvidenceItem[]>([]);
+  const [evidencePagination, setEvidencePagination] = useState<CampaignEvidencePagination>({
+    page: 1,
+    pageSize: 20,
+    total: 0,
+    hasMore: false,
+  });
+  const [loadingMoreEvidence, setLoadingMoreEvidence] = useState(false);
 
   const [search, setSearch] = useState("");
   const [areaFilter, setAreaFilter] = useState("all");
@@ -135,9 +142,46 @@ export default function SharedCampaignPage() {
       setMapPoints(result.mapPoints ?? []);
       setActivities(result.activities ?? []);
       setEvidence(result.evidence ?? []);
+      setEvidencePagination(result.evidencePagination ?? {
+        page: 1,
+        pageSize: 20,
+        total: (result.evidence ?? []).length,
+        hasMore: false,
+      });
     }
     void load();
   }, [token, dateFrom, dateTo]);
+
+  async function loadMoreEvidence() {
+    if (loadingMoreEvidence || !evidencePagination.hasMore) return;
+    setLoadingMoreEvidence(true);
+    try {
+      const params = new URLSearchParams({
+        evidenceOnly: "1",
+        evidencePage: String(evidencePagination.page + 1),
+        evidencePageSize: String(evidencePagination.pageSize),
+      });
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
+      const response = await fetch(`/api/shared/campaigns/${token}?${params.toString()}`, { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok || !result.success) return;
+      const nextItems = (result.evidence ?? []) as CampaignEvidenceItem[];
+      setEvidence((prev) => {
+        const seen = new Set(prev.map((item) => item.id));
+        const merged = [...prev];
+        for (const item of nextItems) {
+          if (seen.has(item.id)) continue;
+          merged.push(item);
+          seen.add(item.id);
+        }
+        return merged;
+      });
+      if (result.pagination) setEvidencePagination(result.pagination as CampaignEvidencePagination);
+    } finally {
+      setLoadingMoreEvidence(false);
+    }
+  }
 
   const evidenceByVisit = useMemo(() => {
     const map = new Map<string, CampaignEvidenceItem[]>();
@@ -298,13 +342,18 @@ export default function SharedCampaignPage() {
         <Stat label="Areas covered" value={String(summary.areasCovered)} trend={summary.recentTrend} dataKey="submissions" />
         <Stat label="Conversion rate" value={`${summary.conversionRate.toFixed(1)}%`} trend={summary.recentTrend} dataKey="conversions" />
         <Stat label="Sync health" value={`${summary.syncHealth.toFixed(1)}%`} trend={summary.recentTrend} dataKey="submissions" />
-      </section>
-
-      <section className="grid gap-4 sm:grid-cols-3">
         <Stat label="Converted visits" value={String(summary.conversions)} trend={summary.recentTrend} dataKey="conversions" />
+        <Stat
+          label="Sales count"
+          value={`${summary.salesCount ?? 0}${typeof summary.unitsSold === "number" ? ` (${summary.unitsSold})` : ""}`}
+          trend={summary.recentTrend}
+          dataKey="conversions"
+        />
         <Stat label="POSM deployed" value={String(summary.posmDeployed)} trend={summary.recentTrend} dataKey="submissions" />
         <Stat label="POSM units" value={String(summary.posmUnits)} trend={summary.recentTrend} dataKey="submissions" />
+      
       </section>
+
 
       <section className="rounded-3xl border border-border bg-card p-5">
         <h2 className="font-semibold">Coverage Map</h2>
@@ -422,6 +471,13 @@ export default function SharedCampaignPage() {
         <div className="mt-4">
           <EvidenceGallery evidence={evidence} />
         </div>
+        {evidencePagination.hasMore ? (
+          <div className="mt-3">
+            <Button variant="outline" className="rounded-full" disabled={loadingMoreEvidence} onClick={loadMoreEvidence}>
+              {loadingMoreEvidence ? "Loading..." : "Load more"}
+            </Button>
+          </div>
+        ) : null}
       </section>
 
       <Dialog open={Boolean(selectedActivity)} onOpenChange={(open) => !open && setSelectedActivity(null)}>

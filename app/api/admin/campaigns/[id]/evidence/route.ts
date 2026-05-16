@@ -24,8 +24,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   const { id } = await context.params;
   const supabase = createServerSupabaseClient();
-  const evidence = await getCampaignEvidence(supabase, membership.organizationId, id);
+  const page = Math.max(1, Number(request.nextUrl.searchParams.get("page") ?? "1"));
+  const pageSize = Math.min(20, Math.max(1, Number(request.nextUrl.searchParams.get("pageSize") ?? "20")));
+  const includeSigned = request.nextUrl.searchParams.get("includeSigned") !== "0";
+  const result = await getCampaignEvidence(supabase, membership.organizationId, id, { page, pageSize, includeSigned });
 
-  return NextResponse.json({ success: true, evidence });
+  return NextResponse.json({ success: true, evidence: result.items, items: result.items, pagination: result.pagination });
 }
-

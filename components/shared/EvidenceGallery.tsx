@@ -59,6 +59,7 @@ export default function EvidenceGallery({
                   className="h-24 w-full object-cover"
                   width={250}
                   height={250}
+                  loading="lazy"
                   onLoad={() => setLoadedThumbIds((prev) => ({ ...prev, [item.id]: true }))}
                 />
                 {onDelete ? (

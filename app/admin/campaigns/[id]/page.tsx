@@ -48,6 +48,8 @@ export default function CampaignDetailsPage() {
         supervisorRows={vm.supervisorRows}
         assignedRepRows={vm.assignedRepRows}
         evidence={vm.evidence}
+        evidencePagination={vm.evidencePagination}
+        loadingMoreEvidence={vm.loadingMoreEvidence}
         deletingEvidenceId={vm.deletingEvidenceId}
         exportingActivities={vm.exportingActivities}
         launching={vm.launching}
@@ -56,6 +58,7 @@ export default function CampaignDetailsPage() {
         onLaunchCampaign={() => void vm.launchCampaign()}
         onDeleteCampaign={() => void vm.deleteCampaign()}
         onDeleteEvidence={(evidenceId) => void vm.deleteEvidence(evidenceId)}
+        onLoadMoreEvidence={() => void vm.loadMoreEvidence()}
         onOpenShareDialog={() => vm.setShareDialogOpen(true)}
         onOpenAssignDialog={vm.openAssignDialog}
         activitySearch={vm.activitySearch}

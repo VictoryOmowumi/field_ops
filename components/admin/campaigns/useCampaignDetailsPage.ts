@@ -14,6 +14,7 @@ import {
 import type {
   CampaignAnalyticsSummary,
   CampaignEvidenceItem,
+  CampaignEvidencePagination,
   CampaignMapPoint,
   CampaignShareLink,
 } from "@/types/campaign-intelligence";
@@ -98,6 +99,13 @@ export function useCampaignDetailsPage(campaignId?: string) {
   const [summary, setSummary] = useState<CampaignAnalyticsSummary | null>(null);
   const [mapPoints, setMapPoints] = useState<CampaignMapPoint[]>([]);
   const [evidence, setEvidence] = useState<CampaignEvidenceItem[]>([]);
+  const [evidencePagination, setEvidencePagination] = useState<CampaignEvidencePagination>({
+    page: 1,
+    pageSize: 20,
+    total: 0,
+    hasMore: false,
+  });
+  const [loadingMoreEvidence, setLoadingMoreEvidence] = useState(false);
   const [shareLinks, setShareLinks] = useState<CampaignShareLink[]>([]);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [shareExpiresAt, setShareExpiresAt] = useState(() => {
@@ -161,7 +169,7 @@ export function useCampaignDetailsPage(campaignId?: string) {
           ...(dateFrom ? { dateFrom } : {}),
           ...(dateTo ? { dateTo } : {}),
         }).toString()}`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`/api/admin/campaigns/${campaignId}/evidence`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`/api/admin/campaigns/${campaignId}/evidence?page=1&pageSize=20`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`/api/admin/campaigns/${campaignId}/share-links`, { headers: { Authorization: `Bearer ${token}` } }),
       ]);
 
@@ -175,14 +183,63 @@ export function useCampaignDetailsPage(campaignId?: string) {
         setMapPoints(analyticsResult.mapPoints ?? []);
       }
 
-      const evidenceResult = (await evidenceResponse.json()) as { success: boolean; evidence?: CampaignEvidenceItem[] };
-      if (evidenceResponse.ok && evidenceResult.success) setEvidence(evidenceResult.evidence ?? []);
+      const evidenceResult = (await evidenceResponse.json()) as {
+        success: boolean;
+        evidence?: CampaignEvidenceItem[];
+        pagination?: CampaignEvidencePagination;
+      };
+      if (evidenceResponse.ok && evidenceResult.success) {
+        setEvidence(evidenceResult.evidence ?? []);
+        setEvidencePagination(
+          evidenceResult.pagination ?? { page: 1, pageSize: 20, total: evidenceResult.evidence?.length ?? 0, hasMore: false }
+        );
+      }
 
       const shareLinksResult = (await shareLinksResponse.json()) as { success: boolean; shareLinks?: CampaignShareLink[] };
       if (shareLinksResponse.ok && shareLinksResult.success) setShareLinks(shareLinksResult.shareLinks ?? []);
     },
     [campaignId, dateFrom, dateTo]
   );
+
+  async function loadMoreEvidence() {
+    if (!campaignId || !evidencePagination.hasMore || loadingMoreEvidence) return;
+    const { data } = await supabaseClient.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return;
+
+    setLoadingMoreEvidence(true);
+    try {
+      const nextPage = evidencePagination.page + 1;
+      const response = await fetch(
+        `/api/admin/campaigns/${campaignId}/evidence?page=${nextPage}&pageSize=${evidencePagination.pageSize}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const result = (await response.json()) as {
+        success: boolean;
+        evidence?: CampaignEvidenceItem[];
+        pagination?: CampaignEvidencePagination;
+        message?: string;
+      };
+      if (!response.ok || !result.success) {
+        toast.error(result.message ?? "Failed to load more evidence.");
+        return;
+      }
+      const nextItems = result.evidence ?? [];
+      setEvidence((prev) => {
+        const seen = new Set(prev.map((item) => item.id));
+        const merged = [...prev];
+        for (const item of nextItems) {
+          if (seen.has(item.id)) continue;
+          merged.push(item);
+          seen.add(item.id);
+        }
+        return merged;
+      });
+      if (result.pagination) setEvidencePagination(result.pagination);
+    } finally {
+      setLoadingMoreEvidence(false);
+    }
+  }
 
   useEffect(() => {
     async function loadCampaign() {
@@ -666,6 +723,8 @@ export function useCampaignDetailsPage(campaignId?: string) {
     creatingShareLink,
     sendingShareLink,
     deletingCampaign,
+    evidencePagination,
+    loadingMoreEvidence,
     deletingEvidenceId,
     generatedShareUrl,
     shareLinks,
@@ -687,6 +746,7 @@ export function useCampaignDetailsPage(campaignId?: string) {
     copyShareUrl,
     revokeShareLink,
     deleteEvidence,
+    loadMoreEvidence,
     refreshShareLinks,
     openAssignDialog,
     openRegisterRepDialog,

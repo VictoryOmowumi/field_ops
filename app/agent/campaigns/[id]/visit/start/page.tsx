@@ -54,6 +54,67 @@ function clientUuid() {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
+type CompressedEvidence = {
+  file: File;
+  originalFileName: string;
+  originalFileSize: number;
+  compressedFileSize: number;
+  mimeType: string;
+};
+
+async function compressEvidencePhoto(file: File): Promise<CompressedEvidence> {
+  const originalFileName = file.name;
+  const originalFileSize = file.size;
+  const fallback = {
+    file,
+    originalFileName,
+    originalFileSize,
+    compressedFileSize: file.size,
+    mimeType: file.type || "application/octet-stream",
+  };
+
+  if (!file.type.startsWith("image/")) return fallback;
+
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maxWidth = 1280;
+    const targetWidth = Math.min(bitmap.width, maxWidth);
+    const ratio = bitmap.width > 0 ? targetWidth / bitmap.width : 1;
+    const targetHeight = Math.max(1, Math.round(bitmap.height * ratio));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return fallback;
+
+    ctx.drawImage(bitmap, 0, 0, targetWidth, targetHeight);
+    bitmap.close();
+
+    const quality = 0.7;
+    const preferWebp = typeof HTMLCanvasElement !== "undefined" && canvas.toDataURL("image/webp").startsWith("data:image/webp");
+    const outputMime = preferWebp ? "image/webp" : "image/jpeg";
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((result) => resolve(result), outputMime, quality);
+    });
+    if (!blob) return fallback;
+
+    const baseName = originalFileName.replace(/\.[^/.]+$/, "");
+    const ext = outputMime === "image/webp" ? "webp" : "jpg";
+    const compressedFile = new File([blob], `${baseName}.${ext}`, { type: outputMime, lastModified: Date.now() });
+
+    return {
+      file: compressedFile,
+      originalFileName,
+      originalFileSize,
+      compressedFileSize: compressedFile.size,
+      mimeType: outputMime,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 export default function AgentVisitStartPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -174,6 +235,8 @@ export default function AgentVisitStartPage() {
       },
     };
 
+    const compressedPhotos = await Promise.all(photos.map((file) => compressEvidencePhoto(file)));
+
     if (!isOnline) {
       await enqueueSyncRecord({
         id: submissionId,
@@ -205,15 +268,15 @@ export default function AgentVisitStartPage() {
         createdAt: new Date().toISOString(),
       });
 
-      for (const file of photos) {
+      for (const photo of compressedPhotos) {
         const photoQueueId = clientId("photo");
         const evidenceId = clientUuid();
         await db.evidenceBlobs.put({
           id: clientId("blob"),
           queueId: photoQueueId,
-          fileName: file.name,
-          fileType: file.type || "application/octet-stream",
-          blob: file,
+          fileName: photo.file.name,
+          fileType: photo.file.type || "application/octet-stream",
+          blob: photo.file,
           createdAt: new Date().toISOString(),
         });
         await enqueueSyncRecord({
@@ -225,9 +288,13 @@ export default function AgentVisitStartPage() {
           payload: {
             id: evidenceId,
             visit_id: visitId,
-            file_name: file.name,
-            file_type: file.type || null,
-            file_size: file.size,
+            file_name: photo.file.name,
+            file_type: photo.file.type || null,
+            file_size: photo.file.size,
+            original_file_name: photo.originalFileName,
+            original_file_size: photo.originalFileSize,
+            compressed_file_size: photo.compressedFileSize,
+            mime_type: photo.mimeType,
             file_url: `offline://${photoQueueId}`,
           },
           idempotencyKey: photoQueueId,
@@ -247,13 +314,17 @@ export default function AgentVisitStartPage() {
       body: JSON.stringify(enrichedPayload),
     });
 
-    if (photos.length > 0) {
+    if (compressedPhotos.length > 0) {
       void (async () => {
         const uploadResults = await Promise.allSettled(
-          photos.map(async (file) => {
+          compressedPhotos.map(async (photo) => {
             const formData = new FormData();
-            formData.append("file", file);
+            formData.append("file", photo.file);
             formData.append("idempotencyKey", clientId("photo"));
+            formData.append("originalFileName", photo.originalFileName);
+            formData.append("originalFileSize", String(photo.originalFileSize));
+            formData.append("compressedFileSize", String(photo.compressedFileSize));
+            formData.append("mimeType", photo.mimeType);
             await authorizedFetch(`/api/agent/visits/${visitResponse.visit.id}/evidence`, {
               method: "POST",
               body: formData,
