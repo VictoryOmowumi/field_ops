@@ -352,7 +352,7 @@ export async function getCampaignActivities(
   filters: ActivityFilters
 ): Promise<{ rows: CampaignActivityRow[]; total: number }> {
   const page = Math.max(1, filters.page ?? 1);
-  const pageSize = Math.min(1000, Math.max(10, filters.pageSize ?? 50));
+  const pageSize = Math.min(5000, Math.max(10, filters.pageSize ?? 50));
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
