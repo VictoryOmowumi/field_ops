@@ -130,6 +130,7 @@ export default function SharedCampaignPage() {
       const params = new URLSearchParams();
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
+      if (areaFilter !== "all") params.set("area", areaFilter);
       const response = await fetch(`/api/shared/campaigns/${token}${params.toString() ? `?${params.toString()}` : ""}`, { cache: "no-store" });
       const result = await response.json();
       setLoading(false);
@@ -150,7 +151,7 @@ export default function SharedCampaignPage() {
       });
     }
     void load();
-  }, [token, dateFrom, dateTo]);
+  }, [token, dateFrom, dateTo, areaFilter]);
 
   async function loadMoreEvidence() {
     if (loadingMoreEvidence || !evidencePagination.hasMore) return;
@@ -163,6 +164,7 @@ export default function SharedCampaignPage() {
       });
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
+      if (areaFilter !== "all") params.set("area", areaFilter);
       const response = await fetch(`/api/shared/campaigns/${token}?${params.toString()}`, { cache: "no-store" });
       const result = await response.json();
       if (!response.ok || !result.success) return;
@@ -314,7 +316,7 @@ export default function SharedCampaignPage() {
       </section>
 
       <section className="rounded-3xl border border-border bg-card p-4">
-        <div className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+        <div className="grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto]">
           <Input
             type="date"
             aria-label="Date range start"
@@ -327,11 +329,26 @@ export default function SharedCampaignPage() {
             value={dateTo}
             onChange={(e) => setDateTo(e.target.value)}
           />
+          <Select
+            value={areaFilter}
+            onValueChange={(value) => {
+              setAreaFilter(value);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger><SelectValue placeholder="Area" /></SelectTrigger>
+            <SelectContent>
+              {areaOptions.map((option) => (
+                <SelectItem key={option} value={option}>{option === "all" ? "All areas" : option}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button variant="outline" className="rounded-full" onClick={() => {
             setDateFrom("");
             setDateTo("");
+            setAreaFilter("all");
           }}>
-            Clear date range
+            Clear filters
           </Button>
         </div>
       </section>
@@ -365,7 +382,7 @@ export default function SharedCampaignPage() {
 
       <section className="rounded-3xl border border-border bg-card p-5">
         <h2 className="font-semibold">Captured Activity</h2>
-        <div className="mt-4 grid gap-2 md:grid-cols-4">
+        <div className="mt-4 grid gap-2 md:grid-cols-3">
           <Input
             placeholder="Search customer/outlet/area/products/actor"
             value={search}
@@ -374,20 +391,6 @@ export default function SharedCampaignPage() {
               setPage(1);
             }}
           />
-          <Select
-            value={areaFilter}
-            onValueChange={(value) => {
-              setAreaFilter(value);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger><SelectValue placeholder="Area" /></SelectTrigger>
-            <SelectContent>
-              {areaOptions.map((option) => (
-                <SelectItem key={option} value={option}>{option === "all" ? "All areas" : option}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
           <Select
             value={actorFilter}
             onValueChange={(value) => {
@@ -407,11 +410,11 @@ export default function SharedCampaignPage() {
           </div>
         </div>
 
-        <div className="mt-4 overflow-hidden rounded-2xl border border-border">
-          <table className="w-full text-sm overflow-x-auto">
+        <div className="mt-4 overflow-x-auto rounded-2xl border border-border">
+          <table className="min-w-[1100px] w-full text-sm">
             <thead className="bg-muted/50 text-muted-foreground">
               <tr>
-                <th className="px-4 py-3 text-left">Type</th>
+                {/* <th className="px-4 py-3 text-left">Type</th> */}
                 <th className="px-4 py-3 text-left">Customer</th>
                 <th className="px-4 py-3 text-left">Outlet</th>
                 <th className="px-4 py-3 text-left">Area</th>
@@ -431,7 +434,7 @@ export default function SharedCampaignPage() {
               ) : (
                 pagedActivities.map((item) => (
                   <tr key={item.id} className="border-t border-border">
-                    <td className="px-4 py-4 capitalize">{item.taskType ?? item.type}</td>
+                    {/* <td className="px-4 py-4 capitalize">{item.taskType ?? item.type}</td> */}
                     <td className="px-4 py-4">{item.customer ?? "-"}</td>
                     <td className="px-4 py-4">{item.outlet}</td>
                     <td className="px-4 py-4">{item.area ?? "-"}</td>
