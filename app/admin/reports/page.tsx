@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -114,6 +115,9 @@ export default function ReportsPage() {
           <p className="mt-1 text-sm text-muted-foreground">Review campaign performance, product movement, and rep productivity.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline" className="rounded-full px-5">
+            <Link href="/admin/reports/performance">Open KPI Performance</Link>
+          </Button>
           <Button className="rounded-full px-5" disabled={exporting !== null} onClick={() => void downloadExport("rep-performance")}>
             {exporting === "rep" ? "Exporting..." : "Export Rep CSV"}
           </Button>

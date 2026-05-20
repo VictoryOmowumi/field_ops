@@ -55,6 +55,10 @@ export type PlatformCampaignDetail = {
   posmDeployed: number;
   posmUnits: number;
   pendingUploads: number;
+  totalSalesRecords: number;
+  evidenceFiles: number;
+  evidenceStorageBytes: number;
+  evidenceStorageLabel: string;
   recentActivity: Array<{ rep: string; outlet: string; status: string; time: string }>;
 };
 

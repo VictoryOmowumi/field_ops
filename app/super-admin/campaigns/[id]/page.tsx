@@ -4,9 +4,17 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
+import { MoreHorizontal } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { supabaseClient } from "@/lib/supabase/client";
 import type { PlatformCampaignDetail } from "@/types/platform";
 
@@ -15,6 +23,9 @@ export default function SuperAdminCampaignDetailPage() {
   const campaignId = params.id;
   const [campaign, setCampaign] = useState<PlatformCampaignDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   useEffect(() => {
     async function loadCampaign() {
@@ -43,6 +54,39 @@ export default function SuperAdminCampaignDetailPage() {
     void loadCampaign();
   }, [campaignId]);
 
+  async function exportPerformanceCsv() {
+    setExporting(true);
+    try {
+      const { data } = await supabaseClient.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Session expired. Please sign in again.");
+      const query = new URLSearchParams();
+      if (dateFrom) query.set("dateFrom", dateFrom);
+      if (dateTo) query.set("dateTo", dateTo);
+      const response = await fetch(`/api/platform/campaigns/${campaignId}/performance/export?${query.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(payload?.message ?? "Failed to export performance report.");
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `platform-campaign-${campaignId}-performance.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Performance report downloaded.");
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   if (loading) {
     return <div className="rounded-3xl border border-border p-4 text-sm text-muted-foreground">Loading campaign...</div>;
   }
@@ -59,22 +103,54 @@ export default function SuperAdminCampaignDetailPage() {
             <span className="text-sm text-muted-foreground">{campaign.startDate} - {campaign.endDate}</span>
           </div>
           <h1 className="text-3xl font-semibold tracking-tight">{campaign.name}</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{campaign.description}</p>
+          <p className="mt-1 max-w-4xl text-sm text-muted-foreground">{campaign.description}</p>
           <p className="mt-2 text-sm text-muted-foreground">
             Organization: <Link className="text-primary hover:underline" href={`/super-admin/organizations/${campaign.organizationId}`}>{campaign.organization}</Link>
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-end gap-2">
           <Button variant="outline" className="rounded-full" asChild><Link href="/super-admin/campaigns">Back</Link></Button>
           <Button className="rounded-full px-5" asChild><Link href={`/super-admin/organizations/${campaign.organizationId}/campaigns`}>Manage In Tenant</Link></Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="rounded-full px-4">
+                <span className="inline-flex items-center gap-2">
+                  <MoreHorizontal className="size-4" />
+                  Actions
+                </span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onClick={() => void exportPerformanceCsv()} disabled={exporting}>
+                {exporting ? "Exporting KPI CSV..." : "Export KPI CSV"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
+       <div className="flex gap-2">
+          <div>
+            <p className="mb-1 text-xs text-muted-foreground">From</p>
+            <Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+          </div>
+          <div>
+            <p className="mb-1 text-xs text-muted-foreground">To</p>
+            <Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+          </div>
+       </div>
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Total submissions" value={campaign.totalSubmissions} />
         <Stat label="Unique outlets" value={campaign.uniqueOutlets} />
         <Stat label="Conversions" value={campaign.conversions} />
         <Stat label="Pending uploads" value={campaign.pendingUploads} />
+      </div>
+
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label="Sales records" value={campaign.totalSalesRecords} />
+        <Stat label="Evidence files" value={campaign.evidenceFiles} />
+        <Stat label="Evidence storage (bytes)" value={campaign.evidenceStorageBytes} />
+        <InfoStat label="Evidence storage" value={campaign.evidenceStorageLabel} />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-12">
@@ -149,6 +225,15 @@ function Stat({ label, value }: { label: string; value: number }) {
     <div className="rounded-[1.6rem] bg-card p-5 shadow-sm ring-1 ring-border/60">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-2 text-3xl font-semibold">{value.toLocaleString()}</p>
+    </div>
+  );
+}
+
+function InfoStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[1.6rem] bg-card p-5 shadow-sm ring-1 ring-border/60">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-2 text-3xl font-semibold">{value}</p>
     </div>
   );
 }

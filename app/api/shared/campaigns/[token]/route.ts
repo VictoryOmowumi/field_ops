@@ -31,10 +31,14 @@ function isRateLimited(ip: string | null) {
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {
+  console.time("shared-campaign-total");
   const { token } = await context.params;
   const dateFrom = request.nextUrl.searchParams.get("dateFrom");
   const dateTo = request.nextUrl.searchParams.get("dateTo");
   const area = request.nextUrl.searchParams.get("area");
+  const section = request.nextUrl.searchParams.get("section") ?? "summary";
+  const activityPage = Math.max(1, Number(request.nextUrl.searchParams.get("activityPage") ?? "1"));
+  const activityPageSize = Math.min(500, Math.max(10, Number(request.nextUrl.searchParams.get("activityPageSize") ?? "200")));
   const evidenceOnly = request.nextUrl.searchParams.get("evidenceOnly") === "1";
   const evidencePage = Math.max(1, Number(request.nextUrl.searchParams.get("evidencePage") ?? "1"));
   const evidencePageSize = Math.min(20, Math.max(1, Number(request.nextUrl.searchParams.get("evidencePageSize") ?? "20")));
@@ -45,11 +49,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   const supabase = createServerSupabaseClient();
   const tokenHash = hashShareToken(token);
+  console.time("find-share-link");
   const { data: shareLink } = await supabase
     .from("campaign_share_links")
     .select("id, organization_id, campaign_id, status, expires_at, revoked_at, view_count")
     .eq("token_hash", tokenHash)
     .maybeSingle();
+  console.timeEnd("find-share-link");
 
   if (!shareLink) {
     return NextResponse.json({ success: false, message: "Invalid or expired link." }, {
@@ -68,35 +74,74 @@ export async function GET(request: NextRequest, context: RouteContext) {
     });
   }
 
+  console.time("campaign");
   const { data: campaign } = await supabase
     .from("campaigns")
     .select("id, name, description, status, state, lga, start_date, end_date")
     .eq("id", shareLink.campaign_id)
     .eq("organization_id", shareLink.organization_id)
     .maybeSingle();
+  console.timeEnd("campaign");
   if (!campaign) {
     return NextResponse.json({ success: false, message: "Campaign not found." }, { status: 404 });
   }
 
-  if (evidenceOnly) {
+  if (evidenceOnly || section === "evidence") {
+    console.time("evidence");
     const evidenceResult = await getCampaignEvidence(
       supabase,
       shareLink.organization_id,
       shareLink.campaign_id,
       { dateFrom, dateTo, area, page: evidencePage, pageSize: evidencePageSize }
     );
+    console.timeEnd("evidence");
+    console.timeEnd("shared-campaign-total");
     return NextResponse.json(
       { success: true, evidence: evidenceResult.items, items: evidenceResult.items, pagination: evidenceResult.pagination },
       { headers: { "Cache-Control": "no-store, max-age=0" } }
     );
   }
 
-  const [{ rows: activities, total }, summary, mapPoints, evidenceResult] = await Promise.all([
-    getCampaignActivities(supabase, shareLink.organization_id, shareLink.campaign_id, { page: 1, pageSize: 2000, dateFrom, dateTo, area }),
-    getCampaignAnalyticsSummary(supabase, shareLink.organization_id, shareLink.campaign_id, { dateFrom, dateTo, area }),
-    getCampaignMapPoints(supabase, shareLink.organization_id, shareLink.campaign_id, { source: "visits_only", dateFrom, dateTo, area }),
-    getCampaignEvidence(supabase, shareLink.organization_id, shareLink.campaign_id, { dateFrom, dateTo, area, page: 1, pageSize: 20 }),
-  ]);
+  if (section === "activities") {
+    console.time("activities");
+    const { rows: activities, total } = await getCampaignActivities(
+      supabase,
+      shareLink.organization_id,
+      shareLink.campaign_id,
+      { page: activityPage, pageSize: activityPageSize, dateFrom, dateTo, area }
+    );
+    console.timeEnd("activities");
+    console.timeEnd("shared-campaign-total");
+    return NextResponse.json(
+      { success: true, activities, totalActivities: total, activityPage, activityPageSize },
+      { headers: { "Cache-Control": "no-store, max-age=0" } }
+    );
+  }
+
+  if (section === "map") {
+    console.time("map");
+    const mapPoints = await getCampaignMapPoints(
+      supabase,
+      shareLink.organization_id,
+      shareLink.campaign_id,
+      { source: "visits_only", dateFrom, dateTo, area }
+    );
+    console.timeEnd("map");
+    console.timeEnd("shared-campaign-total");
+    return NextResponse.json(
+      { success: true, mapPoints },
+      { headers: { "Cache-Control": "no-store, max-age=0" } }
+    );
+  }
+
+  console.time("analytics");
+  const summary = await getCampaignAnalyticsSummary(
+    supabase,
+    shareLink.organization_id,
+    shareLink.campaign_id,
+    { dateFrom, dateTo, area }
+  );
+  console.timeEnd("analytics");
 
   const now = new Date().toISOString();
   await Promise.all([
@@ -114,16 +159,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
       }),
   ]);
 
+  console.timeEnd("shared-campaign-total");
   return NextResponse.json(
     {
       success: true,
       campaign,
       summary,
-      mapPoints,
-      activities,
-      totalActivities: total,
-      evidence: evidenceResult.items,
-      evidencePagination: evidenceResult.pagination,
     },
     {
       headers: {

@@ -13,6 +13,14 @@ function relativeTimeLabel(timestamp: string) {
   return `${hrs} hr${hrs > 1 ? "s" : ""} ago`;
 }
 
+function formatBytes(bytes: number) {
+  if (bytes <= 0) return "0 MB";
+  const gb = bytes / (1024 * 1024 * 1024);
+  if (gb >= 1) return `${gb.toFixed(2)} GB`;
+  const mb = bytes / (1024 * 1024);
+  return `${mb.toFixed(2)} MB`;
+}
+
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireSuperAdmin(request);
   if (auth.error) return auth.error;
@@ -28,7 +36,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   if (!campaign) return NextResponse.json({ success: false, message: "Campaign not found." }, { status: 404 });
 
-  const [{ data: org }, { data: assignments }, { data: visits }, { data: sales }, { data: profiles }, { data: outlets }] = await Promise.all([
+  const [{ data: org }, { data: assignments }, { data: visits }, { data: sales }, { data: profiles }, { data: outlets }, { data: evidenceRows }] = await Promise.all([
     supabase.from("organizations").select("name").eq("id", campaign.organization_id).maybeSingle(),
     supabase.from("campaign_assignments").select("user_id, role").eq("campaign_id", id),
     supabase
@@ -42,6 +50,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       .eq("campaign_id", id),
     supabase.from("profiles").select("user_id, full_name"),
     supabase.from("outlets").select("id, name"),
+    supabase
+      .from("visit_evidence")
+      .select("id, file_size, visits!inner(campaign_id)")
+      .is("deleted_at", null)
+      .eq("visits.campaign_id", id),
   ]);
 
   const repCount = (assignments ?? []).filter((row) => row.role === "agent").length;
@@ -70,6 +83,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const conversions = canonical.convertedVisitIds.size;
   const salesValue = salesList.reduce((sum, row) => sum + Number(row.sales_value ?? 0), 0);
   const pendingUploads = visitsList.filter((v) => v.sync_status !== "synced").length;
+  const evidenceStorageBytes = (evidenceRows ?? []).reduce((sum, row) => sum + (Number(row.file_size ?? 0) || 0), 0);
+  const evidenceFiles = (evidenceRows ?? []).length;
 
   const profileMap = new Map((profiles ?? []).map((p) => [p.user_id, p.full_name ?? "Unknown"]));
   const outletMap = new Map((outlets ?? []).map((o) => [o.id, o.name ?? "Outlet"]));
@@ -95,6 +110,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     posmDeployed: canonical.summary.posmDeployed,
     posmUnits: canonical.summary.posmUnits,
     pendingUploads,
+    totalSalesRecords: salesList.length,
+    evidenceFiles,
+    evidenceStorageBytes,
+    evidenceStorageLabel: formatBytes(evidenceStorageBytes),
     recentActivity: visitsList.slice(0, 10).map((v) => ({
       rep: profileMap.get(v.agent_id) ?? "Unknown Rep",
       outlet: outletMap.get(v.outlet_id) ?? "Outlet",

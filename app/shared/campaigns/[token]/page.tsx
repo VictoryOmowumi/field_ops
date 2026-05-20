@@ -103,6 +103,7 @@ export default function SharedCampaignPage() {
   const token = params.token;
   const { theme, toggleTheme } = useThemeMode();
   const [loading, setLoading] = useState(true);
+  const [loadingSections, setLoadingSections] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [campaign, setCampaign] = useState<SharedCampaignPayload | null>(null);
   const [summary, setSummary] = useState<CampaignAnalyticsSummary | null>(null);
@@ -128,6 +129,7 @@ export default function SharedCampaignPage() {
   useEffect(() => {
     async function load() {
       const params = new URLSearchParams();
+      params.set("section", "summary");
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
       if (areaFilter !== "all") params.set("area", areaFilter);
@@ -140,18 +142,62 @@ export default function SharedCampaignPage() {
       }
       setCampaign(result.campaign);
       setSummary(result.summary);
-      setMapPoints(result.mapPoints ?? []);
-      setActivities(result.activities ?? []);
-      setEvidence(result.evidence ?? []);
-      setEvidencePagination(result.evidencePagination ?? {
-        page: 1,
-        pageSize: 20,
-        total: (result.evidence ?? []).length,
-        hasMore: false,
-      });
     }
     void load();
   }, [token, dateFrom, dateTo, areaFilter]);
+
+  useEffect(() => {
+    if (!campaign) return;
+    let cancelled = false;
+    async function loadSections() {
+      setLoadingSections(true);
+      const baseParams = new URLSearchParams();
+      if (dateFrom) baseParams.set("dateFrom", dateFrom);
+      if (dateTo) baseParams.set("dateTo", dateTo);
+      if (areaFilter !== "all") baseParams.set("area", areaFilter);
+
+      const [activitiesRes, mapRes, evidenceRes] = await Promise.all([
+        fetch(`/api/shared/campaigns/${token}?${new URLSearchParams({ ...Object.fromEntries(baseParams.entries()), section: "activities", activityPage: "1", activityPageSize: "2000" }).toString()}`, { cache: "no-store" }),
+        fetch(`/api/shared/campaigns/${token}?${new URLSearchParams({ ...Object.fromEntries(baseParams.entries()), section: "map" }).toString()}`, { cache: "no-store" }),
+        fetch(`/api/shared/campaigns/${token}?${new URLSearchParams({ ...Object.fromEntries(baseParams.entries()), section: "evidence", evidencePage: "1", evidencePageSize: "20" }).toString()}`, { cache: "no-store" }),
+      ]);
+
+      const [activitiesJson, mapJson, evidenceJson] = await Promise.all([
+        activitiesRes.json().catch(() => null),
+        mapRes.json().catch(() => null),
+        evidenceRes.json().catch(() => null),
+      ]);
+
+      if (cancelled) return;
+      if (activitiesRes.ok && activitiesJson?.success) {
+        setActivities((activitiesJson.activities ?? []) as CampaignActivityRow[]);
+      } else {
+        setActivities([]);
+      }
+      if (mapRes.ok && mapJson?.success) {
+        setMapPoints((mapJson.mapPoints ?? []) as CampaignMapPoint[]);
+      } else {
+        setMapPoints([]);
+      }
+      if (evidenceRes.ok && evidenceJson?.success) {
+        setEvidence((evidenceJson.evidence ?? []) as CampaignEvidenceItem[]);
+        setEvidencePagination((evidenceJson.pagination ?? {
+          page: 1,
+          pageSize: 20,
+          total: (evidenceJson.evidence ?? []).length,
+          hasMore: false,
+        }) as CampaignEvidencePagination);
+      } else {
+        setEvidence([]);
+        setEvidencePagination({ page: 1, pageSize: 20, total: 0, hasMore: false });
+      }
+      setLoadingSections(false);
+    }
+    void loadSections();
+    return () => {
+      cancelled = true;
+    };
+  }, [campaign, token, dateFrom, dateTo, areaFilter]);
 
   async function loadMoreEvidence() {
     if (loadingMoreEvidence || !evidencePagination.hasMore) return;
@@ -376,7 +422,11 @@ export default function SharedCampaignPage() {
         <h2 className="font-semibold">Coverage Map</h2>
         <p className="text-sm text-muted-foreground">Plotted coordinates from visit activity. Tooltip shows sale quantity when available.</p>
         <div className="mt-4">
-          <CampaignPointMap points={mapPoints} />
+          {loadingSections && mapPoints.length === 0 ? (
+            <div className="h-72 rounded-3xl border border-border bg-muted/30" />
+          ) : (
+            <CampaignPointMap points={mapPoints} />
+          )}
         </div>
       </section>
 

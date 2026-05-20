@@ -132,11 +132,6 @@ export default function CampaignPointMap({ points }: { points: CampaignMapPoint[
     [timelinePoints, clampedTimelineIndex]
   );
 
-  const displayedPoints =
-    mode === "timeline"
-      ? timelineVisiblePoints
-      : validPoints;
-
   const mapKey = `${mode}-${validPoints.length}-${validPoints[0]?.id ?? "none"}-${validPoints[validPoints.length - 1]?.id ?? "none"}`;
 
   if (validPoints.length === 0) {
@@ -145,7 +140,7 @@ export default function CampaignPointMap({ points }: { points: CampaignMapPoint[
 
   return (
     <div className="relative z-10 h-150 overflow-hidden rounded-3xl border border-border bg-muted/20">
-      <div className="absolute left-3 top-3 z-[1000] flex flex-wrap gap-2 rounded-xl border border-border bg-background/90 p-2 backdrop-blur">
+      <div className="absolute left-3 top-3 z-1000 flex flex-wrap gap-2 rounded-xl border border-border bg-background/90 p-2 backdrop-blur">
         <Button size="sm" variant={mode === "density" ? "default" : "outline"} onClick={() => setMode("density")}>Density</Button>
         <Button size="sm" variant={mode === "territory" ? "default" : "outline"} onClick={() => setMode("territory")}>Territory</Button>
         <Button size="sm" variant={mode === "timeline" ? "default" : "outline"} onClick={() => setMode("timeline")}>Timeline</Button>
@@ -155,7 +150,7 @@ export default function CampaignPointMap({ points }: { points: CampaignMapPoint[
         </Button>
       </div>
       {mode === "timeline" ? (
-        <div className="absolute right-3 top-3 z-[1000] flex items-center gap-2 rounded-xl border border-border bg-background/90 px-3 py-2 text-xs backdrop-blur">
+        <div className="absolute right-3 top-3 z-1000 flex items-center gap-2 rounded-xl border border-border bg-background/90 px-3 py-2 text-xs backdrop-blur">
           <Button
             size="sm"
             variant="outline"

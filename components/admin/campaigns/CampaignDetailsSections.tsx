@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { More02Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft, Download, Pencil, Rocket, Share2, Trash2, Users } from "lucide-react";
 
 import {
@@ -16,6 +18,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import CampaignPointMap from "@/components/campaign/CampaignPointMap";
 import EvidenceGallery from "@/components/shared/EvidenceGallery";
@@ -190,12 +199,6 @@ export function CampaignDetailsSections({
               Edit Campaign
             </Link>
           </Button>
-          <Button variant="outline" className="rounded-full px-5" disabled={exportingActivities} onClick={onExportActivities}>
-            <span className="inline-flex items-center gap-2">
-              <Download className="size-4" />
-              {exportingActivities ? "Exporting..." : "Export Activities"}
-            </span>
-          </Button>
           {campaign.status === "draft" ? (
             <Button className="rounded-full px-5" disabled={launching} onClick={onLaunchCampaign}>
               <span className="inline-flex items-center gap-2">
@@ -204,18 +207,41 @@ export function CampaignDetailsSections({
               </span>
             </Button>
           ) : null}
-          <Button className="rounded-full px-5 bg-taupe-800 text-white" onClick={onOpenShareDialog}>
-            <span className="inline-flex items-center gap-2">
-              <Share2 className="size-4" />
-              Share Campaign
-            </span>
-          </Button>
-          <Button variant="destructive" className="rounded-full px-5" onClick={() => setDeleteOpen(true)} disabled={deletingCampaign}>
-            <span className="inline-flex items-center gap-2">
-              <Trash2 className="size-4" />
-              Delete Campaign
-            </span>
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="rounded-full px-4">
+                <span className="inline-flex items-center gap-2">
+                  <HugeiconsIcon icon={More02Icon} className="size-4" />
+                  More Actions
+                </span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem asChild>
+                <Link href={`/admin/reports/performance?campaignId=${campaign.id}`}>
+                  Open KPI Performance
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={exportingActivities} onClick={onExportActivities}>
+                <Download className="size-4" />
+                {exportingActivities ? "Exporting..." : "Export Activities"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onOpenShareDialog}>
+                <Share2 className="size-4" />
+                Share Campaign
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={deletingCampaign}
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 className="size-4" />
+                {deletingCampaign ? "Deleting..." : "Delete Campaign"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
