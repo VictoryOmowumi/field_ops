@@ -168,8 +168,15 @@ export function useCampaignDetailsPage(campaignId?: string) {
         fetch(`/api/admin/campaigns/${campaignId}/analytics?${new URLSearchParams({
           ...(dateFrom ? { dateFrom } : {}),
           ...(dateTo ? { dateTo } : {}),
+          mapPage: "1",
+          mapPageSize: "200",
         }).toString()}`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`/api/admin/campaigns/${campaignId}/evidence?page=1&pageSize=20`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`/api/admin/campaigns/${campaignId}/evidence?${new URLSearchParams({
+          page: "1",
+          pageSize: "20",
+          ...(dateFrom ? { dateFrom } : {}),
+          ...(dateTo ? { dateTo } : {}),
+        }).toString()}`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`/api/admin/campaigns/${campaignId}/share-links`, { headers: { Authorization: `Bearer ${token}` } }),
       ]);
 
@@ -211,7 +218,12 @@ export function useCampaignDetailsPage(campaignId?: string) {
     try {
       const nextPage = evidencePagination.page + 1;
       const response = await fetch(
-        `/api/admin/campaigns/${campaignId}/evidence?page=${nextPage}&pageSize=${evidencePagination.pageSize}`,
+        `/api/admin/campaigns/${campaignId}/evidence?${new URLSearchParams({
+          page: String(nextPage),
+          pageSize: String(evidencePagination.pageSize),
+          ...(dateFrom ? { dateFrom } : {}),
+          ...(dateTo ? { dateTo } : {}),
+        }).toString()}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const result = (await response.json()) as {

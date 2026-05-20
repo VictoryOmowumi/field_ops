@@ -30,7 +30,7 @@ type SharedCampaignPayload = {
   end_date: string | null;
 };
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 20;
 
 function flattenRecord(input: unknown, prefix = ""): Record<string, string> {
   const out: Record<string, string> = {};
@@ -109,6 +109,7 @@ export default function SharedCampaignPage() {
   const [summary, setSummary] = useState<CampaignAnalyticsSummary | null>(null);
   const [mapPoints, setMapPoints] = useState<CampaignMapPoint[]>([]);
   const [activities, setActivities] = useState<CampaignActivityRow[]>([]);
+  const [activitiesTotal, setActivitiesTotal] = useState(0);
   const [evidence, setEvidence] = useState<CampaignEvidenceItem[]>([]);
   const [evidencePagination, setEvidencePagination] = useState<CampaignEvidencePagination>({
     page: 1,
@@ -157,7 +158,7 @@ export default function SharedCampaignPage() {
       if (areaFilter !== "all") baseParams.set("area", areaFilter);
 
       const [activitiesRes, mapRes, evidenceRes] = await Promise.all([
-        fetch(`/api/shared/campaigns/${token}?${new URLSearchParams({ ...Object.fromEntries(baseParams.entries()), section: "activities", activityPage: "1", activityPageSize: "2000" }).toString()}`, { cache: "no-store" }),
+        fetch(`/api/shared/campaigns/${token}?${new URLSearchParams({ ...Object.fromEntries(baseParams.entries()), section: "activities", activityPage: String(page), activityPageSize: String(PAGE_SIZE) }).toString()}`, { cache: "no-store" }),
         fetch(`/api/shared/campaigns/${token}?${new URLSearchParams({ ...Object.fromEntries(baseParams.entries()), section: "map" }).toString()}`, { cache: "no-store" }),
         fetch(`/api/shared/campaigns/${token}?${new URLSearchParams({ ...Object.fromEntries(baseParams.entries()), section: "evidence", evidencePage: "1", evidencePageSize: "20" }).toString()}`, { cache: "no-store" }),
       ]);
@@ -171,8 +172,10 @@ export default function SharedCampaignPage() {
       if (cancelled) return;
       if (activitiesRes.ok && activitiesJson?.success) {
         setActivities((activitiesJson.activities ?? []) as CampaignActivityRow[]);
+        setActivitiesTotal(Number(activitiesJson.totalActivities ?? 0));
       } else {
         setActivities([]);
+        setActivitiesTotal(0);
       }
       if (mapRes.ok && mapJson?.success) {
         setMapPoints((mapJson.mapPoints ?? []) as CampaignMapPoint[]);
@@ -197,7 +200,7 @@ export default function SharedCampaignPage() {
     return () => {
       cancelled = true;
     };
-  }, [campaign, token, dateFrom, dateTo, areaFilter]);
+  }, [campaign, token, dateFrom, dateTo, areaFilter, page]);
 
   async function loadMoreEvidence() {
     if (loadingMoreEvidence || !evidencePagination.hasMore) return;
@@ -271,9 +274,9 @@ export default function SharedCampaignPage() {
     });
   }, [activities, search, areaFilter, actorFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredActivities.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(activitiesTotal / PAGE_SIZE));
   const pageSafe = Math.min(page, totalPages);
-  const pagedActivities = filteredActivities.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
+  const pagedActivities = filteredActivities;
   const selectedDetails = useMemo(
     () => (selectedActivity ? extractReadableDetails(selectedActivity) : []),
     [selectedActivity]
@@ -419,19 +422,32 @@ export default function SharedCampaignPage() {
 
 
       <section className="rounded-3xl border border-border bg-card p-5">
-        <h2 className="font-semibold">Coverage Map</h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="font-semibold">Coverage Map</h2>
+          {loadingSections ? <span className="text-xs text-muted-foreground">Updating map...</span> : null}
+        </div>
         <p className="text-sm text-muted-foreground">Plotted coordinates from visit activity. Tooltip shows sale quantity when available.</p>
-        <div className="mt-4">
+        <div className="relative mt-4">
           {loadingSections && mapPoints.length === 0 ? (
             <div className="h-72 rounded-3xl border border-border bg-muted/30" />
           ) : (
             <CampaignPointMap points={mapPoints} />
           )}
+          {loadingSections && mapPoints.length > 0 ? (
+            <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-3xl bg-background/35 backdrop-blur-[1px]">
+              <span className="rounded-full border border-border bg-background/90 px-3 py-1 text-xs text-muted-foreground">
+                Refreshing map...
+              </span>
+            </div>
+          ) : null}
         </div>
       </section>
 
       <section className="rounded-3xl border border-border bg-card p-5">
-        <h2 className="font-semibold">Captured Activity</h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="font-semibold">Captured Activity</h2>
+          {loadingSections ? <span className="text-xs text-muted-foreground">Updating table...</span> : null}
+        </div>
         <div className="mt-4 grid gap-2 md:grid-cols-3">
           <Input
             placeholder="Search customer/outlet/area/products/actor"
@@ -456,11 +472,11 @@ export default function SharedCampaignPage() {
             </SelectContent>
           </Select>
           <div className="text-right text-xs text-muted-foreground self-center">
-            {filteredActivities.length} result(s)
+            {activitiesTotal} result(s)
           </div>
         </div>
 
-        <div className="mt-4 overflow-x-auto rounded-2xl border border-border">
+        <div className="relative mt-4 overflow-x-auto rounded-2xl border border-border">
           <table className="min-w-[1100px] w-full text-sm">
             <thead className="bg-muted/50 text-muted-foreground">
               <tr>
@@ -477,7 +493,15 @@ export default function SharedCampaignPage() {
               </tr>
             </thead>
             <tbody>
-              {pagedActivities.length === 0 ? (
+              {loadingSections && pagedActivities.length === 0 ? (
+                Array.from({ length: 5 }).map((_, index) => (
+                  <tr key={`loading-row-${index}`} className="border-t border-border">
+                    <td className="px-4 py-4" colSpan={10}>
+                      <div className="h-4 w-full animate-pulse rounded bg-muted/60" />
+                    </td>
+                  </tr>
+                ))
+              ) : pagedActivities.length === 0 ? (
                 <tr className="border-t border-border">
                   <td className="px-4 py-6 text-muted-foreground" colSpan={10}>No activity yet.</td>
                 </tr>
@@ -503,6 +527,13 @@ export default function SharedCampaignPage() {
               )}
             </tbody>
           </table>
+          {loadingSections && pagedActivities.length > 0 ? (
+            <div className="pointer-events-none absolute inset-0 grid place-items-start rounded-2xl bg-background/20">
+              <span className="mt-3 rounded-full border border-border bg-background/90 px-3 py-1 text-xs text-muted-foreground">
+                Refreshing rows...
+              </span>
+            </div>
+          ) : null}
         </div>
         <div className="mt-3 flex items-center justify-between text-sm text-muted-foreground">
           <p>

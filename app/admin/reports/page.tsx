@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -18,8 +18,6 @@ type Overview = {
   conversions: number;
   conversionRate: number;
   salesValue: number;
-  trend: Array<{ day: string; visits: number; conversions: number }>;
-  products: Array<{ product: string; value: number }>;
 };
 
 type PerfRow = {
@@ -35,6 +33,8 @@ export default function ReportsPage() {
   const [campaignId, setCampaignId] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [repPage, setRepPage] = useState(1);
+  const [productPage, setProductPage] = useState(1);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -44,6 +44,10 @@ export default function ReportsPage() {
     const str = params.toString();
     return str ? `?${str}` : "";
   }, [campaignId, dateFrom, dateTo]);
+  useEffect(() => {
+    setRepPage(1);
+    setProductPage(1);
+  }, [queryString]);
 
   const campaignsQuery = useQuery({
     queryKey: ["admin-reports-campaigns"],
@@ -60,20 +64,41 @@ export default function ReportsPage() {
       return result.overview;
     },
   });
+  const overviewDetailsQuery = useQuery({
+    queryKey: ["admin-reports-overview-details", queryString, productPage],
+    queryFn: async () =>
+      authorizedFetch<{
+        success: boolean;
+        trend: Array<{ day: string; visits: number; conversions: number }>;
+        products: Array<{ product: string; value: number }>;
+        productPagination: { page: number; pageSize: number; total: number; hasMore: boolean };
+      }>(`/api/admin/reports/overview/details${queryString}${queryString ? "&" : "?"}productPage=${productPage}&productPageSize=10`),
+  });
 
   const performanceQuery = useQuery({
-    queryKey: ["admin-reports-performance", queryString],
+    queryKey: ["admin-reports-performance", queryString, repPage],
     queryFn: async () => {
-      const result = await authorizedFetch<{ success: boolean; performance: PerfRow[] }>(`/api/admin/reports/rep-performance${queryString}`);
-      return result.performance ?? [];
+      const result = await authorizedFetch<{
+        success: boolean;
+        performance: PerfRow[];
+        page: number;
+        pageSize: number;
+        total: number;
+        hasMore: boolean;
+      }>(`/api/admin/reports/rep-performance${queryString}${queryString ? "&" : "?"}page=${repPage}&pageSize=20`);
+      return result;
     },
   });
 
   if (campaignsQuery.error) toast.error((campaignsQuery.error as Error).message);
   if (overviewQuery.error) toast.error((overviewQuery.error as Error).message);
+  if (overviewDetailsQuery.error) toast.error((overviewDetailsQuery.error as Error).message);
   if (performanceQuery.error) toast.error((performanceQuery.error as Error).message);
 
   const overview = overviewQuery.data;
+  const products = overviewDetailsQuery.data?.products ?? [];
+  const productPagination = overviewDetailsQuery.data?.productPagination;
+  const performanceRows = performanceQuery.data?.performance ?? [];
   const [exporting, setExporting] = useState<"rep" | "activities" | null>(null);
 
   async function downloadExport(type: "rep-performance" | "campaign-activities") {
@@ -192,10 +217,10 @@ export default function ReportsPage() {
             <tbody>
               {overviewQuery.isLoading ? (
                 <TableLoadingState colSpan={2} title="Loading product performance..." description="Computing product totals." />
-              ) : (overview?.products ?? []).length === 0 ? (
+              ) : products.length === 0 ? (
                 <TableEmptyStateRow colSpan={2} title="No product data" description="No sales records yet." />
               ) : (
-                (overview?.products ?? []).map((item) => (
+                products.map((item) => (
                   <tr key={item.product} className="border-t border-border">
                     <td className="px-4 py-4 font-medium">{item.product}</td>
                     <td className="px-4 py-4 text-muted-foreground">{item.value}</td>
@@ -204,6 +229,10 @@ export default function ReportsPage() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="mt-3 flex items-center justify-end gap-2">
+          <Button variant="outline" className="rounded-full" disabled={(productPagination?.page ?? 1) <= 1} onClick={() => setProductPage((prev) => Math.max(1, prev - 1))}>Previous</Button>
+          <Button variant="outline" className="rounded-full" disabled={!productPagination?.hasMore} onClick={() => setProductPage((prev) => prev + 1)}>Next</Button>
         </div>
       </section>
 
@@ -226,10 +255,10 @@ export default function ReportsPage() {
             <tbody>
               {performanceQuery.isLoading ? (
                 <TableLoadingState colSpan={6} title="Loading rep performance..." description="Computing rep conversion metrics." />
-              ) : (performanceQuery.data ?? []).length === 0 ? (
+              ) : performanceRows.length === 0 ? (
                 <TableEmptyStateRow colSpan={6} title="No rep metrics yet" description="Rep performance will appear after activity is recorded." />
               ) : (
-                (performanceQuery.data ?? []).map((item) => (
+                performanceRows.map((item) => (
                   <tr key={`${item.rep}-${item.territory}`} className="border-t border-border">
                     <td className="px-4 py-4 font-medium">{item.rep}</td>
                     <td className="px-4 py-4 text-muted-foreground">{item.territory || "-"}</td>
@@ -242,6 +271,10 @@ export default function ReportsPage() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="mt-3 flex items-center justify-end gap-2">
+          <Button variant="outline" className="rounded-full" disabled={(performanceQuery.data?.page ?? 1) <= 1} onClick={() => setRepPage((prev) => Math.max(1, prev - 1))}>Previous</Button>
+          <Button variant="outline" className="rounded-full" disabled={!performanceQuery.data?.hasMore} onClick={() => setRepPage((prev) => prev + 1)}>Next</Button>
         </div>
       </section>
     </div>

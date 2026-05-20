@@ -281,9 +281,20 @@ export async function getCampaignMapPoints(
   supabase: SupabaseClient,
   organizationId: string,
   campaignId: string,
-  options?: { source?: "visits_only" | "visits_and_sales"; dateFrom?: string | null; dateTo?: string | null; area?: string | null }
+  options?: {
+    source?: "visits_only" | "visits_and_sales";
+    dateFrom?: string | null;
+    dateTo?: string | null;
+    area?: string | null;
+    page?: number;
+    pageSize?: number;
+  }
 ): Promise<CampaignMapPoint[]> {
   const source = options?.source ?? "visits_and_sales";
+  const page = Math.max(1, options?.page ?? 1);
+  const pageSize = Math.min(500, Math.max(20, options?.pageSize ?? 200));
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
   let visitsQuery = supabase
       .from("visits")
       .select("id, created_at, outcome, sync_status, outlet_id, agent_id, latitude, longitude, lga, outlets(name)")
@@ -291,7 +302,8 @@ export async function getCampaignMapPoints(
       .eq("campaign_id", campaignId)
       .not("latitude", "is", null)
       .not("longitude", "is", null)
-      .limit(2000);
+      .order("created_at", { ascending: false })
+      .range(from, to);
   if (options?.dateFrom) visitsQuery = visitsQuery.gte("created_at", `${options.dateFrom}T00:00:00.000Z`);
   if (options?.dateTo) visitsQuery = visitsQuery.lte("created_at", `${options.dateTo}T23:59:59.999Z`);
   if (options?.area && options.area !== "all") visitsQuery = visitsQuery.eq("lga", options.area);
@@ -299,16 +311,41 @@ export async function getCampaignMapPoints(
       .from("sales")
       .select("id, created_at, conversion_status, sync_status, outlet_id, agent_id, latitude, longitude, visit_id, quantity, outlets(name)")
       .eq("organization_id", organizationId)
-      .eq("campaign_id", campaignId)
-      .limit(2000);
+      .eq("campaign_id", campaignId);
   if (options?.dateFrom) salesQuery = salesQuery.gte("created_at", `${options.dateFrom}T00:00:00.000Z`);
   if (options?.dateTo) salesQuery = salesQuery.lte("created_at", `${options.dateTo}T23:59:59.999Z`);
-  const [{ data: visits }, { data: sales }] = await Promise.all([visitsQuery, salesQuery]);
+  const { data: visits } = await visitsQuery;
   const scopedVisits = visits ?? [];
   const scopedVisitIds = new Set(scopedVisits.map((row) => row.id));
-  const scopedSales = options?.area && options.area !== "all"
-    ? (sales ?? []).filter((row) => row.visit_id && scopedVisitIds.has(row.visit_id))
-    : (sales ?? []);
+  const { data: sales } =
+    source === "visits_only" || scopedVisitIds.size === 0
+      ? { data: [] as Array<{
+          id: string;
+          created_at: string;
+          conversion_status: string | null;
+          sync_status: string | null;
+          outlet_id: string | null;
+          agent_id: string | null;
+          latitude: number | null;
+          longitude: number | null;
+          visit_id: string | null;
+          quantity: number | null;
+          outlets?: { name?: string | null };
+        }> }
+      : await salesQuery.in("visit_id", [...scopedVisitIds]);
+  const scopedSales = (sales ?? []) as Array<{
+    id: string;
+    created_at: string;
+    conversion_status: string | null;
+    sync_status: string | null;
+    outlet_id: string | null;
+    agent_id: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    visit_id: string | null;
+    quantity: number | null;
+    outlets?: { name?: string | null };
+  }>;
 
   const userIds = [
     ...new Set([...(scopedVisits ?? []).map((x) => x.agent_id), ...(scopedSales ?? []).map((x) => x.agent_id)].filter(Boolean)),

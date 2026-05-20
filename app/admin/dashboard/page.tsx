@@ -58,6 +58,7 @@ export default function AdminDashboardPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [territoryStateFilter, setTerritoryStateFilter] = useState("all");
+  const [activityPage, setActivityPage] = useState(1);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -67,6 +68,9 @@ export default function AdminDashboardPage() {
     const str = params.toString();
     return str ? `?${str}` : "";
   }, [campaignId, dateFrom, dateTo]);
+  useEffect(() => {
+    setActivityPage(1);
+  }, [queryString]);
 
   const campaignsQuery = useQuery({
     queryKey: ["admin-dashboard-campaigns"],
@@ -82,10 +86,18 @@ export default function AdminDashboardPage() {
       authorizedFetch<{
         success: boolean;
         summary: DashboardSummary;
+      }>(`/api/admin/dashboard/summary${queryString}`),
+  });
+  const insightsQuery = useQuery({
+    queryKey: ["admin-dashboard-insights", queryString, activityPage],
+    queryFn: async () =>
+      authorizedFetch<{
+        success: boolean;
         recentActivity: RecentActivity[];
         trend: TrendPoint[];
         territoryPerformance: TerritoryPoint[];
-      }>(`/api/admin/dashboard/summary${queryString}`),
+        pagination: { page: number; pageSize: number; total: number; hasMore: boolean };
+      }>(`/api/admin/dashboard/insights${queryString}${queryString ? "&" : "?"}page=${activityPage}&pageSize=10`),
   });
 
   useEffect(() => {
@@ -95,12 +107,15 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     if (query.error) toast.error((query.error as Error).message);
   }, [query.error]);
+  useEffect(() => {
+    if (insightsQuery.error) toast.error((insightsQuery.error as Error).message);
+  }, [insightsQuery.error]);
 
   const summary = query.data?.summary;
-  const trend = useMemo(() => query.data?.trend ?? [], [query.data?.trend]);
+  const trend = useMemo(() => insightsQuery.data?.trend ?? [], [insightsQuery.data?.trend]);
   const territoryPerformance = useMemo(
-    () => query.data?.territoryPerformance ?? [],
-    [query.data?.territoryPerformance]
+    () => insightsQuery.data?.territoryPerformance ?? [],
+    [insightsQuery.data?.territoryPerformance]
   );
   const stateOptions = useMemo(
     () => ["all", ...Array.from(new Set(territoryPerformance.map((item) => item.state).filter(Boolean))).sort((a, b) => a.localeCompare(b))],
@@ -261,12 +276,12 @@ export default function AdminDashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {query.isLoading ? (
+              {insightsQuery.isLoading ? (
                 <TableLoadingState colSpan={5} title="Loading activity..." description="Fetching latest submissions." />
-              ) : (query.data?.recentActivity ?? []).length === 0 ? (
+              ) : (insightsQuery.data?.recentActivity ?? []).length === 0 ? (
                 <TableEmptyStateRow colSpan={5} title="No recent activity" description="Field activity will appear here after submissions." />
               ) : (
-                (query.data?.recentActivity ?? []).map((item) => (
+                (insightsQuery.data?.recentActivity ?? []).map((item) => (
                   <tr key={item.id} className="border-t border-border">
                     <td className="px-4 py-4 font-medium">{item.rep}</td>
                     <td className="px-4 py-4 text-muted-foreground">{item.outlet}</td>
@@ -285,6 +300,19 @@ export default function AdminDashboardPage() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="mt-3 flex items-center justify-between text-sm text-muted-foreground">
+          <p>
+            Page {insightsQuery.data?.pagination.page ?? 1} of {Math.max(1, Math.ceil((insightsQuery.data?.pagination.total ?? 0) / (insightsQuery.data?.pagination.pageSize ?? 10)))}
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" className="rounded-full" disabled={activityPage <= 1} onClick={() => setActivityPage((prev) => Math.max(1, prev - 1))}>
+              Previous
+            </Button>
+            <Button variant="outline" className="rounded-full" disabled={!insightsQuery.data?.pagination.hasMore} onClick={() => setActivityPage((prev) => prev + 1)}>
+              Next
+            </Button>
+          </div>
         </div>
       </section>
     </div>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-access";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
+import { resolveDateWindow } from "@/lib/server/query-window";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 function unauthorized() {
@@ -22,24 +23,29 @@ export async function GET(request: NextRequest) {
   const supabase = createServerSupabaseClient();
   const organizationId = membership.organizationId;
   const campaignId = request.nextUrl.searchParams.get("campaignId");
-  const dateFrom = request.nextUrl.searchParams.get("dateFrom");
-  const dateTo = request.nextUrl.searchParams.get("dateTo");
+  const dateWindow = resolveDateWindow(
+    request.nextUrl.searchParams.get("dateFrom"),
+    request.nextUrl.searchParams.get("dateTo"),
+    2
+  );
+  const page = Math.max(1, Number(request.nextUrl.searchParams.get("page") ?? "1"));
+  const pageSize = Math.min(100, Math.max(10, Number(request.nextUrl.searchParams.get("pageSize") ?? "20")));
 
   let visitsQuery = supabase
     .from("visits")
     .select("id, agent_id")
     .eq("organization_id", organizationId);
   if (campaignId && campaignId !== "all") visitsQuery = visitsQuery.eq("campaign_id", campaignId);
-  if (dateFrom) visitsQuery = visitsQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
-  if (dateTo) visitsQuery = visitsQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);
+  if (dateWindow.dateFrom) visitsQuery = visitsQuery.gte("created_at", `${dateWindow.dateFrom}T00:00:00.000Z`);
+  if (dateWindow.dateTo) visitsQuery = visitsQuery.lte("created_at", `${dateWindow.dateTo}T23:59:59.999Z`);
 
   let salesQuery = supabase
     .from("sales")
     .select("agent_id, sales_value, quantity, visit_id")
     .eq("organization_id", organizationId);
   if (campaignId && campaignId !== "all") salesQuery = salesQuery.eq("campaign_id", campaignId);
-  if (dateFrom) salesQuery = salesQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
-  if (dateTo) salesQuery = salesQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);
+  if (dateWindow.dateFrom) salesQuery = salesQuery.gte("created_at", `${dateWindow.dateFrom}T00:00:00.000Z`);
+  if (dateWindow.dateTo) salesQuery = salesQuery.lte("created_at", `${dateWindow.dateTo}T23:59:59.999Z`);
 
   const [{ data: visits, error: visitsError }, { data: sales, error: salesError }, { data: profiles }, { data: repProfiles }] = await Promise.all([
     visitsQuery,
@@ -89,12 +95,23 @@ export async function GET(request: NextRequest) {
     rows.set(sale.agent_id, existing);
   }
 
-  const performance = Array.from(rows.values())
+  const performanceAll = Array.from(rows.values())
     .map((item) => ({
       ...item,
       rate: item.visits ? (item.conversions / item.visits) * 100 : 0,
     }))
     .sort((a, b) => b.visits - a.visits);
+  const total = performanceAll.length;
+  const start = (page - 1) * pageSize;
+  const performance = performanceAll.slice(start, start + pageSize);
 
-  return NextResponse.json({ success: true, performance });
+  return NextResponse.json({
+    success: true,
+    performance,
+    page,
+    pageSize,
+    total,
+    hasMore: page * pageSize < total,
+    appliedDateWindow: dateWindow,
+  });
 }

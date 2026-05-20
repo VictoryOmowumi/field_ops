@@ -7,6 +7,7 @@ import {
   getCampaignMapPoints,
 } from "@/lib/campaign/intelligence";
 import { extractClientIp, hashIp, hashShareToken } from "@/lib/campaign/share";
+import { resolveDateWindow } from "@/lib/server/query-window";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 type RouteContext = { params: Promise<{ token: string }> };
@@ -38,10 +39,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const area = request.nextUrl.searchParams.get("area");
   const section = request.nextUrl.searchParams.get("section") ?? "summary";
   const activityPage = Math.max(1, Number(request.nextUrl.searchParams.get("activityPage") ?? "1"));
-  const activityPageSize = Math.min(500, Math.max(10, Number(request.nextUrl.searchParams.get("activityPageSize") ?? "200")));
+  const activityPageSize = Math.min(100, Math.max(10, Number(request.nextUrl.searchParams.get("activityPageSize") ?? "20")));
   const evidenceOnly = request.nextUrl.searchParams.get("evidenceOnly") === "1";
   const evidencePage = Math.max(1, Number(request.nextUrl.searchParams.get("evidencePage") ?? "1"));
   const evidencePageSize = Math.min(20, Math.max(1, Number(request.nextUrl.searchParams.get("evidencePageSize") ?? "20")));
+  const mapPage = Math.max(1, Number(request.nextUrl.searchParams.get("mapPage") ?? "1"));
+  const mapPageSize = Math.min(500, Math.max(20, Number(request.nextUrl.searchParams.get("mapPageSize") ?? "200")));
+  const nonSummaryDateWindow = resolveDateWindow(dateFrom, dateTo, 2);
   const ip = extractClientIp(request);
   if (isRateLimited(ip)) {
     return NextResponse.json({ success: false, message: "Too many requests." }, { status: 429 });
@@ -92,12 +96,24 @@ export async function GET(request: NextRequest, context: RouteContext) {
       supabase,
       shareLink.organization_id,
       shareLink.campaign_id,
-      { dateFrom, dateTo, area, page: evidencePage, pageSize: evidencePageSize }
+      {
+        dateFrom: nonSummaryDateWindow.dateFrom,
+        dateTo: nonSummaryDateWindow.dateTo,
+        area,
+        page: evidencePage,
+        pageSize: evidencePageSize,
+      }
     );
     console.timeEnd("evidence");
     console.timeEnd("shared-campaign-total");
     return NextResponse.json(
-      { success: true, evidence: evidenceResult.items, items: evidenceResult.items, pagination: evidenceResult.pagination },
+      {
+        success: true,
+        evidence: evidenceResult.items,
+        items: evidenceResult.items,
+        pagination: evidenceResult.pagination,
+        appliedDateWindow: nonSummaryDateWindow,
+      },
       { headers: { "Cache-Control": "no-store, max-age=0" } }
     );
   }
@@ -108,12 +124,26 @@ export async function GET(request: NextRequest, context: RouteContext) {
       supabase,
       shareLink.organization_id,
       shareLink.campaign_id,
-      { page: activityPage, pageSize: activityPageSize, dateFrom, dateTo, area }
+      {
+        page: activityPage,
+        pageSize: activityPageSize,
+        dateFrom: nonSummaryDateWindow.dateFrom,
+        dateTo: nonSummaryDateWindow.dateTo,
+        area,
+      }
     );
     console.timeEnd("activities");
     console.timeEnd("shared-campaign-total");
     return NextResponse.json(
-      { success: true, activities, totalActivities: total, activityPage, activityPageSize },
+      {
+        success: true,
+        activities,
+        totalActivities: total,
+        activityPage,
+        activityPageSize,
+        hasMore: activityPage * activityPageSize < total,
+        appliedDateWindow: nonSummaryDateWindow,
+      },
       { headers: { "Cache-Control": "no-store, max-age=0" } }
     );
   }
@@ -124,12 +154,24 @@ export async function GET(request: NextRequest, context: RouteContext) {
       supabase,
       shareLink.organization_id,
       shareLink.campaign_id,
-      { source: "visits_only", dateFrom, dateTo, area }
+      {
+        source: "visits_only",
+        dateFrom: nonSummaryDateWindow.dateFrom,
+        dateTo: nonSummaryDateWindow.dateTo,
+        area,
+        page: mapPage,
+        pageSize: mapPageSize,
+      }
     );
     console.timeEnd("map");
     console.timeEnd("shared-campaign-total");
     return NextResponse.json(
-      { success: true, mapPoints },
+      {
+        success: true,
+        mapPoints,
+        pagination: { page: mapPage, pageSize: mapPageSize, hasMore: mapPoints.length === mapPageSize },
+        appliedDateWindow: nonSummaryDateWindow,
+      },
       { headers: { "Cache-Control": "no-store, max-age=0" } }
     );
   }

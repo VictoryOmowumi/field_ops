@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-access";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { getCampaignEvidence } from "@/lib/campaign/intelligence";
+import { resolveDateWindow } from "@/lib/server/query-window";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -27,7 +28,24 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const page = Math.max(1, Number(request.nextUrl.searchParams.get("page") ?? "1"));
   const pageSize = Math.min(20, Math.max(1, Number(request.nextUrl.searchParams.get("pageSize") ?? "20")));
   const includeSigned = request.nextUrl.searchParams.get("includeSigned") !== "0";
-  const result = await getCampaignEvidence(supabase, membership.organizationId, id, { page, pageSize, includeSigned });
+  const dateWindow = resolveDateWindow(
+    request.nextUrl.searchParams.get("dateFrom"),
+    request.nextUrl.searchParams.get("dateTo"),
+    2
+  );
+  const result = await getCampaignEvidence(supabase, membership.organizationId, id, {
+    page,
+    pageSize,
+    includeSigned,
+    dateFrom: dateWindow.dateFrom,
+    dateTo: dateWindow.dateTo,
+  });
 
-  return NextResponse.json({ success: true, evidence: result.items, items: result.items, pagination: result.pagination });
+  return NextResponse.json({
+    success: true,
+    evidence: result.items,
+    items: result.items,
+    pagination: result.pagination,
+    appliedDateWindow: dateWindow,
+  });
 }

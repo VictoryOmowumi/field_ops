@@ -47,8 +47,6 @@ export async function GET(request: NextRequest) {
   if (visitsError) return NextResponse.json({ success: false, message: visitsError.message }, { status: 500 });
   if (salesError) return NextResponse.json({ success: false, message: salesError.message }, { status: 500 });
 
-  const byDay = new Map<string, { visits: number; conversions: number }>();
-  const byProduct = new Map<string, number>();
   const convertedVisitIds = new Set(
     (sales ?? [])
       .filter((item) => Number(item.quantity ?? 0) > 0 || Number(item.sales_value ?? 0) > 0)
@@ -65,28 +63,10 @@ export async function GET(request: NextRequest) {
   let totalValue = 0;
 
   for (const item of visits ?? []) {
-    const typed = item as { id: string; created_at: string; outlet_id?: string | null };
-    const day = new Date(item.created_at).toLocaleDateString("en-US", { weekday: "short" });
-    const bucket = byDay.get(day) ?? { visits: 0, conversions: 0 };
-    bucket.visits += 1;
-    if (convertedVisitIds.has(typed.id)) {
-      bucket.conversions += 1;
-    }
-    byDay.set(day, bucket);
+    const typed = item as { outlet_id?: string | null };
     if (typed.outlet_id) achievedOutletIds.add(typed.outlet_id);
   }
-
-  for (const item of sales ?? []) {
-    const product = item.product_name || "Unknown";
-    byProduct.set(product, (byProduct.get(product) ?? 0) + Number(item.quantity ?? 0));
-    totalValue += Number(item.sales_value ?? 0);
-  }
-
-  const trend = Array.from(byDay.entries()).map(([day, value]) => ({ day, ...value }));
-  const products = Array.from(byProduct.entries())
-    .map(([product, value]) => ({ product, value }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 8);
+  for (const item of sales ?? []) totalValue += Number(item.sales_value ?? 0);
 
   return NextResponse.json({
     success: true,
@@ -95,8 +75,6 @@ export async function GET(request: NextRequest) {
       conversions: convertedOutletIds.size,
       conversionRate: achievedOutletIds.size ? (convertedOutletIds.size / achievedOutletIds.size) * 100 : 0,
       salesValue: totalValue,
-      trend,
-      products,
     },
   });
 }

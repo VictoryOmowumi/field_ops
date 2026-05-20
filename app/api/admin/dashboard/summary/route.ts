@@ -13,65 +13,6 @@ function forbidden() {
   return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
 }
 
-type TerritoryBucket = {
-  label: string;
-  state: string;
-  lga: string;
-  visits: number;
-  conversions: number;
-  rate: number;
-  latitude: number;
-  longitude: number;
-};
-
-function extractFreeSampleFromVisitPayload(taskPayload: unknown) {
-  const activities = ((taskPayload as { activities?: Array<{ activityId?: string; payload?: Record<string, unknown> }> } | null)
-    ?.activities ?? []);
-  const freeSample = activities.find((item) => item.activityId === "free_sample_distribution");
-  if (!freeSample) return { given: false, quantity: 0 };
-  const given = Boolean(freeSample.payload?.given);
-  const quantity = Number(freeSample.payload?.quantity ?? 0);
-  return {
-    given,
-    quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 0,
-  };
-}
-
-function extractFreeSampleTarget(runtimeFormConfig: unknown) {
-  const tasks = ((runtimeFormConfig as { tasks?: Record<string, Record<string, unknown>> } | null)?.tasks ?? {});
-  const config = tasks.free_sample_distribution ?? {};
-  const enabled = Boolean(config.enabled);
-  if (!enabled) return 0;
-  const target = Number(config.targetQuantity ?? 0);
-  return Number.isFinite(target) && target > 0 ? target : 0;
-}
-
-function toIsoDay(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function padLastSevenDays(
-  trend: Array<{ isoDay: string; day: string; visits: number; conversions: number }>
-) {
-  const now = new Date();
-  const buckets = new Map(trend.map((item) => [item.isoDay, item]));
-  const result: Array<{ day: string; visits: number; conversions: number }> = [];
-  for (let i = 6; i >= 0; i -= 1) {
-    const d = new Date(now);
-    d.setUTCDate(d.getUTCDate() - i);
-    const isoDay = toIsoDay(d);
-    const existing = buckets.get(isoDay);
-    result.push(
-      existing ?? {
-        day: d.toLocaleDateString("en-US", { weekday: "short" }),
-        visits: 0,
-        conversions: 0,
-      }
-    );
-  }
-  return result;
-}
-
 export async function GET(request: NextRequest) {
   const user = await getAuthenticatedUserFromRequest(request);
   if (!user) return unauthorized();
@@ -85,46 +26,35 @@ export async function GET(request: NextRequest) {
   const dateFrom = request.nextUrl.searchParams.get("dateFrom");
   const dateTo = request.nextUrl.searchParams.get("dateTo");
 
-  let campaignsQuery = supabase.from("campaigns").select("id, status, runtime_form_config").eq("organization_id", organizationId);
-  if (campaignId && campaignId !== "all") campaignsQuery = campaignsQuery.eq("id", campaignId);
-
+  let campaignsQuery = supabase.from("campaigns").select("id, status").eq("organization_id", organizationId);
   let salesQuery = supabase
     .from("sales")
-    .select("id, conversion_status, sales_value, created_at, campaign_id, agent_id, visit_id, outlet_id, quantity")
+    .select("id, created_at, campaign_id, agent_id, visit_id, outlet_id, quantity, sales_value")
     .eq("organization_id", organizationId);
-  if (campaignId && campaignId !== "all") salesQuery = salesQuery.eq("campaign_id", campaignId);
-  if (dateFrom) salesQuery = salesQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
-  if (dateTo) salesQuery = salesQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);
-
-  let recentQuery = supabase
-    .from("visits")
-    .select("id, created_at, outlet_id, agent_id, campaign_id, outcome")
-    .eq("organization_id", organizationId)
-    .order("created_at", { ascending: false })
-    .limit(10);
-  if (campaignId && campaignId !== "all") recentQuery = recentQuery.eq("campaign_id", campaignId);
-  if (dateFrom) recentQuery = recentQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
-  if (dateTo) recentQuery = recentQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);
-
   let visitsQuery = supabase
     .from("visits")
-    .select("id, created_at, campaign_id, outcome, lga, state, latitude, longitude, task_payload, agent_id, outlet_id, sync_status")
+    .select("id, created_at, campaign_id, outcome, lga, state, task_payload, agent_id, outlet_id, sync_status")
     .eq("organization_id", organizationId);
-  if (campaignId && campaignId !== "all") visitsQuery = visitsQuery.eq("campaign_id", campaignId);
-  if (dateFrom) visitsQuery = visitsQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
-  if (dateTo) visitsQuery = visitsQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);
 
-  const [campaignsRes, salesRes, recentRes, visitsRes] = await Promise.all([
-    campaignsQuery,
-    salesQuery,
-    recentQuery,
-    visitsQuery,
-  ]);
+  if (campaignId && campaignId !== "all") {
+    campaignsQuery = campaignsQuery.eq("id", campaignId);
+    salesQuery = salesQuery.eq("campaign_id", campaignId);
+    visitsQuery = visitsQuery.eq("campaign_id", campaignId);
+  }
+  if (dateFrom) {
+    salesQuery = salesQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
+    visitsQuery = visitsQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
+  }
+  if (dateTo) {
+    salesQuery = salesQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);
+    visitsQuery = visitsQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);
+  }
 
+  const [campaignsRes, salesRes, visitsRes] = await Promise.all([campaignsQuery, salesQuery, visitsQuery]);
   const campaigns = campaignsRes.data ?? [];
   const sales = salesRes.data ?? [];
-  const recent = recentRes.data ?? [];
   const visits = visitsRes.data ?? [];
+
   const canonical = computeMetricsFromRows(
     visits.map((visit) => ({
       id: visit.id,
@@ -143,128 +73,12 @@ export async function GET(request: NextRequest) {
       quantity: sale.quantity ?? null,
       sales_value: sale.sales_value ?? null,
     })),
-    `dashboard:${organizationId}:${campaignId ?? "all"}:${dateFrom ?? "-"}:${dateTo ?? "-"}`
+    `dashboard-summary:${organizationId}:${campaignId ?? "all"}:${dateFrom ?? "-"}:${dateTo ?? "-"}`
   );
-  const posm = {
-    posmChecks: canonical.summary.posmChecks,
-    posmDeployed: canonical.summary.posmDeployed,
-    posmUnits: canonical.summary.posmUnits,
-    posmDeploymentRate: canonical.summary.posmDeploymentRate,
-  };
-  const convertedVisitIds = canonical.convertedVisitIds;
-  const coveredOutletIds = new Set<string>();
-  for (const visit of visits as Array<{ outlet_id?: string | null }>) {
-    if (visit.outlet_id) coveredOutletIds.add(visit.outlet_id);
-  }
+
   const activeRepIds = new Set<string>();
-  for (const visit of visits as Array<{ agent_id?: string | null }>) {
-    if (visit.agent_id) activeRepIds.add(visit.agent_id);
-  }
-  for (const sale of sales as Array<{ agent_id?: string | null }>) {
-    if (sale.agent_id) activeRepIds.add(sale.agent_id);
-  }
-
-  const convertedOutletIds = new Set(
-    (sales as Array<{ outlet_id?: string | null; quantity?: number | null; sales_value?: number | null }>)
-      .filter((sale) => (Number(sale.quantity ?? 0) > 0 || Number(sale.sales_value ?? 0) > 0) && Boolean(sale.outlet_id))
-      .map((sale) => sale.outlet_id)
-      .filter(Boolean)
-  );
-  const convertedCount = convertedOutletIds.size;
-  const salesCount = sales.filter((sale) => Number(sale.quantity ?? 0) > 0 || Number(sale.sales_value ?? 0) > 0).length;
-  const unitsSold = sales.reduce((sum, sale) => {
-    const quantity = Number(sale.quantity ?? 0);
-    if (!Number.isFinite(quantity) || quantity <= 0) return sum;
-    return sum + quantity;
-  }, 0);
-  const totalVisits = canonical.summary.totalSubmissions;
-  const totalSales = sales.reduce((sum, item) => sum + Number(item.sales_value ?? 0), 0);
-  const conversionRate = canonical.summary.conversionRate;
-  const syncHealth = canonical.summary.syncHealth;
-  const distributedFreeSamples = visits.reduce((sum, visit) => {
-    const sample = extractFreeSampleFromVisitPayload(visit.task_payload);
-    if (!sample.given || sample.quantity <= 0) return sum;
-    return sum + sample.quantity;
-  }, 0);
-  const plannedFreeSamples = (campaigns as Array<{ runtime_form_config?: unknown }>).reduce(
-    (sum, campaign) => sum + extractFreeSampleTarget(campaign.runtime_form_config),
-    0
-  );
-  const remainingFreeSamples = Math.max(0, plannedFreeSamples - distributedFreeSamples);
-  const freeSampleAchievementRate = plannedFreeSamples > 0 ? (distributedFreeSamples / plannedFreeSamples) * 100 : 0;
-
-  const outletIds = [...new Set(recent.map((x) => x.outlet_id).filter(Boolean))] as string[];
-  const repIds = [...new Set(recent.map((x) => x.agent_id).filter(Boolean))] as string[];
-  const [{ data: outletNames }, { data: repNames }] = await Promise.all([
-    outletIds.length
-      ? supabase.from("outlets").select("id, name").in("id", outletIds)
-      : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
-    repIds.length
-      ? supabase.from("profiles").select("user_id, full_name").in("user_id", repIds)
-      : Promise.resolve({ data: [] as Array<{ user_id: string; full_name: string | null }> }),
-  ]);
-  const outletMap = new Map((outletNames ?? []).map((x) => [x.id, x.name]));
-  const repMap = new Map((repNames ?? []).map((x) => [x.user_id, x.full_name ?? "Unknown"]));
-
-  const trendBuckets = new Map<string, { isoDay: string; day: string; visits: number; conversions: number }>();
-  for (const visit of visits) {
-    const key = new Date(visit.created_at).toISOString().slice(0, 10);
-    const bucket = trendBuckets.get(key) ?? {
-      isoDay: key,
-      day: new Date(visit.created_at).toLocaleDateString("en-US", { weekday: "short" }),
-      visits: 0,
-      conversions: 0,
-    };
-    bucket.visits += 1;
-    if (convertedVisitIds.has(visit.id)) bucket.conversions += 1;
-    trendBuckets.set(key, bucket);
-  }
-  const trend = padLastSevenDays(
-    Array.from(trendBuckets.entries())
-    .sort(([a], [b]) => (a < b ? -1 : 1))
-    .slice(-7)
-    .map(([, value]) => value)
-  );
-
-  const territoryMap = new Map<string, { state: string; lga: string; visits: number; conversions: number; latSum: number; lngSum: number; geoCount: number }>();
-  for (const visit of visits) {
-    const state = (visit.state ?? "").trim();
-    const lga = (visit.lga ?? "").trim();
-    if (!state && !lga) continue;
-    const key = `${state}||${lga}`;
-    const existing = territoryMap.get(key) ?? {
-      state: state || "Unknown State",
-      lga: lga || "Unknown LGA",
-      visits: 0,
-      conversions: 0,
-      latSum: 0,
-      lngSum: 0,
-      geoCount: 0,
-    };
-    existing.visits += 1;
-    if (convertedVisitIds.has(visit.id)) existing.conversions += 1;
-    if (typeof visit.latitude === "number" && typeof visit.longitude === "number") {
-      existing.latSum += visit.latitude;
-      existing.lngSum += visit.longitude;
-      existing.geoCount += 1;
-    }
-    territoryMap.set(key, existing);
-  }
-
-  const territoryPerformance: TerritoryBucket[] = Array.from(territoryMap.values())
-    .filter((bucket) => bucket.geoCount > 0)
-    .map((bucket) => ({
-      label: `${bucket.lga}, ${bucket.state}`,
-      state: bucket.state,
-      lga: bucket.lga,
-      visits: bucket.visits,
-      conversions: bucket.conversions,
-      rate: bucket.visits ? (bucket.conversions / bucket.visits) * 100 : 0,
-      latitude: bucket.latSum / bucket.geoCount,
-      longitude: bucket.lngSum / bucket.geoCount,
-    }))
-    .sort((a, b) => b.visits - a.visits)
-    .slice(0, 50);
+  for (const visit of visits as Array<{ agent_id?: string | null }>) if (visit.agent_id) activeRepIds.add(visit.agent_id);
+  for (const sale of sales as Array<{ agent_id?: string | null }>) if (sale.agent_id) activeRepIds.add(sale.agent_id);
 
   return NextResponse.json({
     success: true,
@@ -272,33 +86,23 @@ export async function GET(request: NextRequest) {
       activeCampaigns: campaigns.filter((c) => c.status === "active").length,
       totalCampaigns: campaigns.length,
       activeReps: activeRepIds.size,
-      totalOutlets: coveredOutletIds.size,
-      totalVisits,
+      totalOutlets: canonical.summary.achievedVisits,
+      totalVisits: canonical.summary.totalSubmissions,
       totalSalesRecords: sales.length,
-      conversions: convertedCount,
-      salesCount,
-      unitsSold,
-      conversionRate,
-      salesValue: totalSales,
-      syncHealth,
-      posmChecks: posm.posmChecks,
-      posmDeployed: posm.posmDeployed,
-      posmUnits: posm.posmUnits,
-      posmDeploymentRate: posm.posmDeploymentRate,
-      plannedFreeSamples,
-      distributedFreeSamples,
-      remainingFreeSamples,
-      freeSampleAchievementRate,
+      conversions: canonical.summary.convertedOutlets,
+      salesCount: canonical.summary.salesCount ?? 0,
+      unitsSold: canonical.summary.unitsSold ?? 0,
+      conversionRate: canonical.summary.conversionRate,
+      salesValue: sales.reduce((sum, item) => sum + Number(item.sales_value ?? 0), 0),
+      syncHealth: canonical.summary.syncHealth,
+      posmChecks: canonical.summary.posmChecks,
+      posmDeployed: canonical.summary.posmDeployed,
+      posmUnits: canonical.summary.posmUnits,
+      posmDeploymentRate: canonical.summary.posmDeploymentRate,
+      plannedFreeSamples: canonical.summary.plannedFreeSamples ?? 0,
+      distributedFreeSamples: canonical.summary.distributedFreeSamples ?? 0,
+      remainingFreeSamples: canonical.summary.remainingFreeSamples ?? 0,
+      freeSampleAchievementRate: canonical.summary.freeSampleAchievementRate ?? 0,
     },
-    trend,
-    territoryPerformance,
-    recentActivity: recent.map((item) => ({
-      id: item.id,
-      campaignId: item.campaign_id ?? null,
-      status: item.outcome ?? "submitted",
-      time: item.created_at,
-      outlet: item.outlet_id ? outletMap.get(item.outlet_id) ?? "-" : "-",
-      rep: item.agent_id ? repMap.get(item.agent_id) ?? "-" : "-",
-    })),
   });
 }
