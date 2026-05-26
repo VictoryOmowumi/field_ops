@@ -62,6 +62,7 @@ export function isQualifyingSaleForConversion(sale: Pick<MetricsSaleRow, "quanti
 }
 
 export function extractPosmFromVisits(visits: MetricsVisitRow[]) {
+  const MAX_VALIDATED_POSM_UNITS = 100;
   let posmChecks = 0;
   let posmDeployed = 0;
   let posmUnits = 0;
@@ -76,7 +77,9 @@ export function extractPosmFromVisits(visits: MetricsVisitRow[]) {
     if (deployed) {
       posmDeployed += 1;
       const quantity = Number(posm.payload?.quantity ?? 0);
-      if (Number.isFinite(quantity) && quantity > 0) posmUnits += quantity;
+      if (Number.isFinite(quantity) && quantity > 0 && quantity <= MAX_VALIDATED_POSM_UNITS) {
+        posmUnits += quantity;
+      }
     }
   }
   return {
