@@ -1,14 +1,13 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { FileEmpty02Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import TableEmptyStateRow from "@/components/shared/TableEmptyStateRow";
+import { Button } from "@/components/ui/button";
+import { DataTable, type ColumnDef, type RowAction } from "@/components/shared/DataTable";
 import { authorizedFetch } from "@/lib/api/client";
-import TableLoadingState from "@/components/shared/TableLoadingState";
+import { useTerminology } from "@/components/providers/tenant-experience-provider";
 
 type Campaign = {
   id: string;
@@ -29,105 +28,152 @@ type Campaign = {
   created_at: string;
 };
 
-export default function CampaignsPage() {
-  const query = useQuery({
-    queryKey: ["admin-campaigns"],
-    queryFn: async () => {
-      const result = await authorizedFetch<{ success: boolean; campaigns?: Campaign[] }>("/api/admin/campaigns");
-      return result.campaigns ?? [];
-    },
-  });
-  const campaigns = query.data ?? [];
-  const loading = query.isLoading;
-
-  return (
-    <div className="space-y-6 pb-10">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Campaigns</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Create, monitor, and manage field activation campaigns.</p>
-        </div>
-
-        <Button asChild className="rounded-full px-5">
-          <Link href="/admin/campaigns/new">Create Campaign</Link>
-        </Button>
-      </div>
-
-      <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="font-medium">All Campaigns</h2>
-            <p className="text-sm text-muted-foreground">Track campaign setup, progress, and performance.</p>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto rounded-3xl border border-border">
-          <table className="min-w-[1200px] w-full text-sm">
-            <thead className="bg-muted/50 text-muted-foreground">
-              <tr>
-                <th className="px-4 py-3 text-left font-medium">Campaign</th>
-                <th className="px-4 py-3 text-left font-medium">Territory</th>
-                <th className="px-4 py-3 text-left font-medium">Timeline</th>
-                <th className="px-4 py-3 text-left font-medium">Assigned Reps</th>
-                <th className="px-4 py-3 text-left font-medium">Visits</th>
-                <th className="px-4 py-3 text-left font-medium">Conversions</th>
-                <th className="px-4 py-3 text-left font-medium">Conversion Rate</th>
-                <th className="px-4 py-3 text-left font-medium">Last Activity</th>
-                <th className="px-4 py-3 text-left font-medium">Status</th>
-                <th className="px-4 py-3 text-right font-medium">Action</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {loading ? (
-                <TableLoadingState colSpan={10} title="Loading campaigns..." />
-              ) : campaigns.length === 0 ? (
-                <TableEmptyStateRow
-                  colSpan={10}
-                  title="No campaigns yet"
-                  description="Create your first campaign to start tracking field activity."
-                  icon={<HugeiconsIcon icon={FileEmpty02Icon} size={40} strokeWidth={1.5} />}
-                />
-              ) : (
-                campaigns.map((campaign) => (
-                  <tr key={campaign.id} className="border-t border-border">
-                    <td className="px-4 py-4">
-                      <p className="font-medium">{campaign.name}</p>
-                      <p className="text-xs text-muted-foreground">{campaign.campaign_type ?? campaign.description ?? "No description"}</p>
-                    </td>
-                    <td className="px-4 py-4 text-muted-foreground">{[campaign.lga, campaign.state].filter(Boolean).join(", ") || "-"}</td>
-                    <td className="px-4 py-4 text-muted-foreground">
-                      {campaign.start_date ?? "-"} - {campaign.end_date ?? "-"}
-                    </td>
-                    <td className="px-4 py-4 font-medium">{campaign.assigned_reps_count ?? 0}</td>
-                    <td className="px-4 py-4 font-medium">{campaign.visits_count ?? 0}</td>
-                    <td className="px-4 py-4 font-medium">{campaign.conversions_count ?? 0}</td>
-                    <td className="px-4 py-4">{(campaign.conversion_rate ?? 0).toFixed(1)}%</td>
-                    <td className="px-4 py-4 text-muted-foreground">{campaign.last_activity_at ? new Date(campaign.last_activity_at).toLocaleString() : "-"}</td>
-                    <td className="px-4 py-4"><StatusBadge status={campaign.status} /></td>
-                    <td className="px-4 py-4 text-right">
-                      <Button variant="secondary" size="sm" className="rounded-full" asChild>
-                        <Link href={`/admin/campaigns/${campaign.id}`}>View</Link>
-                      </Button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-  );
-}
-
 function StatusBadge({ status }: { status: string }) {
-  const className =
+  const cls =
     status === "active"
       ? "bg-primary/10 text-primary"
       : status === "draft"
       ? "bg-muted text-muted-foreground"
       : "bg-secondary text-secondary-foreground";
+  return <Badge className={`rounded-full capitalize hover:bg-inherit ${cls}`}>{status}</Badge>;
+}
 
-  return <Badge className={`rounded-full hover:bg-inherit ${className}`}>{status}</Badge>;
+export default function CampaignsPage() {
+  const t = useTerminology();
+  const router = useRouter();
+
+  const query = useQuery({
+    queryKey: ["admin-campaigns"],
+    queryFn: () =>
+      authorizedFetch<{ success: boolean; campaigns?: Campaign[] }>("/api/admin/campaigns").then(
+        (r) => r.campaigns ?? []
+      ),
+  });
+
+  const columns: ColumnDef<Campaign>[] = [
+    {
+      key: "name",
+      header: t("campaign"),
+      sortable: true,
+      render: (row) => (
+        <div>
+          <p className="font-medium text-foreground">{row.name}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {row.campaign_type ?? row.description ?? "No description"}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: "territory",
+      header: "Territory",
+      render: (row) => (
+        <span className="text-muted-foreground">
+          {[row.lga, row.state].filter(Boolean).join(", ") || "-"}
+        </span>
+      ),
+    },
+    {
+      key: "timeline",
+      header: "Timeline",
+      render: (row) => (
+        <span className="text-muted-foreground">
+          {row.start_date ?? "-"} → {row.end_date ?? "-"}
+        </span>
+      ),
+    },
+    {
+      key: "reps",
+      header: `${t("agents")}`,
+      align: "right",
+      width: "w-20",
+      render: (row) => (
+        <span className="font-medium">{row.assigned_reps_count ?? 0}</span>
+      ),
+    },
+    {
+      key: "visits",
+      header: t("visits"),
+      align: "right",
+      width: "w-20",
+      sortable: true,
+      render: (row) => <span className="font-medium">{row.visits_count ?? 0}</span>,
+    },
+    {
+      key: "conversions",
+      header: t("conversions"),
+      align: "right",
+      width: "w-24",
+      sortable: true,
+      render: (row) => <span className="font-medium">{row.conversions_count ?? 0}</span>,
+    },
+    {
+      key: "rate",
+      header: `${t("conversion")} Rate`,
+      align: "right",
+      width: "w-28",
+      sortable: true,
+      render: (row) => (
+        <span className="font-medium">{(row.conversion_rate ?? 0).toFixed(1)}%</span>
+      ),
+    },
+    {
+      key: "last_activity",
+      header: "Last Activity",
+      render: (row) => (
+        <span className="text-muted-foreground">
+          {row.last_activity_at
+            ? new Date(row.last_activity_at).toLocaleDateString()
+            : "-"}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (row) => <StatusBadge status={row.status} />,
+    },
+  ];
+
+  const actions: RowAction<Campaign>[] = [
+    {
+      label: "View details",
+      onClick: (row) => router.push(`/admin/campaigns/${row.id}`),
+    },
+  ];
+
+  return (
+    <div className="space-y-6 pb-10">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight">{t("campaigns")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Create, monitor, and manage field activation {t("campaigns").toLowerCase()}.
+          </p>
+        </div>
+        <Button asChild className="rounded-full px-5">
+          <Link href="/admin/campaigns/new">Create {t("campaign")}</Link>
+        </Button>
+      </div>
+
+      <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60">
+        <div className="mb-5">
+          <h2 className="font-medium">All {t("campaigns")}</h2>
+          <p className="text-sm text-muted-foreground">
+            Track {t("campaign").toLowerCase()} setup, progress, and performance.
+          </p>
+        </div>
+
+        <DataTable
+          columns={columns}
+          data={query.data ?? []}
+          rowKey={(row) => row.id}
+          actions={actions}
+          loading={query.isLoading}
+          emptyTitle={`No ${t("campaigns").toLowerCase()} yet`}
+          emptyDescription={`Create your first ${t("campaign").toLowerCase()} to start tracking field activity.`}
+        />
+      </section>
+    </div>
+  );
 }

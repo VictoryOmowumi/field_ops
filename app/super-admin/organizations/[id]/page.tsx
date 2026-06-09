@@ -1,12 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { supabaseClient } from "@/lib/supabase/client";
 import ResendInviteButton from "@/components/super-admin/ResendInviteButton";
 
@@ -47,6 +60,8 @@ type Org = {
   monthlyActivity?: string;
 };
 
+type Member = { id: string; name: string; role: string; status: string };
+
 function titleCase(value: string | null | undefined) {
   if (!value) return "-";
   return value.charAt(0).toUpperCase() + value.slice(1);
@@ -54,26 +69,99 @@ function titleCase(value: string | null | undefined) {
 
 export default function OrganizationDetailsPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const orgId = params.id;
   const [org, setOrg] = useState<Org | null>(null);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [toggling, setToggling] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteInput, setDeleteInput] = useState("");
+  const [roleChanging, setRoleChanging] = useState<string | null>(null);
+  const deleteInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     async function loadOrg() {
       const { data } = await supabaseClient.auth.getSession();
       const token = data.session?.access_token;
       if (!token) return;
-      const response = await fetch(`/api/platform/organizations/${orgId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const result = (await response.json()) as { success: boolean; message?: string; organization?: Org };
-      if (!response.ok || !result.success || !result.organization) {
-        toast.error(result.message ?? "Failed to load organization.");
+      const [orgRes, membersRes] = await Promise.all([
+        fetch(`/api/platform/organizations/${orgId}`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`/api/platform/organizations/${orgId}/users`, { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      const orgResult = (await orgRes.json()) as { success: boolean; message?: string; organization?: Org };
+      const membersResult = (await membersRes.json()) as { success: boolean; users?: Member[] };
+      if (!orgRes.ok || !orgResult.success || !orgResult.organization) {
+        toast.error(orgResult.message ?? "Failed to load organization.");
         return;
       }
-      setOrg(result.organization);
+      setOrg(orgResult.organization);
+      if (membersResult.success) setMembers(membersResult.users ?? []);
     }
     void loadOrg();
   }, [orgId]);
+
+  async function confirmToggleSuspend() {
+    if (!org) return;
+    const next = org.status === "suspended" ? "active" : "suspended";
+    setToggling(true);
+    const { data } = await supabaseClient.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) { setToggling(false); return; }
+    const res = await fetch(`/api/platform/organizations/${org.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ status: next }),
+    });
+    const result = (await res.json()) as { success: boolean; message?: string; organization?: Org };
+    setToggling(false);
+    if (!res.ok || !result.success) {
+      toast.error(result.message ?? "Failed to update status.");
+      return;
+    }
+    setOrg((prev) => prev ? { ...prev, status: next } : prev);
+    toast.success(next === "suspended" ? `${org.name} has been suspended.` : `${org.name} has been reactivated.`);
+  }
+
+  async function confirmDelete() {
+    if (!org || deleteInput !== org.name) return;
+    setDeleting(true);
+    const { data } = await supabaseClient.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) { setDeleting(false); return; }
+    const res = await fetch(`/api/platform/organizations/${org.id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const result = (await res.json()) as { success: boolean; message?: string };
+    setDeleting(false);
+    if (!res.ok || !result.success) {
+      toast.error(result.message ?? "Failed to delete organization.");
+      return;
+    }
+    toast.success(`${org.name} has been permanently deleted.`);
+    router.replace("/super-admin/organizations");
+  }
+
+  async function changeRole(userId: string, role: string) {
+    if (!org) return;
+    setRoleChanging(userId);
+    const { data } = await supabaseClient.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) { setRoleChanging(null); return; }
+    const res = await fetch(`/api/platform/organizations/${org.id}/users`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ userId, role }),
+    });
+    const result = (await res.json()) as { success: boolean; message?: string };
+    setRoleChanging(null);
+    if (!res.ok || !result.success) {
+      toast.error(result.message ?? "Failed to update role.");
+      return;
+    }
+    setMembers((prev) => prev.map((m) => m.id === userId ? { ...m, role } : m));
+    toast.success("Role updated.");
+  }
 
   if (!org) return <div className="rounded-3xl border border-border p-4 text-sm text-muted-foreground">Loading organization...</div>;
 
@@ -91,9 +179,76 @@ export default function OrganizationDetailsPage() {
           <h1 className="text-3xl font-semibold tracking-tight">{org.name}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{org.slug} · {org.industry ?? "-"} · {org.business_type ?? "-"}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" className="rounded-full" asChild><Link href="/super-admin/organizations">Back</Link></Button>
+          <Button variant="outline" className="rounded-full" asChild><Link href={`/super-admin/organizations/${org.id}/experience`}>Tenant Experience</Link></Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant={org.status === "suspended" ? "outline" : "destructive"}
+                className="rounded-full"
+                disabled={toggling}
+              >
+                {toggling ? "Updating…" : org.status === "suspended" ? "Reactivate" : "Suspend"}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {org.status === "suspended" ? `Reactivate ${org.name}?` : `Suspend ${org.name}?`}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {org.status === "suspended"
+                    ? "All members will regain access to the platform immediately."
+                    : "All members will be blocked from accessing the platform immediately. You can reactivate at any time."}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className={org.status === "suspended" ? "" : "bg-destructive text-destructive-foreground hover:bg-destructive/90"}
+                  onClick={confirmToggleSuspend}
+                >
+                  {org.status === "suspended" ? "Yes, Reactivate" : "Yes, Suspend"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <Button className="rounded-full" asChild><Link href={`/super-admin/organizations/${org.id}/edit`}>Edit Organization</Link></Button>
+          <AlertDialog onOpenChange={(open) => { if (!open) setDeleteInput(""); }}>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" className="rounded-full bg-red-500/10 text-red-500 hover:bg-red-500/20 hover:text-red-500">
+                Delete
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete {org.name}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This permanently deletes the organization and all its campaigns, visits, outlets, and data. This cannot be undone.
+                  <br /><br />
+                  Type <strong>{org.name}</strong> to confirm.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <Input
+                ref={deleteInputRef}
+                value={deleteInput}
+                onChange={(e) => setDeleteInput(e.target.value)}
+                placeholder={org.name}
+                className="mt-1"
+              />
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  disabled={deleteInput !== org.name || deleting}
+                  onClick={confirmDelete}
+                >
+                  {deleting ? "Deleting…" : "Permanently Delete"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
 
@@ -121,15 +276,37 @@ export default function OrganizationDetailsPage() {
 
         <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60 lg:col-span-4">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="font-semibold">Primary Admin</h2>
+            <h2 className="font-semibold">Team Members</h2>
             <ResendInviteButton organizationId={org.id} />
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <Info label="Full Name" value={org.primaryAdminName ?? "Organization Admin"} />
-            <Info label="Email" value={org.primaryAdminEmail ?? "-"} />
-            <Info label="Phone" value={org.primaryAdminPhone ?? "-"} />
-            <Info label="Role" value="organization_admin" />
-          </div>
+          {members.length === 0 ? (
+            <p className="mt-4 text-sm text-muted-foreground">No members yet.</p>
+          ) : (
+            <div className="mt-4 space-y-2">
+              {members.map((m) => (
+                <div key={m.id} className="flex items-center gap-3 rounded-2xl bg-muted/35 px-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{m.name}</p>
+                    <p className="text-xs text-muted-foreground">{m.status}</p>
+                  </div>
+                  <Select
+                    value={m.role}
+                    disabled={roleChanging === m.id}
+                    onValueChange={(role) => void changeRole(m.id, role)}
+                  >
+                    <SelectTrigger className="h-7 w-32 rounded-full text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="org_admin">Org Admin</SelectItem>
+                      <SelectItem value="supervisor">Supervisor</SelectItem>
+                      <SelectItem value="agent">Agent</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       </div>
 

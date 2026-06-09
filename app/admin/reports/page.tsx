@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { authorizedFetch } from "@/lib/api/client";
 import { supabaseClient } from "@/lib/supabase/client";
+import { useTerminology } from "@/components/providers/tenant-experience-provider";
 
 type Overview = {
   totalVisits: number;
@@ -30,6 +31,7 @@ type PerfRow = {
 };
 
 export default function ReportsPage() {
+  const t = useTerminology();
   const [campaignId, setCampaignId] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -137,7 +139,7 @@ export default function ReportsPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Reports</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Review campaign performance, product movement, and rep productivity.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Review {t("campaign").toLowerCase()} performance, product movement, and {t("agent").toLowerCase()} productivity.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline" className="rounded-full px-5">
@@ -156,13 +158,13 @@ export default function ReportsPage() {
         <h2 className="font-medium">Filters</h2>
         <div className="mt-4 grid gap-3 md:grid-cols-4">
           <div>
-            <p className="mb-1 text-xs text-muted-foreground">Campaign</p>
+            <p className="mb-1 text-xs text-muted-foreground">{t("campaign")}</p>
             <Select value={campaignId} onValueChange={setCampaignId}>
               <SelectTrigger>
-                <SelectValue placeholder="All campaigns" />
+                <SelectValue placeholder={`All ${t("campaigns").toLowerCase()}`} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All campaigns</SelectItem>
+                <SelectItem value="all">All {t("campaigns").toLowerCase()}</SelectItem>
                 {(campaignsQuery.data ?? []).map((campaign) => (
                   <SelectItem key={campaign.id} value={campaign.id}>
                     {campaign.name}
@@ -197,9 +199,9 @@ export default function ReportsPage() {
       </section>
 
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Total visits" value={overview ? `${overview.totalVisits}` : "-"} />
-        <Stat label="Conversions" value={overview ? `${overview.conversions}` : "-"} />
-        <Stat label="Conversion rate" value={overview ? `${overview.conversionRate.toFixed(1)}%` : "-"} />
+        <Stat label={`Total ${t("visits").toLowerCase()}`} value={overview ? `${overview.totalVisits}` : "-"} />
+        <Stat label={t("conversions")} value={overview ? `${overview.conversions}` : "-"} />
+        <Stat label={`${t("conversion")} rate`} value={overview ? `${overview.conversionRate.toFixed(1)}%` : "-"} />
         <Stat label="Sales value" value={overview ? formatCurrency(overview.salesValue) : "-"} />
       </div>
 
@@ -237,26 +239,26 @@ export default function ReportsPage() {
       </section>
 
       <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60">
-        <h2 className="font-medium">Rep Performance Report</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Export-ready summary of field agent performance.</p>
+        <h2 className="font-medium">{t("agent")} Performance Report</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Export-ready summary of field {t("agent").toLowerCase()} performance.</p>
 
         <div className="mt-4 overflow-hidden rounded-3xl border border-border">
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-muted-foreground">
               <tr>
-                <th className="px-4 py-3 text-left">Rep</th>
+                <th className="px-4 py-3 text-left">{t("agent")}</th>
                 <th className="px-4 py-3 text-left">Territory</th>
-                <th className="px-4 py-3 text-left">Visits</th>
-                <th className="px-4 py-3 text-left">Conversions</th>
+                <th className="px-4 py-3 text-left">{t("visits")}</th>
+                <th className="px-4 py-3 text-left">{t("conversions")}</th>
                 <th className="px-4 py-3 text-left">Sales Value</th>
                 <th className="px-4 py-3 text-left">Rate</th>
               </tr>
             </thead>
             <tbody>
               {performanceQuery.isLoading ? (
-                <TableLoadingState colSpan={6} title="Loading rep performance..." description="Computing rep conversion metrics." />
+                <TableLoadingState colSpan={6} title={`Loading ${t("agent").toLowerCase()} performance...`} description={`Computing ${t("agent").toLowerCase()} ${t("conversion").toLowerCase()} metrics.`} />
               ) : performanceRows.length === 0 ? (
-                <TableEmptyStateRow colSpan={6} title="No rep metrics yet" description="Rep performance will appear after activity is recorded." />
+                <TableEmptyStateRow colSpan={6} title={`No ${t("agent").toLowerCase()} metrics yet`} description={`${t("agent")} performance will appear after activity is recorded.`} />
               ) : (
                 performanceRows.map((item) => (
                   <tr key={`${item.rep}-${item.territory}`} className="border-t border-border">

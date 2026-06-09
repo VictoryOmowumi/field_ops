@@ -208,3 +208,20 @@ export async function PATCH(
 
   return NextResponse.json({ success: true, organization: data });
 }
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const user = await getAuthenticatedUserFromRequest(request);
+  if (!user) return unauthorized();
+  if (!hasRequiredRole(user, ["super_admin"])) return forbidden();
+
+  const { id } = await params;
+  const supabase = createServerSupabaseClient();
+
+  const { error } = await supabase.from("organizations").delete().eq("id", id);
+  if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+
+  return NextResponse.json({ success: true });
+}

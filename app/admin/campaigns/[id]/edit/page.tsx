@@ -35,6 +35,7 @@ const workflowTemplateOptions: Array<{ label: string; value: CampaignWorkflowTem
   { label: "Full Trade Audit", value: "full_trade_audit" },
 ];
 type OrgUser = { id: string; name: string; role: string };
+type FreeSampleProductConfig = Record<string, { enabled: boolean; targetQuantity: string }>;
 
 export default function EditCampaignPage() {
   const params = useParams<{ id: string }>();
@@ -62,11 +63,13 @@ export default function EditCampaignPage() {
   const [workflowTemplate, setWorkflowTemplate] = useState<CampaignWorkflowTemplate>("sales_activation");
   const [priceMode, setPriceMode] = useState<"buying" | "selling" | "both">("both");
   const [availabilityQuestionsCsv, setAvailabilityQuestionsCsv] = useState("");
-  const [freeSampleEnabled, setFreeSampleEnabled] = useState(false);
   const [freeSampleRequired, setFreeSampleRequired] = useState(false);
-  const [freeSampleProductName, setFreeSampleProductName] = useState("");
-  const [freeSampleTargetQuantity, setFreeSampleTargetQuantity] = useState("");
+  const [freeSampleProductConfig, setFreeSampleProductConfig] = useState<FreeSampleProductConfig>({});
 
+  const freeSampleEnabled = useMemo(
+    () => selectedProducts.some((p) => freeSampleProductConfig[p]?.enabled ?? false),
+    [selectedProducts, freeSampleProductConfig]
+  );
   const supervisors = useMemo(() => users.filter((u) => u.role === "supervisor" || u.role === "org_admin"), [users]);
   const campaignTasks = useMemo(() => tasksForTemplate(workflowTemplate), [workflowTemplate]);
   const hasProductDrivenTask = useMemo(
@@ -84,11 +87,6 @@ export default function EditCampaignPage() {
   }, [campaignTasks]);
   const hasPriceSurveyTask = campaignTasks.includes("price_survey");
   const hasAvailabilitySurveyTask = campaignTasks.includes("availability_survey");
-  const freeSampleProductOptions = useMemo(
-    () => mapSelectedProductsToPayload(selectedProducts).map((item) => item.name).filter(Boolean),
-    [selectedProducts]
-  );
-
   useEffect(() => {
     async function load() {
       const { data } = await supabaseClient.auth.getSession();
@@ -151,10 +149,8 @@ export default function EditCampaignPage() {
       const freeSampleTask = (tasksObj.free_sample_distribution as Record<string, unknown>) ?? {};
       setPriceMode((priceTask.priceMode as "buying" | "selling" | "both") ?? "both");
       setAvailabilityQuestionsCsv(Array.isArray(availabilityTask.questions) ? (availabilityTask.questions as string[]).join(", ") : "");
-      setFreeSampleEnabled(Boolean(freeSampleTask.enabled));
       setFreeSampleRequired(Boolean(freeSampleTask.required));
-      setFreeSampleProductName(String(freeSampleTask.productName ?? ""));
-      setFreeSampleTargetQuantity(String(freeSampleTask.targetQuantity ?? ""));
+      setFreeSampleProductConfig(toFreeSampleProductConfig(freeSampleTask));
 
       if (usersRes.ok && usersResult.success) setUsers(usersResult.users ?? []);
     }
@@ -163,15 +159,16 @@ export default function EditCampaignPage() {
 
   async function save() {
     const parsedProducts = mapSelectedProductsToPayload(selectedProducts);
+    const configuredFreeSamples = getConfiguredFreeSampleProducts(selectedProducts, freeSampleProductConfig);
     if (hasProductDrivenTask && parsedProducts.length === 0) {
       toast.error("Add at least one product for the selected task(s).");
       return;
     }
-    if (freeSampleEnabled && !freeSampleProductName.trim()) {
-      toast.error("Free sample product is required when free sample tracking is enabled.");
+    if (freeSampleEnabled && configuredFreeSamples.length === 0) {
+      toast.error("Enable free sample tracking on at least one selected product.");
       return;
     }
-    if (freeSampleEnabled && Number(freeSampleTargetQuantity || 0) < 0) {
+    if (freeSampleEnabled && configuredFreeSamples.some((item) => item.targetQuantity < 0)) {
       toast.error("Free sample planned quantity cannot be negative.");
       return;
     }
@@ -273,8 +270,9 @@ export default function EditCampaignPage() {
             free_sample_distribution: {
               enabled: freeSampleEnabled,
               required: freeSampleRequired,
-              productName: freeSampleProductName.trim() || null,
-              targetQuantity: freeSampleTargetQuantity ? Number(freeSampleTargetQuantity) : 0,
+              productName: configuredFreeSamples[0]?.productName ?? null,
+              targetQuantity: configuredFreeSamples.reduce((total, item) => total + item.targetQuantity, 0),
+              products: configuredFreeSamples,
             },
           },
         },
@@ -407,35 +405,21 @@ export default function EditCampaignPage() {
             ].map(([key, label]) => (
               <ToggleField key={key} label={label} value={Boolean(formRequirements[key])} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, [key]: checked }))} />
             ))}
-            <ToggleField label="Enable free sample tracking" value={freeSampleEnabled} onChange={setFreeSampleEnabled} />
           </div>
-          {freeSampleEnabled ? (
-            <div className="mt-5 rounded-2xl border border-border/70 p-4">
-              <p className="text-sm font-medium">Free Sample Tracking</p>
-              <div className="mt-3 grid gap-4 md:grid-cols-2">
-                <ToggleField label="Require free sample entry" value={freeSampleRequired} onChange={setFreeSampleRequired} />
-                <div />
-                <Field label="Free sample product">
-                  <Select value={freeSampleProductName} onValueChange={setFreeSampleProductName}>
-                    <SelectTrigger><SelectValue placeholder="Select product" /></SelectTrigger>
-                    <SelectContent>
-                      {freeSampleProductOptions.map((productName) => (
-                        <SelectItem key={productName} value={productName}>{productName}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field label="Planned free sample quantity">
-                  <Input type="number" value={freeSampleTargetQuantity} onChange={(e) => setFreeSampleTargetQuantity(e.target.value)} />
-                </Field>
-              </div>
-            </div>
-          ) : null}
-          <div className={`mt-5 grid gap-4 ${hasPriceSurveyTask && hasAvailabilitySurveyTask ? "sm:grid-cols-2" : "grid-cols-1"}`}>
+          <div className={` mt-5 grid gap-4 ${hasPriceSurveyTask && hasAvailabilitySurveyTask ? "sm:grid-cols-2" : "grid-cols-1"}`}>
             {hasProductDrivenTask ? (
               <div className={`${hasPriceSurveyTask || hasAvailabilitySurveyTask ? "sm:col-span-2" : ""}`}>
                 <Field label={productFieldLabel}>
                   <ProductCatalogSelector value={selectedProducts} onChange={setSelectedProducts} />
+                  {selectedProducts.length > 0 ? (
+                    <ProductSamplingConfig
+                      products={selectedProducts}
+                      value={freeSampleProductConfig}
+                      onChange={setFreeSampleProductConfig}
+                      required={freeSampleRequired}
+                      onRequiredChange={setFreeSampleRequired}
+                    />
+                  ) : null}
                 </Field>
               </div>
             ) : (
@@ -483,11 +467,107 @@ function ToggleField({ label, value, onChange }: { label: string; value: boolean
   return <div className="flex items-center justify-between rounded-2xl bg-muted/35 px-4 py-3"><span className="text-sm">{label}</span><Button type="button" size="sm" variant={value ? "default" : "outline"} className="rounded-full" onClick={() => onChange(!value)}>{value ? "Required" : "Optional"}</Button></div>;
 }
 
+function ProductSamplingConfig({
+  products,
+  value,
+  onChange,
+  required,
+  onRequiredChange,
+}: {
+  products: string[];
+  value: FreeSampleProductConfig;
+  onChange: (value: FreeSampleProductConfig) => void;
+  required: boolean;
+  onRequiredChange: (v: boolean) => void;
+}) {
+  const anyEnabled = products.some((p) => value[p]?.enabled ?? false);
+
+  return (
+    <div className="mt-4 w-full space-y-2 rounded-2xl border border-border/70 bg-muted/20 p-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Free sample setup per product</p>
+        {anyEnabled ? (
+          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">Active</span>
+        ) : null}
+      </div>
+      {products.map((product) => {
+        const row = value[product] ?? { enabled: false, targetQuantity: "" };
+        return (
+          <div key={product} className="grid gap-3 rounded-xl bg-background p-3 sm:grid-cols-[1fr_auto_140px] sm:items-center">
+            <p className="text-sm font-medium">{product}</p>
+            <Button
+              type="button"
+              size="sm"
+              variant={row.enabled ? "default" : "outline"}
+              className="rounded-full"
+              onClick={() => onChange({ ...value, [product]: { ...row, enabled: !row.enabled } })}
+            >
+              {row.enabled ? "Sampling on" : "Sampling off"}
+            </Button>
+            <Input
+              type="number"
+              min={0}
+              placeholder="Planned qty"
+              value={row.targetQuantity}
+              disabled={!row.enabled}
+              onChange={(e) => onChange({ ...value, [product]: { ...row, targetQuantity: e.target.value } })}
+            />
+          </div>
+        );
+      })}
+      {anyEnabled ? (
+        <div className="rounded-xl border border-border/60 bg-background px-3 py-2">
+          <ToggleField
+            label="Require free sample entry on visit"
+            value={required}
+            onChange={onRequiredChange}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function mapSelectedProductsToPayload(products: string[]) {
   return products.map((nameItem, index) => ({
     sku: `SKU-${index + 1}`,
     name: nameItem,
   }));
+}
+
+function getConfiguredFreeSampleProducts(products: string[], config: FreeSampleProductConfig) {
+  return products
+    .filter((productName) => config[productName]?.enabled)
+    .map((productName) => ({
+      productName,
+      targetQuantity: Number(config[productName]?.targetQuantity || 0),
+    }));
+}
+
+function toFreeSampleProductConfig(task: Record<string, unknown>): FreeSampleProductConfig {
+  const products = Array.isArray(task.products) ? task.products : [];
+  if (products.length > 0) {
+    return products.reduce<FreeSampleProductConfig>((config, item) => {
+      if (!item || typeof item !== "object") return config;
+      const row = item as { productName?: unknown; targetQuantity?: unknown };
+      const productName = String(row.productName ?? "").trim();
+      if (!productName) return config;
+      config[productName] = {
+        enabled: true,
+        targetQuantity: String(row.targetQuantity ?? ""),
+      };
+      return config;
+    }, {});
+  }
+
+  const legacyProductName = String(task.productName ?? "").trim();
+  if (!legacyProductName) return {};
+  return {
+    [legacyProductName]: {
+      enabled: true,
+      targetQuantity: String(task.targetQuantity ?? ""),
+    },
+  };
 }
 
 function tasksForTemplate(template: CampaignWorkflowTemplate): string[] {

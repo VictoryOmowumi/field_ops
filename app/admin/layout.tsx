@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import RequireRole from "@/components/auth/RequireRole";
-import BackofficeShell from "@/components/backoffice/BackofficeShell";
 import AppQueryProvider from "@/components/providers/AppQueryProvider";
+import TenantShell from "@/components/shell/TenantShell";
+import TenantDebugPanel from "@/components/dev/TenantDebugPanel";
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
@@ -11,7 +12,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       redirectOnOrgDeniedTo="/admin/unauthorized"
     >
       <AppQueryProvider liveMode>
-        <BackofficeShell role="admin">{children}</BackofficeShell>
+        <TenantShell role="admin">{children}</TenantShell>
+        {process.env.NODE_ENV !== "production" ? <TenantDebugPanel /> : null}
       </AppQueryProvider>
     </RequireRole>
   );

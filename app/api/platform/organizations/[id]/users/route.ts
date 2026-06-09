@@ -32,3 +32,28 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   return NextResponse.json({ success: true, users });
 }
 
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireSuperAdmin(request);
+  if (auth.error) return auth.error;
+
+  const { id } = await params;
+  const { userId, role } = (await request.json()) as { userId?: string; role?: string };
+  if (!userId || !role) {
+    return NextResponse.json({ success: false, message: "userId and role are required." }, { status: 400 });
+  }
+  const validRoles = ["org_admin", "supervisor", "agent"];
+  if (!validRoles.includes(role)) {
+    return NextResponse.json({ success: false, message: "Invalid role." }, { status: 400 });
+  }
+
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase
+    .from("organization_users")
+    .update({ role })
+    .eq("organization_id", id)
+    .eq("user_id", userId);
+
+  if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+  return NextResponse.json({ success: true });
+}
+

@@ -6,6 +6,7 @@ import {
   getCampaignEvidence,
   getCampaignMapPoints,
 } from "@/lib/campaign/intelligence";
+import { getBrandByOrganizationId } from "@/lib/branding/server";
 import { extractClientIp, hashIp, hashShareToken } from "@/lib/campaign/share";
 import { resolveDateWindow } from "@/lib/server/query-window";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -177,12 +178,15 @@ export async function GET(request: NextRequest, context: RouteContext) {
   }
 
   console.time("analytics");
-  const summary = await getCampaignAnalyticsSummary(
-    supabase,
-    shareLink.organization_id,
-    shareLink.campaign_id,
-    { dateFrom, dateTo, area }
-  );
+  const [summary, orgBrand] = await Promise.all([
+    getCampaignAnalyticsSummary(
+      supabase,
+      shareLink.organization_id,
+      shareLink.campaign_id,
+      { dateFrom, dateTo, area }
+    ),
+    getBrandByOrganizationId(shareLink.organization_id),
+  ]);
   console.timeEnd("analytics");
 
   const now = new Date().toISOString();
@@ -207,6 +211,15 @@ export async function GET(request: NextRequest, context: RouteContext) {
       success: true,
       campaign,
       summary,
+      brand: orgBrand
+        ? {
+            name: orgBrand.name,
+            logoUrl: orgBrand.logoUrl,
+            colorPreset: orgBrand.colorPreset ?? null,
+            fontUrl: orgBrand.fontUrl ?? null,
+            uiVariant: orgBrand.uiVariant ?? null,
+          }
+        : null,
     },
     {
       headers: {
