@@ -11,6 +11,10 @@ export type OrgBrand = {
   android192Url?: string | null;
   android512Url?: string | null;
   manifestUrl?: string | null;
+  // Pre-auth tenant experience hints — from experience_config
+  colorPreset?: string | null;
+  fontUrl?: string | null;
+  uiVariant?: string | null;
 };
 
 export const BRAND_COOKIE_SLUG = "actiq_org_slug";

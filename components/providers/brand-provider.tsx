@@ -9,6 +9,63 @@ import {
   BRAND_COOKIE_SLUG,
   type OrgBrand,
 } from "@/lib/branding/types";
+import { COLOR_PRESET_REGISTRY } from "@/lib/tenant-experience/theme-presets";
+
+const BRAND_STYLE_ID = "actiq-tenant-theme";
+const BRAND_FONT_LINK_ID = "actiq-tenant-font";
+
+function parseFontFamily(url: string): string | null {
+  try {
+    const params = new URL(url).searchParams.getAll("family");
+    return params[0]?.split(":")[0]?.trim() || null;
+  } catch { return null; }
+}
+
+// Apply color+font CSS overrides from the public brand data (pre-auth).
+// TenantThemeApplier (post-auth) will overwrite this once the full config loads.
+function applyBrandTheme(colorPreset: string | null | undefined, fontUrl: string | null | undefined) {
+  if (typeof document === "undefined") return;
+  const colorEntry = colorPreset ? (COLOR_PRESET_REGISTRY[colorPreset] ?? null) : null;
+
+  // Font link
+  const existingLink = document.getElementById(BRAND_FONT_LINK_ID);
+  if (fontUrl) {
+    if (!(existingLink instanceof HTMLLinkElement) || existingLink.href !== fontUrl) {
+      existingLink?.remove();
+      const link = document.createElement("link");
+      link.id = BRAND_FONT_LINK_ID;
+      link.rel = "stylesheet";
+      link.href = fontUrl;
+      document.head.appendChild(link);
+    }
+  } else {
+    existingLink?.remove();
+  }
+
+  const fontFamily = fontUrl ? parseFontFamily(fontUrl) : null;
+  if (!colorEntry && !fontFamily) {
+    document.getElementById(BRAND_STYLE_ID)?.remove();
+    return;
+  }
+
+  let el = document.getElementById(BRAND_STYLE_ID) as HTMLStyleElement | null;
+  if (!el) {
+    el = document.createElement("style");
+    el.id = BRAND_STYLE_ID;
+    document.head.appendChild(el);
+  }
+
+  const fontLine = fontFamily ? `  --font-sans: '${fontFamily}', sans-serif;` : "";
+  const lightVars = [
+    fontLine,
+    ...(colorEntry ? Object.entries(colorEntry.light).map(([k, v]) => `  ${k}: ${v};`) : []),
+  ].filter(Boolean).join("\n");
+  const darkVars = colorEntry
+    ? Object.entries(colorEntry.dark).map(([k, v]) => `  ${k}: ${v};`).join("\n")
+    : "";
+
+  el.textContent = `:root {\n${lightVars}\n}${darkVars ? `\n.dark {\n${darkVars}\n}` : ""}`;
+}
 
 type BrandContextValue = {
   brandName: string;
@@ -35,7 +92,7 @@ function writeBrandCookies(brand: { slug: string | null; name: string; logoUrl: 
   document.cookie = `${BRAND_COOKIE_LOGO}=${encodeURIComponent(brand.logoUrl ?? "")}; path=/; max-age=${maxAge}; samesite=lax`;
 }
 
-export function BrandProvider({ children }: { children: React.ReactNode }) {
+export function BrandProvider({ children, initialSubdomain }: { children: React.ReactNode; initialSubdomain?: string | null }) {
   const [brand, setBrand] = useState<BrandContextValue>(() => {
     if (typeof window === "undefined") {
       return { brandName: APP_NAME, logoUrl: null, orgSlug: null, loading: false };
@@ -139,6 +196,38 @@ export function BrandProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
+        // Detect subdomain from hostname for portal tenants (e.g., iminndx.activationiq.org)
+        const hostname = window.location.hostname;
+        const hostParts = hostname.split(".");
+        const detectedSubdomain = hostParts.length >= 3 ? hostParts[0] : null;
+        const subdomain = initialSubdomain ?? detectedSubdomain;
+
+        if (subdomain) {
+          const response = await fetch(`/api/public/brand?subdomain=${encodeURIComponent(subdomain)}`, { cache: "no-store" });
+          if (response.ok) {
+            const payload = (await response.json()) as { success: boolean; brand?: OrgBrand };
+            if (payload.success && payload.brand) {
+              const next = {
+                brandName: payload.brand.name || APP_NAME,
+                logoUrl: payload.brand.logoUrl ?? null,
+                orgSlug: payload.brand.slug ?? null,
+                loading: false,
+              };
+              setBrand(next);
+              applyBrandTheme(payload.brand.colorPreset, payload.brand.fontUrl);
+              localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                slug: next.orgSlug,
+                name: next.brandName,
+                logoUrl: next.logoUrl,
+                version: null,
+                cachedAt: Date.now(),
+              }));
+              writeBrandCookies({ slug: next.orgSlug, name: next.brandName, logoUrl: next.logoUrl });
+              return;
+            }
+          }
+        }
+
         const params = new URLSearchParams(window.location.search);
         const querySlug = params.get("org")?.trim().toLowerCase() || null;
         if (querySlug) {
@@ -153,6 +242,8 @@ export function BrandProvider({ children }: { children: React.ReactNode }) {
                 loading: false,
               };
               setBrand(next);
+              // Apply pre-auth theme so login page shows correct colors/font
+              applyBrandTheme(payload.brand.colorPreset, payload.brand.fontUrl);
               localStorage.setItem(STORAGE_KEY, JSON.stringify({
                 slug: next.orgSlug,
                 name: next.brandName,
@@ -181,7 +272,8 @@ export function BrandProvider({ children }: { children: React.ReactNode }) {
     }
 
     void loadBrand();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSubdomain]);
 
   const value = useMemo(() => brand, [brand]);
   return <BrandContext.Provider value={value}>{children}</BrandContext.Provider>;

@@ -6,7 +6,8 @@ import { usePathname } from "next/navigation";
 import BackofficeBrand from "./BackofficeBrand";
 import BackofficeTopNav from "./BackofficeTopNav";
 import BackofficeSessionActions from "./BackofficeSessionActions";
-import { getBackofficeHomeHref, getBackofficeNav } from "./config";
+import { getBackofficeHomeHref } from "./config";
+import { useResolvedNav } from "./useResolvedNav";
 import type { BackofficeRole } from "./types";
 
 export default function BackofficeShell({
@@ -17,7 +18,7 @@ export default function BackofficeShell({
   children: ReactNode;
 }) {
   const pathname = usePathname();
-  const nav = getBackofficeNav(role);
+  const nav = useResolvedNav(role);
   const homeHref = getBackofficeHomeHref(role);
 
   return (

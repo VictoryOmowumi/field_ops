@@ -45,7 +45,7 @@ export default function RequireRole({
         return;
       }
 
-      if (allowedOrgRoles && role !== "super_admin") {
+      if (role !== "super_admin") {
         const token = session.access_token;
         const response = await fetch("/api/auth/context", {
           headers: { Authorization: `Bearer ${token}` },
@@ -63,13 +63,18 @@ export default function RequireRole({
         const result = (await response.json()) as {
           success: boolean;
           user?: {
-            memberships?: Array<{ role?: OrgRole; status?: string }>;
+            memberships?: Array<{ role?: OrgRole; status?: string; organizations?: { status?: string } }>;
           };
         };
         const membership = (result.user?.memberships ?? []).find((m) => m.status === "active")
           ?? (result.user?.memberships ?? [])[0];
 
-        if (!membership?.role || !allowedOrgRoles.includes(membership.role)) {
+        if (membership?.organizations?.status === "suspended") {
+          router.replace("/suspended");
+          return;
+        }
+
+        if (allowedOrgRoles && (!membership?.role || !allowedOrgRoles.includes(membership.role))) {
           router.replace(redirectOnOrgDeniedTo);
           return;
         }

@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { authorizedFetch } from "@/lib/api/client";
+import { useTerminology, useTenantExperience } from "@/components/providers/tenant-experience-provider";
+import CommandCenterDashboard from "@/components/admin/dashboard/CommandCenterDashboard";
 
 type DashboardSummary = {
   activeCampaigns: number;
@@ -53,6 +55,12 @@ type TerritoryPoint = {
 };
 
 export default function AdminDashboardPage() {
+  const { config } = useTenantExperience();
+  if (config.dashboards.variant === "command-center") {
+    return <CommandCenterDashboard />;
+  }
+
+  const t = useTerminology();
   const [showFilters, setShowFilters] = useState(false);
   const [campaignId, setCampaignId] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
@@ -155,9 +163,9 @@ export default function AdminDashboardPage() {
           </div>
           <div className="grid gap-3 md:grid-cols-4">
             <Select value={campaignId} onValueChange={setCampaignId}>
-              <SelectTrigger><SelectValue placeholder="All campaigns" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={`All ${t("campaigns").toLowerCase()}`} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All campaigns</SelectItem>
+                <SelectItem value="all">All {t("campaigns").toLowerCase()}</SelectItem>
                 {(campaignsQuery.data ?? []).map((campaign) => (
                   <SelectItem key={campaign.id} value={campaign.id}>{campaign.name}</SelectItem>
                 ))}
@@ -182,11 +190,11 @@ export default function AdminDashboardPage() {
 
       <section className="grid grid-cols-1 gap-5 lg:grid-cols-12">
         <div className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60 lg:col-span-5">
-          <h2 className="font-semibold">Visit Trend</h2>
-          <p className="text-sm text-muted-foreground">Last 7 days visits and conversions.</p>
+          <h2 className="font-semibold">{t("visit")} Trend</h2>
+          <p className="text-sm text-muted-foreground">Last 7 days {t("visits").toLowerCase()} and {t("conversions").toLowerCase()}.</p>
           <div className="mt-4 mb-5 grid grid-cols-2 gap-4">
-            <MetricMini label="Total visits" value={String(summary?.totalVisits ?? 0)} trend="Live" />
-            <MetricMini label="Conversions" value={String(summary?.conversions ?? 0)} trend={`${summary?.conversionRate.toFixed(1) ?? "0"}%`} />
+            <MetricMini label={`Total ${t("visits").toLowerCase()}`} value={String(summary?.totalVisits ?? 0)} trend="Live" />
+            <MetricMini label={t("conversions")} value={String(summary?.conversions ?? 0)} trend={`${summary?.conversionRate.toFixed(1) ?? "0"}%`} />
           </div>
           <div className="h-52 rounded-3xl bg-background p-4">
             <ResponsiveContainer width="100%" height="100%">
@@ -203,8 +211,8 @@ export default function AdminDashboardPage() {
           <h2 className="font-semibold">Operational Health</h2>
           <p className="text-sm text-muted-foreground">Core data points from filtered records.</p>
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-            <InsightCard icon={UserGroupIcon} title="Active reps" value={String(summary?.activeReps ?? 0)} data={trend} dataKey="visits" />
-            <InsightCard icon={Store01Icon} title="Outlets covered" value={String(summary?.totalOutlets ?? 0)} data={trend} dataKey="conversions" />
+            <InsightCard icon={UserGroupIcon} title={`Active ${t("agents").toLowerCase()}`} value={String(summary?.activeReps ?? 0)} data={trend} dataKey="visits" />
+            <InsightCard icon={Store01Icon} title={`${t("outlets")} covered`} value={String(summary?.totalOutlets ?? 0)} data={trend} dataKey="conversions" />
             <DarkInsightCard failedUploads={pendingUploads} data={failedUploadsTrend} />
           </div>
         </div>
@@ -212,7 +220,7 @@ export default function AdminDashboardPage() {
 
       <section className="grid grid-cols-1 gap-5 lg:grid-cols-12">
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:col-span-5">
-          <SmallStat icon={Chart01Icon} label="Conversion rate" value={`${summary?.conversionRate.toFixed(1) ?? "0"}%`} trend="Live" />
+          <SmallStat icon={Chart01Icon} label={`${t("conversion")} rate`} value={`${summary?.conversionRate.toFixed(1) ?? "0"}%`} trend="Live" />
           <SmallStat
             icon={Chart01Icon}
             label="Sales count with units sold"
@@ -221,11 +229,11 @@ export default function AdminDashboardPage() {
           />
           <SmallStat
             icon={CloudUploadIcon}
-            label="Free samples"
+            label={`${t("freeSample")}s`}
             value={String(summary?.distributedFreeSamples ?? 0)}
             trend={`${(summary?.freeSampleAchievementRate ?? 0).toFixed(1)}% of ${summary?.plannedFreeSamples ?? 0}`}
           />
-          <SmallStat icon={Store01Icon} label="Active campaigns" value={String(summary?.activeCampaigns ?? 0)} trend={`${summary?.totalCampaigns ?? 0} total`} />
+          <SmallStat icon={Store01Icon} label={`Active ${t("campaigns").toLowerCase()}`} value={String(summary?.activeCampaigns ?? 0)} trend={`${summary?.totalCampaigns ?? 0} total`} />
           <SmallStat icon={CloudUploadIcon} label="Field sync health" value={`${summary?.syncHealth.toFixed(1) ?? "100"}%`} trend="Live" />
           <SmallStat icon={Alert01Icon} label="Pending uploads" value={String(pendingUploads)} trend="Derived" />
         </div>
@@ -263,13 +271,13 @@ export default function AdminDashboardPage() {
 
       <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60">
         <h2 className="font-semibold">Recent Field Activity</h2>
-        <p className="text-sm text-muted-foreground">Latest submissions from sales reps.</p>
+        <p className="text-sm text-muted-foreground">Latest submissions from sales {t("agents").toLowerCase()}.</p>
         <div className="mt-4 overflow-hidden rounded-3xl border border-border">
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-muted-foreground">
               <tr>
-                <th className="px-4 py-3 text-left font-medium">Rep</th>
-                <th className="px-4 py-3 text-left font-medium">Outlet</th>
+                <th className="px-4 py-3 text-left font-medium">{t("agent")}</th>
+                <th className="px-4 py-3 text-left font-medium">{t("outlet")}</th>
                 <th className="px-4 py-3 text-left font-medium">Status</th>
                 <th className="px-4 py-3 text-left font-medium">Time</th>
                 <th className="px-4 py-3 text-left font-medium">Action</th>
@@ -279,7 +287,7 @@ export default function AdminDashboardPage() {
               {insightsQuery.isLoading ? (
                 <TableLoadingState colSpan={5} title="Loading activity..." description="Fetching latest submissions." />
               ) : (insightsQuery.data?.recentActivity ?? []).length === 0 ? (
-                <TableEmptyStateRow colSpan={5} title="No recent activity" description="Field activity will appear here after submissions." />
+                <TableEmptyStateRow colSpan={5} title="No recent activity" description={`Field activity will appear here after ${t("agents").toLowerCase()} submit.`} />
               ) : (
                 (insightsQuery.data?.recentActivity ?? []).map((item) => (
                   <tr key={item.id} className="border-t border-border">

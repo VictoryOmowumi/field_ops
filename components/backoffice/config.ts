@@ -13,10 +13,10 @@ import type { BackofficeRole, NavAction, UtilityAction } from "./types";
 
 export const adminNav: NavAction[] = [
   { label: "Dashboard", href: "/admin/dashboard", icon: Home01Icon },
-  { label: "Campaigns", href: "/admin/campaigns", icon: Megaphone01Icon },
-  { label: "Reps", href: "/admin/reps", icon: User03Icon },
-  { label: "Outlets", href: "/admin/outlets", icon: Store01Icon },
-  { label: "Reports", href: "/admin/reports", icon: Analytics02Icon },
+  { label: "Campaigns", href: "/admin/campaigns", icon: Megaphone01Icon, terminologyKey: "campaigns" },
+  { label: "Reps", href: "/admin/reps", icon: User03Icon, terminologyKey: "agents", moduleKey: "agentPerformance" },
+  { label: "Outlets", href: "/admin/outlets", icon: Store01Icon, terminologyKey: "outlets", moduleKey: "outlets" },
+  { label: "Reports", href: "/admin/reports", icon: Analytics02Icon, moduleKey: "reports" },
   { label: "Settings", href: "/admin/settings", icon: GearsIcon },
 ];
 

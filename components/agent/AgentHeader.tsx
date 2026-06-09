@@ -25,18 +25,18 @@ export default function AgentHeader() {
     <header className="sticky top-0 z-30 bg-background/95">
       <div className="py-2 px-4 ">
         <div className="flex items-center justify-between">
-          <div className="">
-            {logoUrl ? (
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center rounded-full bg-white">
-                  <img src={logoUrl} alt={`${brandName} logo`} className="h-8 w-auto max-w-28 object-contain" />
+          <div className="flex items-center gap-2.5">
+            <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-xl bg-primary p-1">
+              {logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- dynamic org logo
+                <img src={logoUrl} alt={brandName} className="h-full w-full object-contain" />
+              ) : (
+                <span className="text-xs font-bold text-primary-foreground">
+                  {brandName.trim().charAt(0).toUpperCase()}
                 </span>
-              </div>
-            ) : (
-              <span className="text-xl font-semibold tracking-tight text-foreground">
-                {brandName}
-              </span>
-            )}
+              )}
+            </span>
+            <span className="text-sm font-semibold text-foreground">{brandName}</span>
           </div>
 
           <div className="flex items-center gap-2">
