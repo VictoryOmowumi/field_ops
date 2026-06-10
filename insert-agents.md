@@ -1,0 +1,120 @@
+TEAM 1	
+NAME	PHONE NUMBER
+RAHIM LADAN 	08091363825
+BLESSING MARKUS 	08064704701
+SARAH ADIKANU 	07037745200
+PEACE YUHANNA 	09064370579
+JOY ALPHA 	08032158241
+HELEN AGI	08099847838
+ATIENCE LIVINUS	08144137796
+PEACE JOSEPH 	07061714017
+MUHAMMAD FATIMA 	09138086789
+BABANGIDA YAKUBU	07012177777
+    
+TEAM 2 	
+Blessing Agu	07037523887
+Blessing Zion Massodi 	8160782912
+Maureen Moses 	09164742939
+Godwin Agu	07077434737
+Margaret Zakariah 	09039593680
+Ochiagha Adaobi Christiana	07032666245
+Paulne Omiliyi	09125595844
+Shirya Markus 	08086719129
+Udoka Peace 	8148499497
+Onongwu Victor 	09127903217
+    
+TEAM 3	
+    
+Mary david	09069707156
+PROMISE David 	08167178833
+MOSES Anthony	07011898904
+SERAH David	08080879012
+MARY Kwagha	08164976758
+JOY Enwelozor 	07080775373
+ESTHER Agodi	09039988298
+JOB Michael	07049026040
+HAPPINESS Michael	09115304367
+ESTHER Elechukwu	07042689035
+    
+Team 4	
+Joseph daniel 	09032325937
+Queen sussce vincent	09157520697
+Elizabeth	08140018897
+Aisha salma	09018243209
+Helen kelvin 	08148383439
+Farida Suleman	07038395310
+Israel David 	07015151683
+Emmanuella Matthew	07079446485
+Sekina rafiu	07011264832
+Musa isah 	08177335335
+    
+TEAM 5	
+cicilia odeh	07031098858
+peace Bernard	07068637879
+Nita idenyi	07067361358
+Esther Danlami	09132323139
+Elizabeth Joshua	08122303043
+NAME:Abraham Joseph	08039321933
+Grace sani	08032822747
+Hope langkat Bernard	07037449004
+Happiness Alexander	09028098545
+Michael amechi	09029773755
+    
+TEAM 6	
+kabiru Muhammed	07045941020
+Patrick eziuche 	08137180745
+Monday Paul 	08101211406
+Francis Daniel	09160192019
+favour oluma	09135439323
+Abdulrashid Muhammed	08139724400
+Sophie Moses Daniel 	08101142655
+Basira Muhammed	09128030298
+Maryam AbdulKareem	08037287436
+Gift Duniya	09030058629
+    
+TEAM 7	
+Maryam Zubairu 	09165150228
+Faiza Buba 	08165614819
+Derek Nwobi 	09131432135
+Starley Yahaya 	09067177082
+Elijah Samson 	08087665463
+Adeyeye Richard 	09165410209
+Cynthia Sheplong 	08101142655
+Blessing Ake 	07065541737
+John christabel 	08037287436
+Suleiman Yahaya 	0813 829 5692
+    
+TEAM 8	
+Gideon Ibrahim 	09077196464
+David	08035163114
+Rachel 	09035326452
+Lydia Okwor 	07038281221
+Blessing 	08035045031
+Deborah Gabriel	08167723919
+Margret	08161889590
+Eunice	09124809260
+Kelvin 	07026497252
+Grace	08165471361
+    
+TEAM 9	
+Chindo Yakubu 	08149042807
+Mathew Anthony 	08135342582
+Precious Orise	08162212181
+Josephine Igwe 	08122005292
+Rejoice John	08126525035
+Nuradeen Adam	08167648108
+Chioma jecinta Obasi	07038297547
+Helen Chigbu	08039269384
+Fatima said Yusuf 	09072211989
+Odobi Patience 	09070849070
+    
+TEAM 10	
+ jerimiar iliyas	08100557672
+Obiefule scholastica	07061446915
+Elizabeth Johnson 	08163031468
+Sunday Deborah 	09033909781
+Peace Asabar nantok 	09113563436
+ Alu Linda 	09063281987
+Patience etim	08066287348
+ Amarachi precious 	07032975755
+Precious 	09138389837

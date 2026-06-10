@@ -57,7 +57,13 @@ function writeCache(entry: CachedExperience) {
   }
 }
 
-export function TenantExperienceProvider({ children }: { children: React.ReactNode }) {
+export function TenantExperienceProvider({
+  children,
+  initialExperienceConfig = null,
+}: {
+  children: React.ReactNode;
+  initialExperienceConfig?: unknown;
+}) {
   const [state, setState] = useState<TenantExperienceContextValue>(() => {
     const cached = readCache();
     const isFresh = typeof cached?.cachedAt === "number" && Date.now() - cached.cachedAt < CACHE_TTL_MS;
@@ -65,6 +71,15 @@ export function TenantExperienceProvider({ children }: { children: React.ReactNo
       return {
         config: resolveTenantExperienceConfig(cached.overrides),
         orgSlug: cached.slug ?? null,
+        loading: false,
+      };
+    }
+    // SSR-resolved config from the subdomain (no auth needed) — renders the
+    // correct ui variant on first paint, before any client cache exists.
+    if (initialExperienceConfig) {
+      return {
+        config: resolveTenantExperienceConfig(initialExperienceConfig),
+        orgSlug: null,
         loading: false,
       };
     }

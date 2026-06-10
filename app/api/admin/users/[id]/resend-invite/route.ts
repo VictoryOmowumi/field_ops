@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-access";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { buildTenantBaseUrl } from "@/lib/tenant/url";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -51,11 +52,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   const { data: organization } = await supabase
     .from("organizations")
-    .select("slug")
+    .select("slug, subdomain")
     .eq("id", membership.organizationId)
     .maybeSingle();
   const orgSlug = organization?.slug?.trim();
-  const redirectTo = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/accept-invite${orgSlug ? `?org=${encodeURIComponent(orgSlug)}` : ""}`;
+  const baseUrl = buildTenantBaseUrl(organization?.subdomain, process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000");
+  const redirectTo = `${baseUrl}/accept-invite${orgSlug ? `?org=${encodeURIComponent(orgSlug)}` : ""}`;
   const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, { redirectTo });
 
   if (inviteError) {

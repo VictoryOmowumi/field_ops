@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { requireSuperAdmin, writePlatformAuditLog } from "@/lib/platform/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { buildTenantBaseUrl } from "@/lib/tenant/url";
 
 function resolveBaseUrl(request: NextRequest) {
   const envUrl = process.env.NEXT_PUBLIC_APP_URL;
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const supabase = createServerSupabaseClient();
   const { data: membership } = await supabase
     .from("organization_users")
-    .select("organization_id, organizations(slug)")
+    .select("organization_id, organizations(slug, subdomain)")
     .eq("user_id", id)
     .order("created_at", { ascending: true })
     .limit(1)
@@ -33,8 +34,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (profileError) return NextResponse.json({ success: false, message: profileError.message }, { status: 500 });
   if (!profile?.email) return NextResponse.json({ success: false, message: "User email not found." }, { status: 400 });
 
-  const baseUrl = resolveBaseUrl(request);
-  const orgSlug = (membership as { organizations?: { slug?: string | null } } | null)?.organizations?.slug?.trim();
+  const orgRecord = (membership as { organizations?: { slug?: string | null; subdomain?: string | null } } | null)?.organizations;
+  const orgSlug = orgRecord?.slug?.trim();
+  const baseUrl = buildTenantBaseUrl(orgRecord?.subdomain, resolveBaseUrl(request));
   const redirectTo = `${baseUrl}/accept-invite${orgSlug ? `?org=${encodeURIComponent(orgSlug)}` : ""}`;
   const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(profile.email, {
     data: {

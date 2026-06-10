@@ -4,6 +4,7 @@ import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-acces
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { generateShareToken, hashShareToken, resolvePublicBaseUrl } from "@/lib/campaign/share";
 import { getBrandByOrganizationId } from "@/lib/branding/server";
+import { buildTenantBaseUrl } from "@/lib/tenant/url";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -186,8 +187,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ success: false, message: error?.message ?? "Failed to create share link." }, { status: 500 });
   }
 
-  const shareUrl = `${resolvePublicBaseUrl(request)}/shared/campaigns/${token}`;
   const orgBrand = await getBrandByOrganizationId(membership.organizationId);
+  const baseUrl = buildTenantBaseUrl(orgBrand?.subdomain, resolvePublicBaseUrl(request));
+  const shareUrl = `${baseUrl}/shared/campaigns/${token}`;
   const brandName = orgBrand?.name ?? "ActivationIQ";
   if (payload.sendEmail) {
     if (!recipientEmail) {

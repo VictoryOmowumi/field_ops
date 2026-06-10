@@ -1,7 +1,7 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { OrgBrand } from "@/lib/branding/types";
 
-const ORG_SELECT = "slug, name, logo_url, brand_primary_color, brand_secondary_color, brand_favicon_ico_url, brand_favicon_16_url, brand_favicon_32_url, brand_apple_touch_icon_url, brand_android_192_url, brand_android_512_url, brand_manifest_url, experience_config";
+const ORG_SELECT = "slug, subdomain, name, logo_url, brand_primary_color, brand_secondary_color, brand_favicon_ico_url, brand_favicon_16_url, brand_favicon_32_url, brand_apple_touch_icon_url, brand_android_192_url, brand_android_512_url, brand_manifest_url, experience_config";
 
 function rowToBrand(data: Record<string, unknown>): OrgBrand {
   const expConfig = (data.experience_config ?? {}) as Record<string, unknown>;
@@ -9,6 +9,7 @@ function rowToBrand(data: Record<string, unknown>): OrgBrand {
   const layout = (expConfig.layout ?? {}) as Record<string, unknown>;
   return {
     slug: data.slug as string,
+    subdomain: (data.subdomain as string | null) ?? null,
     name: data.name as string,
     logoUrl: (data.logo_url as string | null) ?? null,
     brandPrimaryColor: (data.brand_primary_color as string | null) ?? null,
@@ -50,6 +51,20 @@ export async function getBrandBySubdomain(subdomain: string): Promise<OrgBrand |
     .maybeSingle();
   if (error || !data) return null;
   return rowToBrand(data as Record<string, unknown>);
+}
+
+/** Raw experience_config JSON for SSR hydration of TenantExperienceProvider — avoids the classic→enhanced flash on first sign-in. */
+export async function getExperienceConfigBySubdomain(subdomain: string): Promise<unknown | null> {
+  const normalized = subdomain.trim().toLowerCase();
+  if (!normalized) return null;
+  const supabase = createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("organizations")
+    .select("experience_config")
+    .eq("subdomain", normalized)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data.experience_config ?? null;
 }
 
 export async function getBrandByOrganizationId(organizationId: string): Promise<OrgBrand | null> {

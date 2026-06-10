@@ -9,6 +9,7 @@ import { TenantExperienceProvider } from "@/components/providers/tenant-experien
 import { Toaster } from "@/components/ui/sonner";
 import { APP_NAME } from "@/lib/constants";
 import { BRAND_COOKIE_NAME, BRAND_COOKIE_SLUG } from "@/lib/branding/types";
+import { getExperienceConfigBySubdomain } from "@/lib/branding/server";
 
 import "./globals.css";
 import "leaflet/dist/leaflet.css";
@@ -64,13 +65,20 @@ export default async function RootLayout({
   const headersList = await headers();
   const tenantSubdomain = headersList.get("x-tenant-subdomain") ?? null;
 
+  // Resolve the tenant's experience config from the subdomain alone (no auth
+  // required) so the correct ui variant renders on first paint — eliminates
+  // the classic→enhanced flash on first sign-in, before any client cache exists.
+  const initialExperienceConfig = tenantSubdomain
+    ? await getExperienceConfigBySubdomain(tenantSubdomain)
+    : null;
+
   return (
     <html lang="en">
       <body className={`${fontSans.variable} ${fontMono.variable} antialiased`} suppressHydrationWarning={true}>
         <ThemeProvider>
           <PwaRuntimeProvider />
           <BrandProvider initialSubdomain={tenantSubdomain}>
-            <TenantExperienceProvider>{children}</TenantExperienceProvider>
+            <TenantExperienceProvider initialExperienceConfig={initialExperienceConfig}>{children}</TenantExperienceProvider>
           </BrandProvider>
           <Toaster position="top-center" richColors />
         </ThemeProvider>
