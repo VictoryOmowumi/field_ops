@@ -176,6 +176,16 @@ export function CampaignDetailsSections({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [mapActivations, setMapActivations] = useState(0);
+  const [repsPage, setRepsPage] = useState(1);
+
+  const REPS_PAGE_SIZE = 10;
+  const repsTotal = assignedRepRows.length;
+  const repsPageCount = Math.max(1, Math.ceil(repsTotal / REPS_PAGE_SIZE));
+  const currentRepsPage = Math.min(repsPage, repsPageCount);
+  const paginatedRepRows = assignedRepRows.slice(
+    (currentRepsPage - 1) * REPS_PAGE_SIZE,
+    currentRepsPage * REPS_PAGE_SIZE
+  );
 
   const posmConfigured =
     Boolean(campaign.form_requirements?.requirePosmDeployment) ||
@@ -371,12 +381,12 @@ export function CampaignDetailsSections({
               </tr>
             </thead>
             <tbody>
-              {assignedRepRows.length === 0 ? (
+              {paginatedRepRows.length === 0 ? (
                 <tr className="border-t border-border">
                   <td className="px-4 py-6 text-muted-foreground" colSpan={4}>No reps assigned yet.</td>
                 </tr>
               ) : (
-                assignedRepRows.map((row) => (
+                paginatedRepRows.map((row) => (
                   <tr key={row.id} className="border-t border-border hover:bg-muted/20 transition-colors">
                     <td className="px-4 py-3.5 font-medium">{row.name}</td>
                     <td className="px-4 py-3.5 text-muted-foreground">{row.email}</td>
@@ -389,6 +399,34 @@ export function CampaignDetailsSections({
           </table>
         </div>
       </div>
+      {repsTotal > REPS_PAGE_SIZE ? (
+        <div className="mt-3 flex items-center justify-between text-sm text-muted-foreground">
+          <p>
+            Showing {repsTotal === 0 ? 0 : (currentRepsPage - 1) * REPS_PAGE_SIZE + 1}–
+            {Math.min(currentRepsPage * REPS_PAGE_SIZE, repsTotal)} of {repsTotal}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-full"
+              disabled={currentRepsPage <= 1}
+              onClick={() => setRepsPage((p) => Math.max(1, p - 1))}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-full"
+              disabled={currentRepsPage >= repsPageCount}
+              onClick={() => setRepsPage((p) => Math.min(repsPageCount, p + 1))}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 
@@ -704,10 +742,10 @@ export function CampaignDetailsSections({
                 </tr>
               </thead>
               <tbody>
-                {assignedRepRows.length === 0 ? (
+                {paginatedRepRows.length === 0 ? (
                   <tr className="border-t border-border"><td className="px-4 py-6 text-muted-foreground" colSpan={4}>No reps assigned yet.</td></tr>
                 ) : (
-                  assignedRepRows.map((row) => (
+                  paginatedRepRows.map((row) => (
                     <tr key={row.id} className="border-t border-border">
                       <td className="px-4 py-4 font-medium">{row.name}</td>
                       <td className="px-4 py-4 text-muted-foreground">{row.email}</td>
@@ -719,6 +757,34 @@ export function CampaignDetailsSections({
               </tbody>
             </table>
           </div>
+          {repsTotal > REPS_PAGE_SIZE ? (
+            <div className="mt-3 flex items-center justify-between text-sm text-muted-foreground">
+              <p>
+                Showing {repsTotal === 0 ? 0 : (currentRepsPage - 1) * REPS_PAGE_SIZE + 1}–
+                {Math.min(currentRepsPage * REPS_PAGE_SIZE, repsTotal)} of {repsTotal}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full"
+                  disabled={currentRepsPage <= 1}
+                  onClick={() => setRepsPage((p) => Math.max(1, p - 1))}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full"
+                  disabled={currentRepsPage >= repsPageCount}
+                  onClick={() => setRepsPage((p) => Math.min(repsPageCount, p + 1))}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </section>
         <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60">
           <h2 className="font-semibold">Products / SKUs</h2>

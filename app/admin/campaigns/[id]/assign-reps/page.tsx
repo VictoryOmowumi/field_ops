@@ -40,7 +40,7 @@ export default function AssignRepsPage() {
       }
 
       const [usersResponse, assignmentResponse] = await Promise.all([
-        fetch("/api/admin/users", { headers: { Authorization: `Bearer ${token}` } }),
+        fetch("/api/admin/users?pageSize=all", { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`/api/admin/campaigns/${campaignId}/assignments`, { headers: { Authorization: `Bearer ${token}` } }),
       ]);
 
@@ -108,6 +108,16 @@ export default function AssignRepsPage() {
     setSelectedAgents((prev) => (prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]));
   }
 
+  const allAgentsSelected = agents.length > 0 && agents.every((agent) => selectedAgents.includes(agent.id));
+
+  function toggleSelectAllAgents() {
+    if (allAgentsSelected) {
+      setSelectedAgents((prev) => prev.filter((id) => !agents.some((agent) => agent.id === id)));
+    } else {
+      setSelectedAgents((prev) => [...new Set([...prev, ...agents.map((agent) => agent.id)])]);
+    }
+  }
+
   return (
     <div className="space-y-6 pb-10">
       <div className="flex items-start justify-between gap-3">
@@ -148,35 +158,57 @@ export default function AssignRepsPage() {
         </div>
 
         <div className="overflow-hidden rounded-3xl border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-muted-foreground">
-              <tr>
-                <th className="px-4 py-3 text-left font-medium">Assign</th>
-                <th className="px-4 py-3 text-left font-medium">Rep</th>
-                <th className="px-4 py-3 text-left font-medium">Role</th>
-                <th className="px-4 py-3 text-left font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr className="border-t border-border"><td className="px-4 py-6 text-muted-foreground" colSpan={4}>Loading organization users...</td></tr>
-              ) : agents.length === 0 ? (
-                <tr className="border-t border-border"><td className="px-4 py-6 text-muted-foreground" colSpan={4}>No agents found. Invite agents from Users first.</td></tr>
-              ) : (
-                agents.map((rep) => (
-                  <tr key={rep.id} className="border-t border-border">
-                    <td className="px-4 py-4">
-                      <input type="checkbox" checked={selectedAgents.includes(rep.id)} onChange={() => toggleAgent(rep.id)} />
-                    </td>
-                    <td className="px-4 py-4 font-medium">{rep.name}</td>
-                    <td className="px-4 py-4 text-muted-foreground">{rep.role}</td>
-                    <td className="px-4 py-4">{rep.status}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+          <div className="max-h-[480px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10 bg-muted/50 text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium">
+                    {agents.length > 0 ? (
+                      <input
+                        type="checkbox"
+                        className="size-5 cursor-pointer accent-primary"
+                        checked={allAgentsSelected}
+                        onChange={toggleSelectAllAgents}
+                        aria-label="Select all agents"
+                      />
+                    ) : (
+                      "Assign"
+                    )}
+                  </th>
+                  <th className="px-4 py-3 text-left font-medium">Rep</th>
+                  <th className="px-4 py-3 text-left font-medium">Role</th>
+                  <th className="px-4 py-3 text-left font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr className="border-t border-border"><td className="px-4 py-6 text-muted-foreground" colSpan={4}>Loading organization users...</td></tr>
+                ) : agents.length === 0 ? (
+                  <tr className="border-t border-border"><td className="px-4 py-6 text-muted-foreground" colSpan={4}>No agents found. Invite agents from Users first.</td></tr>
+                ) : (
+                  agents.map((rep) => (
+                    <tr key={rep.id} className="border-t border-border">
+                      <td className="px-4 py-4">
+                        <input
+                          type="checkbox"
+                          className="size-5 cursor-pointer accent-primary"
+                          checked={selectedAgents.includes(rep.id)}
+                          onChange={() => toggleAgent(rep.id)}
+                        />
+                      </td>
+                      <td className="px-4 py-4 font-medium">{rep.name}</td>
+                      <td className="px-4 py-4 text-muted-foreground">{rep.role}</td>
+                      <td className="px-4 py-4">{rep.status}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
+        {agents.length > 0 ? (
+          <p className="text-xs text-muted-foreground">{selectedAgents.length} of {agents.length} agents selected</p>
+        ) : null}
 
         <div className="flex justify-end">
           <Button className="rounded-full px-6" onClick={saveAssignments} disabled={saving || loading}>
