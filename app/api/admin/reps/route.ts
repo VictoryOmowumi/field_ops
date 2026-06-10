@@ -48,6 +48,12 @@ export async function GET(request: NextRequest) {
   const membership = await getOrgMembershipForUser(user.id);
   if (!membership || !hasAllowedOrgRole(membership.role, ["org_admin", "supervisor"])) return forbidden();
 
+  const page = Math.max(1, Number(request.nextUrl.searchParams.get("page") ?? "1") || 1);
+  const pageSize = Math.min(50, Math.max(1, Number(request.nextUrl.searchParams.get("pageSize") ?? "20") || 20));
+  const search = (request.nextUrl.searchParams.get("search") ?? "").trim().toLowerCase();
+  const statusFilter = (request.nextUrl.searchParams.get("status") ?? "all").trim();
+  const stateFilter = (request.nextUrl.searchParams.get("state") ?? "all").trim();
+
   const supabase = createServerSupabaseClient();
   let query = supabase
     .from("rep_profiles")
@@ -136,14 +142,6 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const authUsersMap = new Map<string, string | null>();
-  await Promise.all(
-    userIds.map(async (repUserId) => {
-      const { data: authUserData } = await supabase.auth.admin.getUserById(repUserId);
-      authUsersMap.set(repUserId, authUserData.user?.last_sign_in_at ?? null);
-    })
-  );
-
   const campaignByUser = new Map<string, Array<{ id: string; name: string }>>();
   for (const row of assignments ?? []) {
     const list = campaignByUser.get(row.user_id) ?? [];
@@ -154,7 +152,7 @@ export async function GET(request: NextRequest) {
     campaignByUser.set(row.user_id, list);
   }
 
-  const items = mergedReps.map((rep) => {
+  const allItems = mergedReps.map((rep) => {
     const repProfile = profileMap.get(rep.user_id);
     const supervisorProfile = rep.assigned_supervisor_user_id
       ? profileMap.get(rep.assigned_supervisor_user_id)
@@ -166,6 +164,7 @@ export async function GET(request: NextRequest) {
       displayName: repProfile?.full_name ?? repProfile?.email ?? "Unnamed Rep",
       email: repProfile?.email ?? null,
       phone: repProfile?.phone ?? null,
+      state: rep.state ?? null,
       territory: [rep.lga, rep.state].filter(Boolean).join(", "),
       status: orgAgentMap.get(rep.user_id) ?? rep.status,
       targetOutlets: rep.target_outlets,
@@ -177,14 +176,40 @@ export async function GET(request: NextRequest) {
       dailyRate: rep.daily_rate,
       commissionRate: rep.commission_rate,
       supervisor: supervisorProfile?.full_name ?? null,
-      lastSignInAt: authUsersMap.get(rep.user_id) ?? null,
+      lastSignInAt: null as string | null,
       lastActivityAt: lastActivityMap.get(rep.user_id) ?? null,
       campaignIds: (campaignByUser.get(rep.user_id) ?? []).map((x) => x.id),
       campaigns: campaignByUser.get(rep.user_id) ?? [],
     };
   });
 
-  return NextResponse.json({ success: true, reps: items });
+  const states = [...new Set(allItems.map((item) => item.state).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b));
+
+  const filteredItems = allItems.filter((item) => {
+    if (statusFilter !== "all" && item.status !== statusFilter) return false;
+    if (stateFilter !== "all" && item.state !== stateFilter) return false;
+    if (search) {
+      const haystack = [item.displayName, item.email, item.phone, item.repCode, item.territory]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      if (!haystack.includes(search)) return false;
+    }
+    return true;
+  });
+
+  const total = filteredItems.length;
+  const from = (page - 1) * pageSize;
+  const pageItems = filteredItems.slice(from, from + pageSize);
+
+  await Promise.all(
+    pageItems.map(async (item) => {
+      const { data: authUserData } = await supabase.auth.admin.getUserById(item.userId);
+      item.lastSignInAt = authUserData.user?.last_sign_in_at ?? null;
+    })
+  );
+
+  return NextResponse.json({ success: true, reps: pageItems, total, page, pageSize, states });
 }
 
 export async function POST(request: NextRequest) {

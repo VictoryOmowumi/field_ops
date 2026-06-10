@@ -13,13 +13,19 @@ function forbidden() {
   return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
 }
 
-export async function GET(_request: NextRequest) {
-  const user = await getAuthenticatedUserFromRequest(_request);
+export async function GET(request: NextRequest) {
+  const user = await getAuthenticatedUserFromRequest(request);
   if (!user) return unauthorized();
   if (!hasRequiredRole(user, ["admin", "super_admin"])) return forbidden();
 
   const membership = await getOrgMembershipForUser(user.id);
   if (!membership || !hasAllowedOrgRole(membership.role, ["org_admin"])) return forbidden();
+
+  const page = Math.max(1, Number(request.nextUrl.searchParams.get("page") ?? "1") || 1);
+  const pageSize = Math.min(50, Math.max(1, Number(request.nextUrl.searchParams.get("pageSize") ?? "20") || 20));
+  const search = (request.nextUrl.searchParams.get("search") ?? "").trim().toLowerCase();
+  const roleFilter = (request.nextUrl.searchParams.get("role") ?? "all").trim();
+  const statusFilter = (request.nextUrl.searchParams.get("status") ?? "all").trim();
 
   const supabase = createServerSupabaseClient();
   const { data: members, error: membersError } = await supabase
@@ -58,7 +64,7 @@ export async function GET(_request: NextRequest) {
   }
 
   const byUserId = new Map((profiles ?? []).map((p) => [p.user_id, p]));
-  const users = (members ?? []).map((member) => {
+  const allUsers = (members ?? []).map((member) => {
     const profile = byUserId.get(member.user_id);
     const authUser = authByUserId.get(member.user_id);
     const resolvedEmail = profile?.email ?? authUser?.email ?? null;
@@ -82,5 +88,24 @@ export async function GET(_request: NextRequest) {
     };
   });
 
-  return NextResponse.json({ success: true, users });
+  const roles = [...new Set(allUsers.map((item) => item.organizationRole).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
+  const filteredUsers = allUsers.filter((item) => {
+    if (roleFilter !== "all" && item.organizationRole !== roleFilter) return false;
+    if (statusFilter !== "all" && item.status !== statusFilter) return false;
+    if (search) {
+      const haystack = [item.displayName, item.email, item.organizationRole, item.appRole]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      if (!haystack.includes(search)) return false;
+    }
+    return true;
+  });
+
+  const total = filteredUsers.length;
+  const from = (page - 1) * pageSize;
+  const users = filteredUsers.slice(from, from + pageSize);
+
+  return NextResponse.json({ success: true, users, total, page, pageSize, roles });
 }
