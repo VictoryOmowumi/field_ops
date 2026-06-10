@@ -1,5 +1,6 @@
 export type OrgBrand = {
   slug: string;
+  subdomain: string | null;
   name: string;
   logoUrl: string | null;
   brandPrimaryColor: string | null;

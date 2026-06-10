@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { buildTenantBaseUrl } from "@/lib/tenant/url";
 
 function resolveBaseUrl(request: NextRequest) {
   const envUrl = process.env.NEXT_PUBLIC_SITE_URL;
@@ -29,13 +30,13 @@ export async function POST(
 
   const { id } = await params;
   const supabase = createServerSupabaseClient();
-  const baseUrl = resolveBaseUrl(request);
   const { data: organization } = await supabase
     .from("organizations")
-    .select("slug")
+    .select("slug, subdomain")
     .eq("id", id)
     .maybeSingle();
   const orgSlug = organization?.slug?.trim();
+  const baseUrl = buildTenantBaseUrl(organization?.subdomain, resolveBaseUrl(request));
   const redirectTo = `${baseUrl}/accept-invite${orgSlug ? `?org=${encodeURIComponent(orgSlug)}` : ""}`;
 
   const { data: membership, error: membershipError } = await supabase
