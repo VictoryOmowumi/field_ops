@@ -22,7 +22,9 @@ export async function GET(request: NextRequest) {
   if (!membership || !hasAllowedOrgRole(membership.role, ["org_admin"])) return forbidden();
 
   const page = Math.max(1, Number(request.nextUrl.searchParams.get("page") ?? "1") || 1);
-  const pageSize = Math.min(50, Math.max(1, Number(request.nextUrl.searchParams.get("pageSize") ?? "20") || 20));
+  const pageSizeParam = request.nextUrl.searchParams.get("pageSize");
+  const fetchAll = pageSizeParam === "all";
+  const pageSize = Math.min(50, Math.max(1, Number(pageSizeParam ?? "20") || 20));
   const search = (request.nextUrl.searchParams.get("search") ?? "").trim().toLowerCase();
   const roleFilter = (request.nextUrl.searchParams.get("role") ?? "all").trim();
   const statusFilter = (request.nextUrl.searchParams.get("status") ?? "all").trim();
@@ -105,7 +107,7 @@ export async function GET(request: NextRequest) {
 
   const total = filteredUsers.length;
   const from = (page - 1) * pageSize;
-  const users = filteredUsers.slice(from, from + pageSize);
+  const users = fetchAll ? filteredUsers : filteredUsers.slice(from, from + pageSize);
 
   return NextResponse.json({ success: true, users, total, page, pageSize, roles });
 }
