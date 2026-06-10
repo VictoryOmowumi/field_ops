@@ -8,7 +8,7 @@ import { buildTenantBaseUrl } from "@/lib/tenant/url";
 
 type CreateRepPayload = {
   fullName: string;
-  email: string;
+  email?: string;
   phone?: string;
   state?: string;
   lga?: string;
@@ -227,7 +227,7 @@ export async function POST(request: NextRequest) {
 
   const payload = (await request.json()) as Partial<CreateRepPayload>;
   if (!payload.fullName?.trim()) return badRequest("Full name is required.");
-  if (!payload.email?.trim()) return badRequest("Email is required.");
+  if (!payload.email?.trim() && !payload.phone?.trim()) return badRequest("Provide at least an email or a phone number.");
 
   let normalizedPhone: string | null = null;
   if (payload.phone?.trim()) {
@@ -236,44 +236,67 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createServerSupabaseClient();
-  const email = payload.email.trim().toLowerCase();
+  const email = payload.email?.trim().toLowerCase() || null;
+  const fullName = payload.fullName.trim();
   const nowIso = new Date().toISOString();
   const repCode = `REP-${Date.now().toString().slice(-6)}`;
-  const { data: organization } = await supabase
-    .from("organizations")
-    .select("slug, subdomain")
-    .eq("id", membership.organizationId)
-    .maybeSingle();
-  const orgSlug = organization?.slug?.trim();
-  const baseUrl = buildTenantBaseUrl(organization?.subdomain, process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000");
-  const redirectTo = `${baseUrl}/accept-invite${orgSlug ? `?org=${encodeURIComponent(orgSlug)}` : ""}`;
 
-  const { data: invited, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
-    data: { role: "agent", org_role: "agent" },
-    redirectTo,
-  });
-  if (inviteError || !invited.user) {
-    return NextResponse.json({ success: false, message: inviteError?.message ?? "Failed to invite rep." }, { status: 500 });
-  }
+  let invitedUserId: string;
+  let memberStatus: "invited" | "active" = "active";
+  let acceptedAt: string | null = nowIso;
+  let inviteSentAt: string | null = null;
 
-  const invitedUserId = invited.user.id;
+  if (email) {
+    const { data: organization } = await supabase
+      .from("organizations")
+      .select("slug, subdomain")
+      .eq("id", membership.organizationId)
+      .maybeSingle();
+    const orgSlug = organization?.slug?.trim();
+    const baseUrl = buildTenantBaseUrl(organization?.subdomain, process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000");
+    const redirectTo = `${baseUrl}/accept-invite${orgSlug ? `?org=${encodeURIComponent(orgSlug)}` : ""}`;
 
-  if (normalizedPhone) {
-    const { error: phoneLinkError } = await supabase.auth.admin.updateUserById(invitedUserId, {
-      phone: normalizedPhone,
-      phone_confirm: true,
+    const { data: invited, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
+      data: { role: "agent", org_role: "agent" },
+      redirectTo,
     });
-    if (phoneLinkError) {
-      return NextResponse.json({ success: false, message: `Failed to link phone number: ${phoneLinkError.message}` }, { status: 500 });
+    if (inviteError || !invited.user) {
+      return NextResponse.json({ success: false, message: inviteError?.message ?? "Failed to invite rep." }, { status: 500 });
     }
+    invitedUserId = invited.user.id;
+    memberStatus = "invited";
+    acceptedAt = null;
+    inviteSentAt = nowIso;
+
+    if (normalizedPhone) {
+      const { error: phoneLinkError } = await supabase.auth.admin.updateUserById(invitedUserId, {
+        phone: normalizedPhone,
+        phone_confirm: true,
+      });
+      if (phoneLinkError) {
+        return NextResponse.json({ success: false, message: `Failed to link phone number: ${phoneLinkError.message}` }, { status: 500 });
+      }
+    }
+  } else {
+    const { data: created, error: createError } = await supabase.auth.admin.createUser({
+      phone: normalizedPhone!,
+      phone_confirm: true,
+      app_metadata: { role: "agent" },
+      user_metadata: { full_name: fullName, role: "agent" },
+    });
+    if (createError || !created.user) {
+      return NextResponse.json({ success: false, message: createError?.message ?? "Failed to create rep." }, { status: 500 });
+    }
+    invitedUserId = created.user.id;
   }
 
   const { error: profileError } = await supabase.from("profiles").upsert(
     {
       user_id: invitedUserId,
-      full_name: payload.fullName.trim(),
+      full_name: fullName,
       email,
       phone: normalizedPhone,
+      auth_method: email ? "email" : "phone",
       phone_verified_at: normalizedPhone ? nowIso : null,
       updated_at: nowIso,
     },
@@ -286,9 +309,9 @@ export async function POST(request: NextRequest) {
       organization_id: membership.organizationId,
       user_id: invitedUserId,
       role: "agent",
-      status: "invited",
-      invite_sent_at: nowIso,
-      accepted_at: null,
+      status: memberStatus,
+      invite_sent_at: inviteSentAt,
+      accepted_at: acceptedAt,
       updated_at: nowIso,
     },
     { onConflict: "organization_id,user_id" }

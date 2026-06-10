@@ -81,6 +81,9 @@ export default function EditRepPage() {
 function RepEditForm({ rep, campaigns, users }: { rep: Rep; campaigns: Campaign[]; users: User[] }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
+  const [fullName, setFullName] = useState(rep.fullName ?? "");
+  const [email, setEmail] = useState(rep.email ?? "");
+  const [phone, setPhone] = useState(rep.phone ?? "");
   const [assignedSupervisorUserId, setAssignedSupervisorUserId] = useState(rep.assignedSupervisorUserId ?? "none");
   const [targetOutlets, setTargetOutlets] = useState(rep.targetOutlets?.toString() ?? "");
   const [targetConversions, setTargetConversions] = useState(rep.targetConversions?.toString() ?? "");
@@ -101,12 +104,23 @@ function RepEditForm({ rep, campaigns, users }: { rep: Rep; campaigns: Campaign[
   const supervisors = users.filter((u) => u.organizationRole === "supervisor" || u.organizationRole === "org_admin");
 
   async function save() {
+    if (!fullName.trim()) {
+      toast.error("Full name is required.");
+      return;
+    }
+    if (!email.trim() && !phone.trim()) {
+      toast.error("Provide at least an email or a phone number.");
+      return;
+    }
     setSaving(true);
     try {
       await authorizedFetch<{ success: boolean }>(`/api/admin/reps/${rep.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          fullName: fullName.trim(),
+          email: email.trim() || null,
+          phone: phone.trim() || null,
           state: state || null,
           lga: lga || null,
           targetOutlets: targetOutlets ? Number(targetOutlets) : null,
@@ -144,9 +158,9 @@ function RepEditForm({ rep, campaigns, users }: { rep: Rep; campaigns: Campaign[
 
       <section className="rounded-4xl bg-card p-6 shadow-sm ring-1 ring-border/60 space-y-5">
         <div className="grid gap-5 md:grid-cols-2">
-          <Field label="Full name"><Input value={rep.fullName} disabled /></Field>
-          <Field label="Email"><Input value={rep.email ?? ""} disabled /></Field>
-          <Field label="Phone"><Input value={rep.phone ?? ""} disabled /></Field>
+          <Field label="Full name"><Input value={fullName} onChange={(e) => setFullName(e.target.value)} /></Field>
+          <Field label="Email"><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+          <Field label="Phone"><Input value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
           <Field label="State">
             <Select
               value={state || "none"}
@@ -211,7 +225,7 @@ function RepEditForm({ rep, campaigns, users }: { rep: Rep; campaigns: Campaign[
                 {campaigns.length === 0 ? (
                   <ComboboxEmpty>No campaigns found.</ComboboxEmpty>
                 ) : null}
-                <ComboboxList>
+                <ComboboxList getSearchValue={(id) => campaigns.find((campaign) => campaign.id === id)?.name ?? id}>
                   {(id) => {
                     const match = campaigns.find((campaign) => campaign.id === id);
                     return (

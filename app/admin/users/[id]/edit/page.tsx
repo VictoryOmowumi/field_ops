@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import UserStatusBadge from "@/components/admin/UserStatusBadge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { authorizedFetch } from "@/lib/api/client";
@@ -16,15 +17,14 @@ type UserDetails = {
   id: string;
   displayName: string;
   email: string | null;
+  phone: string | null;
   organizationRole: "org_admin" | "supervisor" | "agent";
   status: "active" | "inactive" | "invited" | "suspended";
 };
 
 export default function EditUserPage() {
   const params = useParams<{ id: string }>();
-  const router = useRouter();
   const userId = params.id;
-  const [saving, setSaving] = useState(false);
 
   const query = useQuery({
     queryKey: ["admin-user-edit", userId],
@@ -34,33 +34,7 @@ export default function EditUserPage() {
     },
   });
 
-  const user = query.data;
-  const [draft, setDraft] = useState<{
-    role?: UserDetails["organizationRole"];
-    status?: UserDetails["status"];
-  }>({});
-
   if (query.error) toast.error((query.error as Error).message);
-
-  async function save() {
-    if (!user) return;
-    const role = draft.role ?? user.organizationRole;
-    const status = draft.status ?? user.status;
-    setSaving(true);
-    try {
-      await authorizedFetch<{ success: boolean }>(`/api/admin/users/${user.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role, status }),
-      });
-      toast.success("User updated.");
-      router.push(`/admin/users/${user.id}`);
-    } catch (error) {
-      toast.error((error as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  }
 
   if (query.isLoading) {
     return (
@@ -76,30 +50,78 @@ export default function EditUserPage() {
       </div>
     );
   }
-  if (!user) return <div className="rounded-4xl bg-card p-10 text-center ring-1 ring-border/60">User not found.</div>;
+  if (!query.data) return <div className="rounded-4xl bg-card p-10 text-center ring-1 ring-border/60">User not found.</div>;
+
+  return <UserEditForm key={query.data.id} user={query.data} />;
+}
+
+function UserEditForm({ user }: { user: UserDetails }) {
+  const router = useRouter();
+  const [saving, setSaving] = useState(false);
+  const [fullName, setFullName] = useState(user.displayName ?? "");
+  const [email, setEmail] = useState(user.email ?? "");
+  const [phone, setPhone] = useState(user.phone ?? "");
+  const [role, setRole] = useState<UserDetails["organizationRole"]>(user.organizationRole);
+  const [status, setStatus] = useState<UserDetails["status"]>(user.status);
+
+  async function save() {
+    if (!fullName.trim()) {
+      toast.error("Full name is required.");
+      return;
+    }
+    if (!email.trim() && !phone.trim()) {
+      toast.error("Provide at least an email or a phone number.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await authorizedFetch<{ success: boolean }>(`/api/admin/users/${user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName: fullName.trim(),
+          email: email.trim() || null,
+          phone: phone.trim() || null,
+          role,
+          status,
+        }),
+      });
+      toast.success("User updated.");
+      router.push(`/admin/users/${user.id}`);
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 pb-10">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Edit User</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Update role and account status.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Update profile details, role, and account status.</p>
         </div>
         <Button variant="outline" className="rounded-full" asChild><Link href={`/admin/users/${user.id}`}>Cancel</Link></Button>
       </div>
       <section className="rounded-4xl bg-card p-6 shadow-sm ring-1 ring-border/60 space-y-4">
-        <div>
-          <p className="font-medium">{user.displayName}</p>
-          <p className="text-sm text-muted-foreground">{user.email ?? "-"}</p>
-        </div>
-        <div className="flex items-center gap-2"><span className="text-sm">Current:</span><UserStatusBadge status={user.status} /></div>
+        <div className="flex items-center gap-2"><span className="text-sm">Current status:</span><UserStatusBadge status={user.status} /></div>
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
+            <p className="text-sm font-medium">Full name</p>
+            <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Email</p>
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Phone</p>
+            <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+          </div>
+          <div className="space-y-2">
             <p className="text-sm font-medium">Organization role</p>
-            <Select
-              value={draft.role ?? user.organizationRole}
-              onValueChange={(value: UserDetails["organizationRole"]) => setDraft((prev) => ({ ...prev, role: value }))}
-            >
+            <Select value={role} onValueChange={(value: UserDetails["organizationRole"]) => setRole(value)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="org_admin">Organization Admin</SelectItem>
@@ -110,10 +132,7 @@ export default function EditUserPage() {
           </div>
           <div className="space-y-2">
             <p className="text-sm font-medium">Status</p>
-            <Select
-              value={draft.status ?? user.status}
-              onValueChange={(value: UserDetails["status"]) => setDraft((prev) => ({ ...prev, status: value }))}
-            >
+            <Select value={status} onValueChange={(value: UserDetails["status"]) => setStatus(value)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="active">Active</SelectItem>
@@ -132,4 +151,3 @@ export default function EditUserPage() {
     </div>
   );
 }
-

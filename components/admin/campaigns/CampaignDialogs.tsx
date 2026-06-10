@@ -126,7 +126,7 @@ export function AssignRepsDialog({
               </ComboboxChips>
               <ComboboxContent>
                 {supervisors.length === 0 ? <ComboboxEmpty>No supervisors found.</ComboboxEmpty> : null}
-                <ComboboxList>
+                <ComboboxList getSearchValue={(id) => { const found = supervisors.find((item) => item.id === id); return found?.displayName ?? found?.name ?? id; }}>
                   {(id) => {
                     const found = supervisors.find((item) => item.id === id);
                     return <ComboboxItem key={id} value={id}>{found?.displayName ?? found?.name ?? id}</ComboboxItem>;
@@ -275,7 +275,7 @@ export function AssignRepsDialog({
                   </ComboboxChips>
                   <ComboboxContent>
                     {registerCampaignOptions.length === 0 ? <ComboboxEmpty>No campaigns found.</ComboboxEmpty> : null}
-                    <ComboboxList>
+                    <ComboboxList getSearchValue={(id) => registerCampaignOptions.find((item) => item.id === id)?.name ?? id}>
                       {(id) => {
                         const found = registerCampaignOptions.find((item) => item.id === id);
                         return <ComboboxItem key={id} value={id}>{found?.name ?? id}</ComboboxItem>;

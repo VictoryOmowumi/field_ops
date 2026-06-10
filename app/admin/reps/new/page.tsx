@@ -146,7 +146,7 @@ export default function NewRepPage() {
                 {campaigns.length === 0 ? (
                   <ComboboxEmpty>No campaigns found.</ComboboxEmpty>
                 ) : null}
-                <ComboboxList >
+                <ComboboxList getSearchValue={(id) => campaigns.find((campaign) => campaign.id === id)?.name ?? id}>
                   {(id) => {
                     const match = campaigns.find((campaign) => campaign.id === id);
                     return (

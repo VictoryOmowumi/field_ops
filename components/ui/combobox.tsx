@@ -184,12 +184,14 @@ export function ComboboxEmpty({ children }: { children: React.ReactNode }) {
 
 export function ComboboxList({
   children,
+  getSearchValue,
 }: {
   children: (item: string) => React.ReactNode;
+  getSearchValue?: (item: string) => string;
 }) {
   const { items, search } = useCombobox();
   const filteredItems = items.filter((item) =>
-    item.toLowerCase().includes(search.toLowerCase())
+    (getSearchValue ? getSearchValue(item) : item).toLowerCase().includes(search.toLowerCase())
   );
   return <div className="space-y-2 m-2">{filteredItems.map((item) => children(item))}</div>;
 }

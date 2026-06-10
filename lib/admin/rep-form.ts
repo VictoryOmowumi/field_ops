@@ -40,14 +40,14 @@ export function createDefaultRepFormValues(): RepFormValues {
 
 export function validateRepForm(values: RepFormValues): string | null {
   if (!values.fullName.trim()) return "Full name is required.";
-  if (!values.email.trim()) return "Email is required.";
+  if (!values.email.trim() && !values.phone.trim()) return "Provide at least an email or a phone number.";
   return null;
 }
 
 export function buildCreateRepPayload(values: RepFormValues) {
   return {
     fullName: values.fullName,
-    email: values.email,
+    email: values.email || undefined,
     phone: values.phone || undefined,
     state: values.selectedState || undefined,
     lga: values.selectedLga || undefined,
