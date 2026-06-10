@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
-import { getBrandBySlug } from "@/lib/branding/server";
+import { getBrandBySlug, getBrandBySubdomain } from "@/lib/branding/server";
 import { APP_NAME } from "@/lib/constants";
 import { BRAND_COOKIE_SLUG, BRAND_COOKIE_NAME } from "@/lib/branding/types";
 
@@ -22,12 +22,20 @@ const PRESET_HEX: Record<string, string> = {
 
 export default async function manifest(): Promise<MetadataRoute.Manifest> {
   const store = await cookies();
+  const headersList = await headers();
   const cookieName = store.get(BRAND_COOKIE_NAME)?.value || APP_NAME;
   const slug = store.get(BRAND_COOKIE_SLUG)?.value || "";
+  // Subdomain is set by the proxy from the request host — authoritative even
+  // before the brand cookie is populated client-side (e.g. first PWA install).
+  const tenantSubdomain = headersList.get("x-tenant-subdomain") || "";
 
   // Fetch brand — gives us the real org name, color preset, and primary color.
-  // Falls back gracefully if the slug cookie isn't set yet (pre-login).
-  const brand = slug ? await getBrandBySlug(slug) : null;
+  // Prefer subdomain (works pre-cookie); fall back to the brand cookie slug.
+  const brand = tenantSubdomain
+    ? await getBrandBySubdomain(tenantSubdomain)
+    : slug
+    ? await getBrandBySlug(slug)
+    : null;
 
   const appName = brand?.name ?? cookieName;
   // Keep short_name ≤ 12 chars — Android launcher truncates beyond that.
@@ -41,8 +49,13 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     ?? brand?.brandPrimaryColor
     ?? PRESET_HEX.default;
 
-  const orgParam = slug ? `&org=${encodeURIComponent(slug)}` : "";
-  const iconOrg  = slug ? `?org=${encodeURIComponent(slug)}` : "";
+  const iconQueryParam = tenantSubdomain
+    ? `subdomain=${encodeURIComponent(tenantSubdomain)}`
+    : slug
+    ? `org=${encodeURIComponent(slug)}`
+    : "";
+  const orgParam = iconQueryParam ? `&${iconQueryParam}` : "";
+  const iconOrg  = iconQueryParam ? `?${iconQueryParam}` : "";
   const manifestStart = slug ? `/login?org=${encodeURIComponent(slug)}` : "/login";
 
   return {
