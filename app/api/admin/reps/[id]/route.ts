@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-access";
+import { normalizePhoneToE164 } from "@/lib/auth/phone";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 type UpdateRepPayload = {
   fullName?: string;
-  email?: string;
-  phone?: string;
+  email?: string | null;
+  phone?: string | null;
   state?: string | null;
   lga?: string | null;
   targetOutlets?: number | null;
@@ -34,6 +35,10 @@ function unauthorized() {
 
 function forbidden() {
   return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
+}
+
+function badRequest(message: string) {
+  return NextResponse.json({ success: false, message }, { status: 400 });
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {
@@ -238,15 +243,35 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   }
 
   if (payload.fullName !== undefined || payload.email !== undefined || payload.phone !== undefined) {
+    let normalizedPhone: string | null | undefined = undefined;
+    if (payload.phone !== undefined) {
+      normalizedPhone = payload.phone ? normalizePhoneToE164(payload.phone.trim()) : null;
+      if (payload.phone && !normalizedPhone) return badRequest("Enter a valid phone number.");
+    }
+
+    if (payload.fullName !== undefined && !payload.fullName.trim()) return badRequest("Full name is required.");
+    if (payload.email !== undefined && normalizedPhone !== undefined && !payload.email && !normalizedPhone) {
+      return badRequest("Provide at least an email or a phone number.");
+    }
+
+    const profilePatch: Record<string, unknown> = {};
+    if (payload.fullName !== undefined) profilePatch.full_name = payload.fullName.trim();
+    if (payload.email !== undefined) profilePatch.email = payload.email ? payload.email.trim().toLowerCase() : null;
+    if (normalizedPhone !== undefined) profilePatch.phone = normalizedPhone;
+
     const { error: profileError } = await supabase
       .from("profiles")
-      .update({
-        full_name: payload.fullName,
-        email: payload.email,
-        phone: payload.phone,
-      })
+      .update(profilePatch)
       .eq("user_id", rep.user_id);
     if (profileError) return NextResponse.json({ success: false, message: profileError.message }, { status: 500 });
+
+    const authPatch: Record<string, unknown> = {};
+    if (payload.email !== undefined) authPatch.email = payload.email ? payload.email.trim().toLowerCase() : null;
+    if (normalizedPhone !== undefined) authPatch.phone = normalizedPhone;
+    if (Object.keys(authPatch).length > 0) {
+      const { error: authUpdateError } = await supabase.auth.admin.updateUserById(rep.user_id, authPatch);
+      if (authUpdateError) return NextResponse.json({ success: false, message: authUpdateError.message }, { status: 500 });
+    }
   }
 
   if (payload.campaignIds) {

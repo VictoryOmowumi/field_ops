@@ -19,8 +19,12 @@ export default function NewUserPage() {
   const [submitting, setSubmitting] = useState(false);
 
   async function inviteUser() {
-    if (!fullName.trim() || !email.trim()) {
-      toast.error("Full name and email are required.");
+    if (!fullName.trim()) {
+      toast.error("Full name is required.");
+      return;
+    }
+    if (!email.trim() && !phone.trim()) {
+      toast.error("Provide at least an email or a phone number.");
       return;
     }
 
@@ -43,7 +47,7 @@ export default function NewUserPage() {
       },
       body: JSON.stringify({
         fullName,
-        email,
+        email: email || undefined,
         phone: phone || undefined,
         role,
       }),
@@ -75,8 +79,8 @@ export default function NewUserPage() {
 
       <section className="rounded-4xl bg-card p-6 shadow-sm ring-1 ring-border/60 space-y-4">
         <Input placeholder="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
-        <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-        <Input placeholder="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        <Input type="email" placeholder="Email (optional if phone is provided)" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <Input placeholder="Phone (optional if email is provided)" value={phone} onChange={(e) => setPhone(e.target.value)} />
         <Select value={role} onValueChange={(value: "org_admin" | "supervisor" | "agent") => setRole(value)}>
           <SelectTrigger><SelectValue placeholder="Role" /></SelectTrigger>
           <SelectContent>
