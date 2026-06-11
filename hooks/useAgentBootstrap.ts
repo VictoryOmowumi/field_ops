@@ -10,6 +10,7 @@ export type AgentBootstrap = {
     fullName?: string;
     email?: string | null;
     phone?: string | null;
+    mustChangePassword?: boolean;
     organizationId?: string;
     organizationRole?: string;
   };

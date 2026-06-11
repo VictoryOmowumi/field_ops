@@ -13,6 +13,7 @@ import {
 } from "@hugeicons/core-free-icons";
 
 import LogoutButton from "@/components/auth/LogoutButton";
+import ChangePasswordForm from "@/components/agent/ChangePasswordForm";
 import InstallAppButton from "@/components/pwa/InstallAppButton";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAgentBootstrap } from "@/hooks/useAgentBootstrap";
@@ -96,6 +97,22 @@ export default function ProfilePage() {
             value={role}
           />
         </div>
+
+        {bootstrap?.profile.mustChangePassword ? (
+          <p className="mt-4 rounded-2xl bg-amber-500/10 px-4 py-3 text-xs font-medium text-amber-600 ring-1 ring-amber-500/20">
+            You&apos;re using a default password. Please update it below for security.
+          </p>
+        ) : null}
+      </section>
+
+      <section className="rounded-4xl border border-border/70 bg-card p-4 shadow-sm">
+        <div className="mb-4">
+          <h2 className="text-base font-semibold tracking-tight">Change Password</h2>
+          <p className="text-xs text-muted-foreground">
+            Update your account password.
+          </p>
+        </div>
+        <ChangePasswordForm />
       </section>
 
       <section className="rounded-4xl border border-border/70 bg-card p-4 shadow-sm">

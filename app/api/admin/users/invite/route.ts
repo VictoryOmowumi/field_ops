@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-access";
-import { normalizePhoneToE164 } from "@/lib/auth/phone";
+import { normalizePhoneToE164, getDefaultPasswordForPhone } from "@/lib/auth/phone";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { buildTenantBaseUrl } from "@/lib/tenant/url";
 
@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
     const { data: created, error: createError } = await supabase.auth.admin.createUser({
       phone: normalizedPhone!,
       phone_confirm: true,
+      password: getDefaultPasswordForPhone(normalizedPhone!),
       app_metadata: { role: appRole, org_role: payload.role },
       user_metadata: { full_name: fullName, role: appRole },
     });
@@ -112,6 +113,7 @@ export async function POST(request: NextRequest) {
         phone: normalizedPhone,
         auth_method: email ? "email" : "phone",
         phone_verified_at: normalizedPhone ? nowIso : null,
+        must_change_password: !email && !!normalizedPhone,
         updated_at: nowIso,
       },
       { onConflict: "user_id" }

@@ -269,7 +269,7 @@ export function useCampaignDetailsPage(campaignId?: string) {
 
       const [campaignResponse, usersResponse, assignmentsResponse] = await Promise.all([
         fetch(`/api/admin/campaigns/${campaignId}`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch("/api/admin/users", { headers: { Authorization: `Bearer ${token}` } }),
+        fetch("/api/admin/users?pageSize=all", { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`/api/admin/campaigns/${campaignId}/assignments`, { headers: { Authorization: `Bearer ${token}` } }),
       ]);
 
@@ -315,7 +315,7 @@ export function useCampaignDetailsPage(campaignId?: string) {
   async function refreshAssignableUsersAndAssignments(token: string) {
     if (!campaignId) return;
     const [usersResponse, assignmentsResponse] = await Promise.all([
-      fetch("/api/admin/users", { headers: { Authorization: `Bearer ${token}` } }),
+      fetch("/api/admin/users?pageSize=all", { headers: { Authorization: `Bearer ${token}` } }),
       fetch(`/api/admin/campaigns/${campaignId}/assignments`, { headers: { Authorization: `Bearer ${token}` } }),
     ]);
 
