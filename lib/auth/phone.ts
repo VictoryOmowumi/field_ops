@@ -38,3 +38,12 @@ export function normalizePhoneToE164(input: string, defaultCountryCode = DEFAULT
 export function isValidE164(value: string): boolean {
   return /^\+[1-9]\d{7,14}$/.test(value);
 }
+
+/**
+ * Default password for phone-auth accounts: the last 6 digits of the
+ * E.164 phone number. Meets the 6-character minimum and lets agents
+ * sign in without an SMS OTP. They're prompted to change it after login.
+ */
+export function getDefaultPasswordForPhone(e164Phone: string): string {
+  return e164Phone.slice(-6);
+}

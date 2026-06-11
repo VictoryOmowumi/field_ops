@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
   const supabase = createServerSupabaseClient();
   const [profileRes, campaignsRes, assignmentsRes, outletsRes] = await Promise.all([
-    supabase.from("profiles").select("full_name, email, phone").eq("user_id", user.id).maybeSingle(),
+    supabase.from("profiles").select("full_name, email, phone, must_change_password").eq("user_id", user.id).maybeSingle(),
     supabase
       .from("campaigns")
       .select("id, name, status, start_date, end_date, state, lga, outlet_types, products, campaign_workflow_template, campaign_workflow")
@@ -83,6 +83,7 @@ export async function GET(request: NextRequest) {
         fullName: profileRes.data?.full_name ?? "Agent",
         email: profileRes.data?.email ?? user.email,
         phone: profileRes.data?.phone ?? null,
+        mustChangePassword: profileRes.data?.must_change_password ?? false,
         organizationId: membership.organizationId,
         organizationRole: membership.role,
       },

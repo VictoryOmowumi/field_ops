@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -9,6 +9,7 @@ import {
   Activity01Icon,
   Alert01Icon,
   Chart01Icon,
+  FilterHorizontalIcon,
   Layers01Icon,
   RankingIcon,
   Store01Icon,
@@ -27,8 +28,10 @@ import {
   YAxis,
 } from "recharts";
 import { useTerminology } from "@/components/providers/tenant-experience-provider";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { authorizedFetch } from "@/lib/api/client";
-import { useEffect } from "react";
 
 // Types from the existing dashboard API shapes
 type DashboardSummary = {
@@ -79,16 +82,38 @@ const VELOCITY_COLORS = [
 export default function CommandCenterDashboard() {
   const t = useTerminology();
 
+  const [showFilters, setShowFilters] = useState(false);
+  const [campaignId, setCampaignId] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  const queryString = useMemo(() => {
+    const params = new URLSearchParams();
+    if (campaignId !== "all") params.set("campaignId", campaignId);
+    if (dateFrom) params.set("dateFrom", dateFrom);
+    if (dateTo) params.set("dateTo", dateTo);
+    const str = params.toString();
+    return str ? `?${str}` : "";
+  }, [campaignId, dateFrom, dateTo]);
+
+  const campaignsQuery = useQuery({
+    queryKey: ["admin-dashboard-campaigns"],
+    queryFn: async () => {
+      const result = await authorizedFetch<{ success: boolean; campaigns: Array<{ id: string; name: string }> }>("/api/admin/campaigns?lite=1");
+      return result.campaigns ?? [];
+    },
+  });
+
   const summaryQuery = useQuery({
-    queryKey: ["cc-summary"],
+    queryKey: ["cc-summary", queryString],
     queryFn: () =>
       authorizedFetch<{ success: boolean; summary: DashboardSummary }>(
-        "/api/admin/dashboard/summary"
+        `/api/admin/dashboard/summary${queryString}`
       ),
   });
 
   const insightsQuery = useQuery({
-    queryKey: ["cc-insights"],
+    queryKey: ["cc-insights", queryString],
     queryFn: () =>
       authorizedFetch<{
         success: boolean;
@@ -96,9 +121,12 @@ export default function CommandCenterDashboard() {
         trend: TrendPoint[];
         territoryPerformance: TerritoryPoint[];
         pagination: { total: number };
-      }>("/api/admin/dashboard/insights?page=1&pageSize=5"),
+      }>(`/api/admin/dashboard/insights${queryString}${queryString ? "&" : "?"}page=1&pageSize=5`),
   });
 
+  useEffect(() => {
+    if (campaignsQuery.error) toast.error((campaignsQuery.error as Error).message);
+  }, [campaignsQuery.error]);
   useEffect(() => {
     if (summaryQuery.error) toast.error((summaryQuery.error as Error).message);
   }, [summaryQuery.error]);
@@ -138,12 +166,51 @@ export default function CommandCenterDashboard() {
   return (
     <div className="flex flex-col gap-5 pb-10">
       {/* ── Page header ── */}
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Command Center</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Campaign intelligence, activation velocity, and field performance — all in one view.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight">Command Center</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Campaign intelligence, activation velocity, and field performance — all in one view.
+          </p>
+        </div>
+        <Button variant="outline" className="rounded-full" onClick={() => setShowFilters((value) => !value)}>
+          <HugeiconsIcon icon={FilterHorizontalIcon} size={16} />
+          {showFilters ? "Hide Filters" : "Filters"}
+        </Button>
       </div>
+
+      {showFilters ? (
+        <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60">
+          <div className="mb-3 flex items-center gap-2">
+            <HugeiconsIcon icon={FilterHorizontalIcon} size={16} />
+            <h2 className="font-semibold">Filters</h2>
+          </div>
+          <div className="grid gap-3 md:grid-cols-4">
+            <Select value={campaignId} onValueChange={setCampaignId}>
+              <SelectTrigger><SelectValue placeholder={`All ${t("campaigns").toLowerCase()}`} /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All {t("campaigns").toLowerCase()}</SelectItem>
+                {(campaignsQuery.data ?? []).map((campaign) => (
+                  <SelectItem key={campaign.id} value={campaign.id}>{campaign.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+            <Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+            <Button
+              variant="outline"
+              className="rounded-full"
+              onClick={() => {
+                setCampaignId("all");
+                setDateFrom("");
+                setDateTo("");
+              }}
+            >
+              Clear
+            </Button>
+          </div>
+        </section>
+      ) : null}
 
       {/* ── KPI strip ── */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
