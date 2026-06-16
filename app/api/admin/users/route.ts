@@ -93,6 +93,7 @@ export async function GET(request: NextRequest) {
   const roles = [...new Set(allUsers.map((item) => item.organizationRole).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
   const filteredUsers = allUsers.filter((item) => {
+    if (item.email?.endsWith("@activationiq.local")) return false; // Exclude placeholder emails
     if (roleFilter !== "all" && item.organizationRole !== roleFilter) return false;
     if (statusFilter !== "all" && item.status !== statusFilter) return false;
     if (search) {

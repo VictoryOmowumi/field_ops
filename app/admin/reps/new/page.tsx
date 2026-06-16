@@ -52,7 +52,7 @@ export default function NewRepPage() {
   const usersQuery = useQuery({
     queryKey: ["users-select"],
     queryFn: async () => {
-      const result = await authorizedFetch<{ success: boolean; users: User[] }>("/api/admin/users");
+      const result = await authorizedFetch<{ success: boolean; users: User[] }>("/api/admin/users?pageSize=all");
       return result.users ?? [];
     },
   });
