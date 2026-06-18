@@ -11,7 +11,8 @@
     "import:nigeria-locations": "node scripts/import-nigeria-locations.mjs",
     "backfill:campaign-workflow": "node scripts/backfill-campaign-workflow.mjs",
     "sort:nigeria-locations": "node scripts/sort-nigeria-locations.mjs",
-    "cleanup:handover": "node scripts/handover-cleanup.mjs"
+    "cleanup:handover": "node scripts/handover-cleanup.mjs",
+    "verify:task-type-derivation": "node scripts/verify-task-type-derivation.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

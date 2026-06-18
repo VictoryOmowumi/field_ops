@@ -60,6 +60,18 @@ export default function GuidedVisitFlow({
   const [outletName, setOutletName] = useState("");
   const [areaLga, setAreaLga] = useState("");
   const [outletAddress, setOutletAddress] = useState("");
+  const [selectedExistingOutletId, setSelectedExistingOutletId] = useState<string | null>(null);
+
+  function toggleNearbyOutlet(outlet: NearbyOutlet) {
+    if (selectedExistingOutletId === outlet.id) {
+      setSelectedExistingOutletId(null);
+      return;
+    }
+    setSelectedExistingOutletId(outlet.id);
+    setOutletName(outlet.name);
+    if (outlet.address) setOutletAddress(outlet.address);
+    if (outlet.lga) setAreaLga(outlet.lga);
+  }
 
   const [sales, setSales] = useState<SaleRow[]>([{ productName: productOptions[0]?.name ?? "", quantity: 1 }]);
   const [productAudit, setProductAudit] = useState<ProductAuditRow[]>(
@@ -79,6 +91,11 @@ export default function GuidedVisitFlow({
     return found?.lgas ?? [];
   }, [stateName]);
 
+  // Campaigns without a register_outlet activity (revisit_outlet templates,
+  // and product_audit which has neither register_outlet nor revisit_outlet)
+  // only make sense at an outlet that already exists — new-outlet entry is
+  // not offered for those, the agent must pick from the nearby-outlet list.
+  const mustSelectExistingOutlet = !workflow.activities.some((item) => item.id === "register_outlet");
   const hasSalesStep = workflow.activities.some((item) => item.id === "sell_to_outlet");
   const hasAvailability = workflow.activities.some((item) => item.id === "availability_survey");
   const hasNotesStep = workflow.activities.some((item) => item.id === "notes");
@@ -111,9 +128,13 @@ export default function GuidedVisitFlow({
   async function submitNow() {
     if (!customerName.trim()) return toast.error("Customer name is required.");
     if (!customerPhone.trim()) return toast.error("Customer phone is required.");
-    if (!outletName.trim()) return toast.error("Outlet name is required.");
-    if (!areaLga.trim()) return toast.error("LGA is required.");
-    if (!outletAddress.trim()) return toast.error("Outlet address is required.");
+    if (mustSelectExistingOutlet) {
+      if (!selectedExistingOutletId) return toast.error("Select an existing outlet for this visit.");
+    } else {
+      if (!outletName.trim()) return toast.error("Outlet name is required.");
+      if (!areaLga.trim()) return toast.error("LGA is required.");
+      if (!outletAddress.trim()) return toast.error("Outlet address is required.");
+    }
     if (gpsRequired && !hasGps) return toast.error("GPS capture is required. Wait for location and retry.");
 
     if (workflow.validationRules.requirePhotoEvidence && files.length < workflow.validationRules.minimumPhotos) {
@@ -253,18 +274,20 @@ export default function GuidedVisitFlow({
     const payload: WorkflowSubmissionPayload = {
       campaignId,
       idempotencyKey: stableSubmissionKeyRef.current ?? undefined,
-      selectedOutletRef: {
-        mode: "new",
-        outlet: {
-          name: outletName.trim(),
-          outletType: outletTypes[0]?.trim() || undefined,
-          contactPerson: customerName.trim(),
-          phone: customerPhone.trim(),
-          address: outletAddress.trim(),
-          state: stateName ?? undefined,
-          lga: areaLga.trim(),
-        },
-      },
+      selectedOutletRef: selectedExistingOutletId
+        ? { mode: "existing", outletId: selectedExistingOutletId }
+        : {
+            mode: "new",
+            outlet: {
+              name: outletName.trim(),
+              outletType: outletTypes[0]?.trim() || undefined,
+              contactPerson: customerName.trim(),
+              phone: customerPhone.trim(),
+              address: outletAddress.trim(),
+              state: stateName ?? undefined,
+              lga: areaLga.trim(),
+            },
+          },
       activityPayloads,
       outcome: {
         code: availableOutcomeCodes.has(resolvedOutcome.code as never) ? (resolvedOutcome.code as never) : (resolvedOutcomeCode as never),
@@ -290,9 +313,13 @@ export default function GuidedVisitFlow({
   function submit() {
     if (!customerName.trim()) return toast.error("Customer name is required.");
     if (!customerPhone.trim()) return toast.error("Customer phone is required.");
-    if (!outletName.trim()) return toast.error("Outlet name is required.");
-    if (!areaLga.trim()) return toast.error("LGA is required.");
-    if (!outletAddress.trim()) return toast.error("Outlet address is required.");
+    if (mustSelectExistingOutlet) {
+      if (!selectedExistingOutletId) return toast.error("Select an existing outlet for this visit.");
+    } else {
+      if (!outletName.trim()) return toast.error("Outlet name is required.");
+      if (!areaLga.trim()) return toast.error("LGA is required.");
+      if (!outletAddress.trim()) return toast.error("Outlet address is required.");
+    }
     if (gpsRequired && !hasGps) return toast.error("GPS capture is required. Wait for location and retry.");
     if (workflow.validationRules.requirePhotoEvidence && files.length < workflow.validationRules.minimumPhotos) {
       return toast.error(`At least ${workflow.validationRules.minimumPhotos} photo(s) are required.`);
@@ -346,13 +373,43 @@ export default function GuidedVisitFlow({
     <div className="space-y-4 pb-6">
       <section className="space-y-3 rounded-3xl border border-border/70 bg-card p-4">
         <h3 className="text-base font-medium">Outlet Information</h3>
+
+        {mustSelectExistingOutlet ? (
+          <p className="text-xs text-muted-foreground">
+            This task only applies to outlets already on file — select one below. New outlet registration isn&apos;t available for this campaign.
+          </p>
+        ) : null}
+
         {nearbyOutlets.length > 0 ? (
           <div className="flex flex-wrap gap-2">
+            {!mustSelectExistingOutlet ? (
+              <p className="w-full text-xs text-muted-foreground">Tap a nearby outlet if this visit is for one of these, or fill in a new outlet below.</p>
+            ) : null}
             {nearbyOutlets.slice(0, 8).map((outlet) => (
-              <span key={outlet.id} className="rounded-full border border-border/70 bg-background px-3 py-1 text-xs">
+              <button
+                key={outlet.id}
+                type="button"
+                onClick={() => toggleNearbyOutlet(outlet)}
+                className={`rounded-full border px-3 py-1 text-xs ${
+                  selectedExistingOutletId === outlet.id
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border/70 bg-background"
+                }`}
+              >
                 {outlet.name} · {Math.round(outlet.distanceMeters)}m
-              </span>
+              </button>
             ))}
+          </div>
+        ) : mustSelectExistingOutlet ? (
+          <p className="rounded-xl border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
+            No nearby outlets found. Move closer to a registered outlet, or contact your supervisor.
+          </p>
+        ) : null}
+
+        {mustSelectExistingOutlet && selectedExistingOutletId ? (
+          <div className="rounded-xl border border-border/70 bg-muted/30 p-3 text-sm">
+            <p className="font-medium">{outletName}</p>
+            <p className="text-muted-foreground">{[outletAddress, areaLga].filter(Boolean).join(" · ") || "No address on file."}</p>
           </div>
         ) : null}
 
@@ -367,16 +424,27 @@ export default function GuidedVisitFlow({
             value={customerPhone}
             onChange={(event) => setCustomerPhone(event.target.value.replace(/\D/g, ""))}
           />
-          <Input placeholder="Outlet name" value={outletName} onChange={(event) => setOutletName(event.target.value)} />
-          <Select value={areaLga} onValueChange={setAreaLga}>
-            <SelectTrigger><SelectValue placeholder="Select LGA" /></SelectTrigger>
-            <SelectContent>
-              {lgaOptions.map((lga) => (
-                <SelectItem key={lga} value={lga}>{lga}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Textarea className="col-span-2" placeholder="Outlet address" value={outletAddress} onChange={(event) => setOutletAddress(event.target.value)} />
+          {!mustSelectExistingOutlet ? (
+            <>
+              <Input
+                placeholder="Outlet name"
+                value={outletName}
+                onChange={(event) => {
+                  setOutletName(event.target.value);
+                  setSelectedExistingOutletId(null);
+                }}
+              />
+              <Select value={areaLga} onValueChange={setAreaLga}>
+                <SelectTrigger><SelectValue placeholder="Select LGA" /></SelectTrigger>
+                <SelectContent>
+                  {lgaOptions.map((lga) => (
+                    <SelectItem key={lga} value={lga}>{lga}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Textarea className="col-span-2" placeholder="Outlet address" value={outletAddress} onChange={(event) => setOutletAddress(event.target.value)} />
+            </>
+          ) : null}
         </div>
       </section>
 

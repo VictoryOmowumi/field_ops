@@ -8,15 +8,19 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { supabaseClient } from "@/lib/supabase/client";
 
-const settingDefs = [
+// mode: "enable" toggles whether an activity/section exists at all for the
+// campaign; "require" (default) toggles whether an already-shown field is
+// mandatory. Labeled Enabled/Disabled vs Required/Optional accordingly so
+// admins don't read an on/off switch as a validation-strictness setting.
+const settingDefs: Array<{ key: string; label: string; mode?: "require" | "enable" }> = [
   { key: "requireOutletPhone", label: "Require outlet phone" },
   { key: "requireGps", label: "Require GPS capture" },
   { key: "requirePhotoEvidence", label: "Require photo evidence" },
   { key: "requireProductQuantity", label: "Require product quantity" },
   { key: "requireSalesValue", label: "Require sales value" },
-  { key: "allowNotes", label: "Allow notes" },
-  { key: "allowRevisitStatus", label: "Allow revisit status" },
-  { key: "requirePosmDeployment", label: "Capture POSM deployment" },
+  { key: "allowNotes", label: "Allow notes", mode: "enable" },
+  { key: "allowRevisitStatus", label: "Allow revisit status", mode: "enable" },
+  { key: "requirePosmDeployment", label: "Capture POSM deployment", mode: "enable" },
   { key: "requirePosmQuantityWhenDeployed", label: "Require POSM quantity (when yes)" },
 ];
 
@@ -76,7 +80,9 @@ export default function CampaignFormSettingsPage() {
             <div key={item.key} className="rounded-3xl bg-muted/35 p-4">
               <p className="text-sm text-muted-foreground">{item.label}</p>
               <Button type="button" size="sm" variant={settings[item.key] ? "default" : "outline"} className="mt-2 rounded-full" onClick={() => setSettings((prev) => ({ ...prev, [item.key]: !prev[item.key] }))}>
-                {settings[item.key] ? "Required" : "Optional"}
+                {settings[item.key]
+                  ? item.mode === "enable" ? "Enabled" : "Required"
+                  : item.mode === "enable" ? "Disabled" : "Optional"}
               </Button>
             </div>
           ))}

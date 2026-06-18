@@ -102,3 +102,40 @@ export function mapWorkflowOutcomeToVisitOutcome(code: VisitOutcomeCode): "conve
   if (code === "outlet_closed") return "revisit";
   return "no_sale";
 }
+
+export type PrimaryVisitTaskType =
+  | "register_outlet"
+  | "revisit_outlet"
+  | "sell_to_outlet"
+  | "availability_survey"
+  | "price_survey"
+  | "product_survey";
+
+// Checked in this order: a completed sale outranks a survey, and the three
+// survey types are checked in the same order campaign templates define them
+// in (see activitiesForTemplate above). notes/posm_deployment/
+// free_sample_distribution/photo_evidence are intentionally absent from this
+// list — they are auxiliary activities and must never become a visit's
+// primary classification.
+const PRIMARY_TASK_PRIORITY: PrimaryVisitTaskType[] = [
+  "sell_to_outlet",
+  "availability_survey",
+  "price_survey",
+  "product_survey",
+];
+
+/**
+ * Derives `visits.task_type`: the primary classification of a visit.
+ * Falls back to register_outlet/revisit_outlet (based on whether the agent
+ * was logging a brand-new outlet or an existing one) only when none of the
+ * submitted activities are a primary task type.
+ */
+export function deriveVisitTaskType(
+  activityIds: WorkflowActivityId[],
+  outletMode: "new" | "existing"
+): PrimaryVisitTaskType {
+  for (const candidate of PRIMARY_TASK_PRIORITY) {
+    if (activityIds.includes(candidate)) return candidate;
+  }
+  return outletMode === "existing" ? "revisit_outlet" : "register_outlet";
+}

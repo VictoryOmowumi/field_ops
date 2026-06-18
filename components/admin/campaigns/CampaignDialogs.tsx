@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { Copy, Link2, Mail } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -85,6 +86,15 @@ export function AssignRepsDialog({
 }: AssignRepsDialogProps) {
   const location = nigeriaLocations.find((item) => item.state === repForm.selectedState);
   const supervisorIds = supervisors.map((user) => user.id);
+  const [repSearch, setRepSearch] = useState("");
+  const normalizedRepSearch = repSearch.trim().toLowerCase();
+  const filteredAgents = useMemo(() => {
+    if (!normalizedRepSearch) return agents;
+    return agents.filter((rep) => {
+      const haystack = `${rep.displayName ?? rep.name} ${rep.email ?? ""}`.toLowerCase();
+      return haystack.includes(normalizedRepSearch);
+    });
+  }, [agents, normalizedRepSearch]);
 
   function handleSupervisorValueChange(next: string[]) {
     const currentSet = new Set(selectedSupervisors);
@@ -136,6 +146,15 @@ export function AssignRepsDialog({
             </Combobox>
           </div>
 
+          <div className="max-w-full">
+            <p className="mb-2 text-sm font-medium">Assigned reps</p>
+            <Input
+              placeholder="Search reps by name or email..."
+              value={repSearch}
+              onChange={(event) => setRepSearch(event.target.value)}
+            />
+          </div>
+
           <div className="overflow-hidden rounded-3xl border border-border">
             <table className="w-full text-sm">
               <thead className="bg-muted/50 text-muted-foreground">
@@ -153,14 +172,26 @@ export function AssignRepsDialog({
                       No agents found yet. Use Register New Rep to create and invite one now.
                     </td>
                   </tr>
+                ) : filteredAgents.length === 0 ? (
+                  <tr className="border-t border-border">
+                    <td className="px-4 py-6 text-muted-foreground" colSpan={4}>
+                      No reps match &quot;{repSearch.trim()}&quot;.
+                    </td>
+                  </tr>
                 ) : (
-                  agents.map((rep) => (
-                    <tr key={rep.id} className="border-t border-border">
+                  filteredAgents.map((rep) => (
+                    <tr
+                      key={rep.id}
+                      className="cursor-pointer border-t border-border hover:bg-muted/30"
+                      onClick={() => onToggleAgent(rep.id)}
+                    >
                       <td className="px-4 py-4">
                         <input
                           type="checkbox"
+                          className="size-5 cursor-pointer accent-primary"
                           checked={selectedAgents.includes(rep.id)}
                           onChange={() => onToggleAgent(rep.id)}
+                          onClick={(event) => event.stopPropagation()}
                         />
                       </td>
                       <td className="px-4 py-4 font-medium">{rep.displayName ?? rep.name}</td>

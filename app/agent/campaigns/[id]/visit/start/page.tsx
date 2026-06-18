@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { authorizedFetch } from "@/lib/api/client";
 import { db } from "@/lib/offline/db";
 import { enqueueSyncRecord } from "@/lib/offline/queue";
+import { deriveVisitTaskType } from "@/lib/workflow";
 import type { NearbyOutlet } from "@/types/campaign-form";
 import type { CampaignWorkflowConfigV1, WorkflowSubmissionPayload } from "@/types/workflow";
 
@@ -248,7 +249,10 @@ export default function AgentVisitStartPage() {
           campaign_id: campaignId,
           outlet_id: payload.selectedOutletRef.outletId ?? null,
           outcome: "pending",
-          task_type: payload.activityPayloads[0]?.activityId ?? "register_outlet",
+          task_type: deriveVisitTaskType(
+            payload.activityPayloads.map((item) => item.activityId),
+            payload.selectedOutletRef.mode
+          ),
           task_payload: {
             activities: payload.activityPayloads,
             clientSubmissionMeta: enrichedPayload.clientSubmissionMeta ?? {},
