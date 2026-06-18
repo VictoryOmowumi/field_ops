@@ -613,7 +613,6 @@ export default function GuidedVisitFlow({
         <Input
           type="file"
           accept="image/*"
-          capture="environment"
           multiple
           onChange={(event) => {
             const incoming = Array.from(event.target.files ?? []);

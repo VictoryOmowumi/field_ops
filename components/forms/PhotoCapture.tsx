@@ -24,7 +24,6 @@ export default function PhotoCapture({ onSelect }: PhotoCaptureProps) {
       <input
         type="file"
         accept="image/*"
-        capture="environment"
         onChange={(event) => {
           const selectedFile = event.target.files?.[0];
           if (selectedFile) {

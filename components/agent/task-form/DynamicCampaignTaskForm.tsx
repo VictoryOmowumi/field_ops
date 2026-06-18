@@ -638,7 +638,6 @@ function FieldRenderer({
         <Input
           type="file"
           accept="image/*"
-          capture="environment"
           onChange={(event) => onAttachPhotos(field.name, event.target.files)}
         />
         {fieldPhotos.length ? (
