@@ -487,7 +487,7 @@ export default function SidebarShell({
         {/* ── Main area ── */}
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <MinimalTopBar />
-          <main className="flex-1 overflow-y-auto mx-auto container px-6 py-6">
+          <main className="flex-1 overflow-y-auto overflow-x-hidden mx-auto container px-6 py-6">
             {children}
           </main>
         </div>

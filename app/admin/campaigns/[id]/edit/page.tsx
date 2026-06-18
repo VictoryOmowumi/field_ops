@@ -27,6 +27,10 @@ import { supabaseClient } from "@/lib/supabase/client";
 import type { CampaignWorkflowTemplate } from "@/types/workflow";
 
 const campaignTypes = ["Retail Activation", "Market Storm", "Sampling Campaign", "Merchandising Audit", "Outlet Survey"];
+// These keys toggle whether an activity/section exists at all for the campaign,
+// not whether an already-shown field is mandatory — labeled Enabled/Disabled
+// instead of Required/Optional so admins don't read them as validation strictness.
+const ENABLE_MODE_KEYS = new Set(["allowProductSelectionForAllTasks", "allowNotes", "allowRevisitStatus", "requirePosmDeployment"]);
 const workflowTemplateOptions: Array<{ label: string; value: CampaignWorkflowTemplate }> = [
   { label: "Outlet Registration", value: "outlet_registration" },
   { label: "Sales Activation", value: "sales_activation" },
@@ -65,6 +69,7 @@ export default function EditCampaignPage() {
   const [availabilityQuestionsCsv, setAvailabilityQuestionsCsv] = useState("");
   const [freeSampleRequired, setFreeSampleRequired] = useState(false);
   const [freeSampleProductConfig, setFreeSampleProductConfig] = useState<FreeSampleProductConfig>({});
+  const [freeSampleDistributionEnabled, setFreeSampleDistributionEnabled] = useState(false);
 
   const freeSampleEnabled = useMemo(
     () => selectedProducts.some((p) => freeSampleProductConfig[p]?.enabled ?? false),
@@ -79,12 +84,21 @@ export default function EditCampaignPage() {
       || campaignTasks.includes("price_survey"),
     [campaignTasks]
   );
+  const showProductPicker = hasProductDrivenTask || freeSampleDistributionEnabled;
   const productFieldLabel = useMemo(() => {
     if (campaignTasks.includes("product_survey")) return "Products to Survey";
     if (campaignTasks.includes("price_survey")) return "Products for Price Survey";
     if (campaignTasks.includes("sell_to_outlet")) return "Products / SKUs for Sales Capture";
+    if (!hasProductDrivenTask) return "Products for Free Sample Distribution";
     return "Products / SKUs";
-  }, [campaignTasks]);
+  }, [campaignTasks, hasProductDrivenTask]);
+
+  function toggleFreeSampleDistribution(checked: boolean) {
+    setFreeSampleDistributionEnabled(checked);
+    if (!checked && !hasProductDrivenTask) {
+      setFreeSampleProductConfig({});
+    }
+  }
   const hasPriceSurveyTask = campaignTasks.includes("price_survey");
   const hasAvailabilitySurveyTask = campaignTasks.includes("availability_survey");
   useEffect(() => {
@@ -150,7 +164,11 @@ export default function EditCampaignPage() {
       setPriceMode((priceTask.priceMode as "buying" | "selling" | "both") ?? "both");
       setAvailabilityQuestionsCsv(Array.isArray(availabilityTask.questions) ? (availabilityTask.questions as string[]).join(", ") : "");
       setFreeSampleRequired(Boolean(freeSampleTask.required));
-      setFreeSampleProductConfig(toFreeSampleProductConfig(freeSampleTask));
+      const loadedFreeSampleConfig = toFreeSampleProductConfig(freeSampleTask);
+      setFreeSampleProductConfig(loadedFreeSampleConfig);
+      setFreeSampleDistributionEnabled(
+        Boolean(freeSampleTask.enabled) || Object.values(loadedFreeSampleConfig).some((row) => row.enabled)
+      );
 
       if (usersRes.ok && usersResult.success) setUsers(usersResult.users ?? []);
     }
@@ -162,6 +180,10 @@ export default function EditCampaignPage() {
     const configuredFreeSamples = getConfiguredFreeSampleProducts(selectedProducts, freeSampleProductConfig);
     if (hasProductDrivenTask && parsedProducts.length === 0) {
       toast.error("Add at least one product for the selected task(s).");
+      return;
+    }
+    if (freeSampleDistributionEnabled && !freeSampleEnabled) {
+      toast.error("Select at least one product and turn on sampling for it.");
       return;
     }
     if (freeSampleEnabled && configuredFreeSamples.length === 0) {
@@ -403,11 +425,18 @@ export default function EditCampaignPage() {
               ["requirePosmDeployment", "Capture POSM deployment"],
               ["requirePosmQuantityWhenDeployed", "Require POSM quantity (when yes)"],
             ].map(([key, label]) => (
-              <ToggleField key={key} label={label} value={Boolean(formRequirements[key])} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, [key]: checked }))} />
+              <ToggleField
+                key={key}
+                label={label}
+                value={Boolean(formRequirements[key])}
+                onChange={(checked) => setFormRequirements((prev) => ({ ...prev, [key]: checked }))}
+                mode={ENABLE_MODE_KEYS.has(key) ? "enable" : "require"}
+              />
             ))}
+            <ToggleField mode="enable" label="Enable free sample distribution" value={freeSampleDistributionEnabled} onChange={toggleFreeSampleDistribution} />
           </div>
           <div className={` mt-5 grid gap-4 ${hasPriceSurveyTask && hasAvailabilitySurveyTask ? "sm:grid-cols-2" : "grid-cols-1"}`}>
-            {hasProductDrivenTask ? (
+            {showProductPicker ? (
               <div className={`${hasPriceSurveyTask || hasAvailabilitySurveyTask ? "sm:col-span-2" : ""}`}>
                 <Field label={productFieldLabel}>
                   <ProductCatalogSelector value={selectedProducts} onChange={setSelectedProducts} />
@@ -463,8 +492,20 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <label className="space-y-2 block"><span className="text-sm font-medium">{label}</span>{children}</label>;
 }
 
-function ToggleField({ label, value, onChange }: { label: string; value: boolean; onChange: (checked: boolean) => void }) {
-  return <div className="flex items-center justify-between rounded-2xl bg-muted/35 px-4 py-3"><span className="text-sm">{label}</span><Button type="button" size="sm" variant={value ? "default" : "outline"} className="rounded-full" onClick={() => onChange(!value)}>{value ? "Required" : "Optional"}</Button></div>;
+function ToggleField({
+  label,
+  value,
+  onChange,
+  mode = "require",
+}: {
+  label: string;
+  value: boolean;
+  onChange: (checked: boolean) => void;
+  mode?: "require" | "enable";
+}) {
+  const onLabel = mode === "enable" ? "Enabled" : "Required";
+  const offLabel = mode === "enable" ? "Disabled" : "Optional";
+  return <div className="flex items-center justify-between rounded-2xl bg-muted/35 px-4 py-3"><span className="text-sm">{label}</span><Button type="button" size="sm" variant={value ? "default" : "outline"} className="rounded-full" onClick={() => onChange(!value)}>{value ? onLabel : offLabel}</Button></div>;
 }
 
 function ProductSamplingConfig({

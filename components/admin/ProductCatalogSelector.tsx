@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -25,6 +25,18 @@ export default function ProductCatalogSelector({ value, onChange }: ProductCatal
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [createdProducts, setCreatedProducts] = useState<CatalogProduct[]>([]);
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleOutsideClick(event: MouseEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, []);
 
   const catalogQuery = useQuery({
     queryKey: ["admin-product-catalog"],
@@ -98,45 +110,51 @@ export default function ProductCatalogSelector({ value, onChange }: ProductCatal
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" ref={containerRef}>
       <Input
         placeholder="Search products (e.g. Coca-Cola, Indomie, Dettol)"
         value={query}
-        onChange={(event) => setQuery(event.target.value)}
+        onFocus={() => setIsOpen(true)}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setIsOpen(true);
+        }}
       />
 
-      <div className="rounded-2xl border border-border bg-background p-3">
-        {catalogQuery.isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading product catalog...</p>
-        ) : !normalizedQuery ? (
-          <p className="text-sm text-muted-foreground">Type to search and select products.</p>
-        ) : filtered.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No products found.</p>
-        ) : (
-          <div className="max-h-56 space-y-2 overflow-auto">
-            {filtered.map((item) => {
-              const selected = selectedSet.has(item.name.toLowerCase());
-              return (
-                <button
-                  key={item.name}
-                  type="button"
-                  className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${
-                    selected ? "border-primary bg-primary/10" : "border-border hover:bg-muted/40"
-                  }`}
-                  onClick={() => addProduct(item.name)}
-                >
-                  <div className="font-medium">{item.name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {[item.brand, item.category, item.industry].filter(Boolean).join(" | ") || "Catalog product"}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      {isOpen ? (
+        <div className="rounded-2xl border border-border bg-background p-3">
+          {catalogQuery.isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading product catalog...</p>
+          ) : !normalizedQuery ? (
+            <p className="text-sm text-muted-foreground">Type to search and select products.</p>
+          ) : filtered.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No products found.</p>
+          ) : (
+            <div className="max-h-56 space-y-2 overflow-auto">
+              {filtered.map((item) => {
+                const selected = selectedSet.has(item.name.toLowerCase());
+                return (
+                  <button
+                    key={item.name}
+                    type="button"
+                    className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${
+                      selected ? "border-primary bg-primary/10" : "border-border hover:bg-muted/40"
+                    }`}
+                    onClick={() => addProduct(item.name)}
+                  >
+                    <div className="font-medium">{item.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {[item.brand, item.category, item.industry].filter(Boolean).join(" | ") || "Catalog product"}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : null}
 
-      {query.trim() && !exactMatch ? (
+      {isOpen && query.trim() && !exactMatch ? (
         <Button type="button" variant="outline" className="rounded-full" disabled={creating} onClick={createProductFromQuery}>
           {creating ? "Saving..." : `Add "${query.trim()}" to catalog`}
         </Button>

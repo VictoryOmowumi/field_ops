@@ -73,6 +73,7 @@ export default function NewCampaignPage() {
   });
   const [freeSampleRequired, setFreeSampleRequired] = useState(false);
   const [freeSampleProductConfig, setFreeSampleProductConfig] = useState<FreeSampleProductConfig>({});
+  const [freeSampleDistributionEnabled, setFreeSampleDistributionEnabled] = useState(false);
 
   const [savingDraft, setSavingDraft] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -93,12 +94,21 @@ export default function NewCampaignPage() {
       || campaignTasks.includes("price_survey"),
     [campaignTasks]
   );
+  const showProductPicker = hasProductDrivenTask || freeSampleDistributionEnabled;
   const productFieldLabel = useMemo(() => {
     if (campaignTasks.includes("product_survey")) return "Products to Survey";
     if (campaignTasks.includes("price_survey")) return "Products for Price Survey";
     if (campaignTasks.includes("sell_to_outlet")) return "Products / SKUs for Sales Capture";
+    if (!hasProductDrivenTask) return "Products for Free Sample Distribution";
     return "Products / SKUs";
-  }, [campaignTasks]);
+  }, [campaignTasks, hasProductDrivenTask]);
+
+  function toggleFreeSampleDistribution(checked: boolean) {
+    setFreeSampleDistributionEnabled(checked);
+    if (!checked && !hasProductDrivenTask) {
+      setFreeSampleProductConfig({});
+    }
+  }
   const hasPriceSurveyTask = campaignTasks.includes("price_survey");
   const hasAvailabilitySurveyTask = campaignTasks.includes("availability_survey");
   useEffect(() => {
@@ -157,6 +167,10 @@ export default function NewCampaignPage() {
     const configuredFreeSamples = getConfiguredFreeSampleProducts(selectedProducts, freeSampleProductConfig);
     if (hasProductDrivenTask && parsedProducts.length === 0) {
       toast.error("Add at least one product for the selected task(s).");
+      return;
+    }
+    if (freeSampleDistributionEnabled && !freeSampleEnabled) {
+      toast.error("Select at least one product and turn on sampling for it.");
       return;
     }
     if (freeSampleEnabled && configuredFreeSamples.length === 0) {
@@ -408,11 +422,12 @@ export default function NewCampaignPage() {
             <ToggleField label="Require photo evidence" value={formRequirements.requirePhotoEvidence} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, requirePhotoEvidence: checked }))} />
             <ToggleField label="Require product quantity" value={formRequirements.requireProductQuantity} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, requireProductQuantity: checked }))} />
             <ToggleField label="Require sales value" value={formRequirements.requireSalesValue} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, requireSalesValue: checked }))} />
-            <ToggleField label="Allow products on all tasks" value={formRequirements.allowProductSelectionForAllTasks} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, allowProductSelectionForAllTasks: checked }))} />
-            <ToggleField label="Allow notes" value={formRequirements.allowNotes} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, allowNotes: checked }))} />
-            <ToggleField label="Allow revisit status" value={formRequirements.allowRevisitStatus} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, allowRevisitStatus: checked }))} />
-            <ToggleField label="Capture POSM deployment" value={formRequirements.requirePosmDeployment} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, requirePosmDeployment: checked }))} />
+            <ToggleField mode="enable" label="Allow products on all tasks" value={formRequirements.allowProductSelectionForAllTasks} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, allowProductSelectionForAllTasks: checked }))} />
+            <ToggleField mode="enable" label="Allow notes" value={formRequirements.allowNotes} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, allowNotes: checked }))} />
+            <ToggleField mode="enable" label="Allow revisit status" value={formRequirements.allowRevisitStatus} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, allowRevisitStatus: checked }))} />
+            <ToggleField mode="enable" label="Capture POSM deployment" value={formRequirements.requirePosmDeployment} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, requirePosmDeployment: checked }))} />
             <ToggleField label="Require POSM quantity (when yes)" value={formRequirements.requirePosmQuantityWhenDeployed} onChange={(checked) => setFormRequirements((prev) => ({ ...prev, requirePosmQuantityWhenDeployed: checked }))} />
+            <ToggleField mode="enable" label="Enable free sample distribution" value={freeSampleDistributionEnabled} onChange={toggleFreeSampleDistribution} />
           </div>
 
 
@@ -436,7 +451,7 @@ export default function NewCampaignPage() {
             ) : null}
           </div>
           <div className="mt-6 grid gap-5  ">
-            {hasProductDrivenTask ? (
+            {showProductPicker ? (
               <Field label={productFieldLabel}>
                 <ProductCatalogSelector value={selectedProducts} onChange={setSelectedProducts} />
                 {selectedProducts.length > 0 ? (
@@ -511,12 +526,24 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function ToggleField({ label, value, onChange }: { label: string; value: boolean; onChange: (checked: boolean) => void }) {
+function ToggleField({
+  label,
+  value,
+  onChange,
+  mode = "require",
+}: {
+  label: string;
+  value: boolean;
+  onChange: (checked: boolean) => void;
+  mode?: "require" | "enable";
+}) {
+  const onLabel = mode === "enable" ? "Enabled" : "Required";
+  const offLabel = mode === "enable" ? "Disabled" : "Optional";
   return (
     <div className="flex items-center justify-between rounded-2xl bg-muted/35 px-4 py-3">
       <span className="text-sm">{label}</span>
       <Button type="button" size="sm" variant={value ? "default" : "outline"} className="rounded-full" onClick={() => onChange(!value)}>
-        {value ? "Required" : "Optional"}
+        {value ? onLabel : offLabel}
       </Button>
     </div>
   );

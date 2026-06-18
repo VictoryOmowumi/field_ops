@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAgentAssignedToCampaign } from "@/lib/auth/agent-access";
 import { getPrimaryOrgMembership } from "@/lib/auth/org-context";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
-import { mapWorkflowOutcomeToVisitOutcome } from "@/lib/workflow";
+import { deriveVisitTaskType, mapWorkflowOutcomeToVisitOutcome } from "@/lib/workflow";
 import { campaignWorkflowConfigV1Schema, workflowSubmissionSchema } from "@/schemas/workflow";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
       outlet_id: outletId,
       agent_id: user.id,
       outcome: visitOutcome,
-      task_type: activityPath.includes("sell_to_outlet") ? "sell_to_outlet" : activityPath[0] ?? "register_outlet",
+      task_type: deriveVisitTaskType(activityPath, payload.selectedOutletRef.mode),
       task_payload: {
         activities: payload.activityPayloads,
         clientSubmissionMeta: {
