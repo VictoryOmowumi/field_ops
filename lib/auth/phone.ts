@@ -28,6 +28,11 @@ export function normalizePhoneToE164(input: string, defaultCountryCode = DEFAULT
     return /^\d{7,14}$/.test(rest) ? `+${defaultCountryCode}${rest}` : null;
   }
 
+  if (digits.startsWith(defaultCountryCode)) {
+    const rest = digits.slice(defaultCountryCode.length);
+    if (/^\d{7,14}$/.test(rest)) return `+${digits}`;
+  }
+
   if (/^\d{7,15}$/.test(digits)) {
     return `+${defaultCountryCode}${digits}`;
   }
