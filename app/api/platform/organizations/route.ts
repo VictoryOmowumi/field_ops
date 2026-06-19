@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { hasRequiredRole, getAuthenticatedUserFromRequest } from "@/lib/auth/server-auth";
+import { normalizePhoneToE164 } from "@/lib/auth/phone";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 type CreateOrganizationPayload = {
@@ -85,6 +86,12 @@ export async function POST(request: NextRequest) {
   if (!body.primaryAdminName?.trim()) return badRequest("Primary admin name is required.");
   if (!body.primaryAdminEmail?.trim()) return badRequest("Primary admin email is required.");
 
+  let normalizedAdminPhone: string | null = null;
+  if (body.primaryAdminPhone?.trim()) {
+    normalizedAdminPhone = normalizePhoneToE164(body.primaryAdminPhone.trim());
+    if (!normalizedAdminPhone) return badRequest("Enter a valid primary admin phone number.");
+  }
+
   const supabase = createServerSupabaseClient();
   const baseUrl = resolveBaseUrl(request);
 
@@ -137,7 +144,7 @@ export async function POST(request: NextRequest) {
     await supabase.auth.admin.inviteUserByEmail(body.primaryAdminEmail.trim(), {
       data: {
         full_name: body.primaryAdminName.trim(),
-        phone: body.primaryAdminPhone?.trim() || null,
+        phone: normalizedAdminPhone,
         role: "admin",
         org_role: "org_admin",
       },
@@ -161,7 +168,7 @@ export async function POST(request: NextRequest) {
     app_metadata: { role: "admin" },
     user_metadata: {
       full_name: body.primaryAdminName.trim(),
-      phone: body.primaryAdminPhone?.trim() || null,
+      phone: normalizedAdminPhone,
       role: "admin",
       org_role: "org_admin",
     },
@@ -180,7 +187,7 @@ export async function POST(request: NextRequest) {
     user_id: adminUser.id,
     full_name: body.primaryAdminName.trim(),
     email: body.primaryAdminEmail.trim(),
-    phone: body.primaryAdminPhone?.trim() || null,
+    phone: normalizedAdminPhone,
   });
 
   if (profileError) {

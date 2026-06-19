@@ -58,11 +58,20 @@ function normalizePhoneToE164(input) {
     return /^\d{7,14}$/.test(rest) ? `+${DEFAULT_COUNTRY_CODE}${rest}` : null;
   }
 
+  if (digits.startsWith(DEFAULT_COUNTRY_CODE)) {
+    const rest = digits.slice(DEFAULT_COUNTRY_CODE.length);
+    if (/^\d{7,14}$/.test(rest)) return `+${digits}`;
+  }
+
   if (/^\d{7,15}$/.test(digits)) {
     return `+${DEFAULT_COUNTRY_CODE}${digits}`;
   }
 
   return null;
+}
+
+function getDefaultPasswordForPhone(e164Phone) {
+  return e164Phone.slice(-6);
 }
 
 function titleCase(name) {
@@ -219,12 +228,15 @@ async function registerAgent(name, rawPhone, index) {
   const lga = pickRandomLga();
   const repCode = `KN-${String(index + 1).padStart(3, "0")}`;
 
+  const defaultPassword = getDefaultPasswordForPhone(phone);
+
   let userId;
   const existing = await getUserByPhone(phone);
   if (existing) {
     userId = existing.id;
     const { error } = await supabase.auth.admin.updateUserById(userId, {
       phone_confirm: true,
+      password: defaultPassword,
       app_metadata: { role: "agent" },
       user_metadata: { full_name: fullName, role: "agent" },
     });
@@ -233,6 +245,7 @@ async function registerAgent(name, rawPhone, index) {
     const { data, error } = await supabase.auth.admin.createUser({
       phone,
       phone_confirm: true,
+      password: defaultPassword,
       app_metadata: { role: "agent" },
       user_metadata: { full_name: fullName, role: "agent" },
     });
@@ -247,6 +260,7 @@ async function registerAgent(name, rawPhone, index) {
       phone,
       auth_method: "phone",
       phone_verified_at: nowIso,
+      must_change_password: true,
       updated_at: nowIso,
     },
     { onConflict: "user_id" }

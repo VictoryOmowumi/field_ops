@@ -191,7 +191,7 @@ function LoginPageContent() {
     if (error || !data.user) {
       setPendingMessage(null);
       if (error?.message && /invalid login credentials/i.test(error.message)) {
-        toast.error("This phone number isn't registered. Contact your administrator.");
+        toast.error("Incorrect phone number or password.");
       } else {
         toast.error(error?.message ?? "Login failed. Check credentials and try again.");
       }
