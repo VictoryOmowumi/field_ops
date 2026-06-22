@@ -80,6 +80,89 @@ export type PlatformUserDetail = {
   phone: string;
 };
 
+export type PlatformInfraStatus = {
+  status: "healthy" | "unhealthy" | "configured" | "not_configured";
+  latencyMs?: number;
+  message?: string;
+};
+
+export type PlatformMonitoringSummary = {
+  generatedAt: string;
+  apiLatencyMs: number;
+  infrastructure: {
+    database: PlatformInfraStatus;
+    storage: PlatformInfraStatus;
+    api: PlatformInfraStatus;
+    sentry: PlatformInfraStatus;
+  };
+  activity: {
+    submissionsToday: number;
+    submissionsSparkline: number[];
+    photosUploadedToday: number;
+    photosSparkline: number[];
+    activeRepsToday: number;
+    activeRepsSparkline: number[];
+    failedLoginsToday: number;
+    failedLoginsSparkline: number[];
+    uploadFailuresToday: number;
+    uploadFailuresSparkline: number[];
+  };
+  errors: Array<{
+    id: string;
+    createdAt: string;
+    severity: string;
+    eventType: string;
+    message: string;
+    organizationId: string | null;
+  }>;
+  alerts: Array<{
+    alertKey: string;
+    severity: string;
+    subject: string;
+    message: string;
+  }>;
+  auth: {
+    successfulLoginsToday: number;
+    failedLoginsToday: number;
+    failureRate: string;
+    topAuthEvents: Array<{ message: string; count: number }>;
+  };
+  campaignActivity: {
+    totalSubmissionsToday: number;
+    activeCampaigns: number;
+    activeReps: number;
+    photosUploaded: number;
+    submissionVelocityPerHour: number;
+  };
+  importTracking: {
+    importedRecords: number;
+    appCapturedRecords: number;
+    importBatches: number;
+    importErrors: number;
+  };
+  performance: {
+    avgVisitSubmissionMs: number;
+    avgUploadMs: number;
+    slowEndpointCount: number;
+    slowQueryCount: number;
+  };
+  costInsights: {
+    storage: {
+      imageCount: number;
+      averageImageSizeBytes: number;
+      estimatedMonthlyGrowthBytes: number;
+      warningThresholdBytes: number;
+      approachingLimit: boolean;
+    };
+    database: {
+      totalRecordsStored: number;
+      note: string;
+    };
+    supabaseDisk: { available: false; note: string };
+    vercelUsage: { available: false; note: string };
+  };
+};
+
 export type PlatformSettingItem = {
   section: "Sync" | "Storage" | "Tenant";
   label: string;

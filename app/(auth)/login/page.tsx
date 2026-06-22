@@ -42,6 +42,22 @@ type AuthContextResponse = {
   };
 };
 
+function reportLoginFailure(method: "email" | "phone", reason: string) {
+  fetch("/api/observability/login-failed", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ method, reason }),
+  }).catch(() => {});
+}
+
+function reportLoginSuccess(method: "email" | "phone") {
+  fetch("/api/observability/login-success", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ method }),
+  }).catch(() => {});
+}
+
 async function verifyMembershipAccess(accessToken: string, orgSlug?: string | null) {
   const response = await fetch("/api/auth/context", {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -163,10 +179,12 @@ function LoginPageContent() {
 
     if (error || !data.user) {
       setPendingMessage(null);
+      reportLoginFailure("email", error?.message ?? "Login failed");
       toast.error(error?.message ?? "Login failed. Check credentials and try again.");
       return;
     }
 
+    reportLoginSuccess("email");
     setPendingMessage("Redirecting to your workspace...");
     const result = await completeSignIn(data.user, data.session);
     if (!result.ok) {
@@ -190,6 +208,7 @@ function LoginPageContent() {
 
     if (error || !data.user) {
       setPendingMessage(null);
+      reportLoginFailure("phone", error?.message ?? "Login failed");
       if (error?.message && /invalid login credentials/i.test(error.message)) {
         toast.error("Incorrect phone number or password.");
       } else {
@@ -198,6 +217,7 @@ function LoginPageContent() {
       return;
     }
 
+    reportLoginSuccess("phone");
     setPendingMessage("Redirecting to your workspace...");
     const result = await completeSignIn(data.user, data.session);
     if (!result.ok) {

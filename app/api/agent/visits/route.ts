@@ -7,6 +7,7 @@ import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/ser
 import { deriveVisitTaskType, mapWorkflowOutcomeToVisitOutcome } from "@/lib/workflow";
 import { campaignWorkflowConfigV1Schema, workflowSubmissionSchema } from "@/schemas/workflow";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { withPerformanceTracking } from "@/lib/observability/performance";
 
 function unauthorized() {
   return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
@@ -36,6 +37,14 @@ export async function POST(request: NextRequest) {
   const membership = await getPrimaryOrgMembership(user.id);
   if (!membership) return forbidden();
 
+  return withPerformanceTracking("visit_submission", "POST /api/agent/visits", () => submitVisit(request, user, membership), membership.organizationId);
+}
+
+async function submitVisit(
+  request: NextRequest,
+  user: { id: string },
+  membership: { organizationId: string }
+) {
   const body = await request.json();
   const parsedPayload = workflowSubmissionSchema.safeParse(body);
   if (!parsedPayload.success) {

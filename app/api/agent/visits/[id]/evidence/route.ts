@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPrimaryOrgMembership } from "@/lib/auth/org-context";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { captureException } from "@/lib/observability/sentry";
+import { recordSystemEvent } from "@/lib/observability/system-events";
+import { recordPerformanceMetric } from "@/lib/observability/performance";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -73,14 +76,37 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
   const bytes = await file.arrayBuffer();
 
+  const uploadStartedAt = Date.now();
   const { error: uploadError } = await supabase.storage
     .from("evidence")
     .upload(filePath, bytes, {
       contentType: file.type || "application/octet-stream",
       upsert: false,
     });
+  const uploadDurationMs = Date.now() - uploadStartedAt;
+
+  if (!uploadError) {
+    void recordPerformanceMetric({
+      metricType: "upload",
+      operation: "evidence_upload",
+      durationMs: uploadDurationMs,
+      organizationId: membership.organizationId,
+    });
+  }
 
   if (uploadError) {
+    captureException(uploadError, {
+      userId: user.id,
+      organizationId: membership.organizationId,
+      route: "/api/agent/visits/[id]/evidence",
+    });
+    await recordSystemEvent({
+      eventType: "upload_failed",
+      severity: "error",
+      message: uploadError.message,
+      organizationId: membership.organizationId,
+      metadata: { visitId },
+    });
     return NextResponse.json({ success: false, message: uploadError.message }, { status: 500 });
   }
 

@@ -4,6 +4,7 @@ import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-acces
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { computeMetricsFromRows } from "@/lib/campaign/intelligence";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { withPerformanceTracking } from "@/lib/observability/performance";
 
 function unauthorized() {
   return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
@@ -50,7 +51,12 @@ export async function GET(request: NextRequest) {
     visitsQuery = visitsQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);
   }
 
-  const [campaignsRes, salesRes, visitsRes] = await Promise.all([campaignsQuery, salesQuery, visitsQuery]);
+  const [campaignsRes, salesRes, visitsRes] = await withPerformanceTracking(
+    "query",
+    "admin_dashboard_summary",
+    () => Promise.all([campaignsQuery, salesQuery, visitsQuery]),
+    organizationId
+  );
   const campaigns = campaignsRes.data ?? [];
   const sales = salesRes.data ?? [];
   const visits = visitsRes.data ?? [];

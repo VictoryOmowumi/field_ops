@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPrimaryOrgMembership } from "@/lib/auth/org-context";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { captureException } from "@/lib/observability/sentry";
+import { recordSystemEvent } from "@/lib/observability/system-events";
+import { withPerformanceTracking } from "@/lib/observability/performance";
 
 type SyncItem = {
   entityType: "outlet" | "visit" | "sale" | "photo";
@@ -24,6 +27,14 @@ export async function POST(request: NextRequest) {
   const membership = await getPrimaryOrgMembership(user.id);
   if (!membership) return forbidden();
 
+  return withPerformanceTracking("endpoint", "POST /api/agent/sync/batch", () => syncBatch(request, user, membership), membership.organizationId);
+}
+
+async function syncBatch(
+  request: NextRequest,
+  user: { id: string },
+  membership: { organizationId: string }
+) {
   const body = (await request.json()) as { items?: SyncItem[] };
   const items = body.items ?? [];
   const supabase = createServerSupabaseClient();
@@ -122,6 +133,20 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       const message = (error as Error).message;
       const terminal = /required|invalid|violates/i.test(message);
+      if (!terminal) {
+        captureException(error, {
+          userId: user.id,
+          organizationId: membership.organizationId,
+          route: "/api/agent/sync/batch",
+        });
+        await recordSystemEvent({
+          eventType: "unexpected_sync_error",
+          severity: "error",
+          message,
+          organizationId: membership.organizationId,
+          metadata: { entityType: item.entityType, idempotencyKey: item.idempotencyKey },
+        });
+      }
       results.push({
         idempotencyKey: item.idempotencyKey,
         status: terminal ? "failed_terminal" : "failed_retryable",
