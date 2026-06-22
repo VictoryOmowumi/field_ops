@@ -255,7 +255,10 @@ export default function AgentVisitStartPage() {
           ),
           task_payload: {
             activities: payload.activityPayloads,
-            clientSubmissionMeta: enrichedPayload.clientSubmissionMeta ?? {},
+            clientSubmissionMeta: {
+              ...(enrichedPayload.clientSubmissionMeta ?? {}),
+              clientCreatedAt: enrichedPayload.clientCreatedAt,
+            },
           },
           visit_outcome_code: payload.outcome.code,
           visit_outcome_label: payload.outcome.label,
@@ -265,7 +268,6 @@ export default function AgentVisitStartPage() {
           longitude: payload.gps?.longitude ?? null,
           location_accuracy: payload.gps?.locationAccuracy ?? null,
           sync_status: "pending",
-          client_created_at: enrichedPayload.clientCreatedAt,
         },
         idempotencyKey: submissionId,
         retryCount: 0,

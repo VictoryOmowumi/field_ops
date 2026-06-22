@@ -188,11 +188,11 @@ export async function GET(request: NextRequest) {
       },
       supabaseDisk: {
         available: false,
-        note: "Requires SUPABASE_ACCESS_TOKEN + project ref (Supabase Management API).",
+        note: "Not exposed by Supabase's public Management API (no disk-size endpoint exists). Would require a pg_database_size() RPC instead of a token.",
       },
       vercelUsage: {
         available: false,
-        note: "Requires VERCEL_API_TOKEN (Vercel Usage API).",
+        note: "Requires VERCEL_API_TOKEN + VERCEL_TEAM_ID (Vercel billing API, GET /v1/billing/charges).",
       },
     },
   };

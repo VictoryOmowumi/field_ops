@@ -69,12 +69,26 @@ async function syncBatch(
         const { error } = await supabase.from("outlets").insert(payload);
         if (error) throw error;
       } else if (item.entityType === "visit") {
+        const rawPayload = item.payload as Record<string, unknown>;
         const payload = {
-          ...item.payload,
+          id: rawPayload.id,
+          campaign_id: rawPayload.campaign_id,
+          outlet_id: rawPayload.outlet_id ?? null,
+          outcome: rawPayload.outcome ?? null,
+          task_type: rawPayload.task_type ?? null,
+          task_payload: rawPayload.task_payload ?? null,
+          visit_outcome_code: rawPayload.visit_outcome_code ?? null,
+          visit_outcome_label: rawPayload.visit_outcome_label ?? null,
+          state: rawPayload.state ?? null,
+          lga: rawPayload.lga ?? null,
+          latitude: rawPayload.latitude ?? null,
+          longitude: rawPayload.longitude ?? null,
+          location_accuracy: rawPayload.location_accuracy ?? null,
+          sync_status: rawPayload.sync_status ?? "synced",
           organization_id: membership.organizationId,
           agent_id: user.id,
         };
-        const id = String((item.payload as Record<string, unknown>).id ?? "");
+        const id = String(rawPayload.id ?? "");
         if (!id) throw new Error("Visit id is required for sync.");
         const { data: existing } = await supabase
           .from("visits")

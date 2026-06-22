@@ -46,7 +46,7 @@ function useLivePing(path: string) {
       const response = await fetch(path);
       return (await response.json()) as HealthPing;
     },
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
   });
 }
 
@@ -117,36 +117,38 @@ export default function SuperAdminPlatformPage() {
           <h2 className="font-semibold">Errors</h2>
           <p className="text-sm text-muted-foreground">Latest system events.</p>
           <div className="mt-4 overflow-hidden rounded-3xl border border-border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50 text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium">Time</th>
-                  <th className="px-4 py-3 text-left font-medium">Severity</th>
-                  <th className="px-4 py-3 text-left font-medium">Event</th>
-                  <th className="px-4 py-3 text-left font-medium">Message</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(summary?.errors ?? []).map((event) => (
-                  <tr key={event.id} className="border-t border-border">
-                    <td className="px-4 py-3 text-muted-foreground">{new Date(event.createdAt).toUTCString().slice(17, 22)}</td>
-                    <td className="px-4 py-3"><SeverityBadge severity={event.severity} /></td>
-                    <td className="px-4 py-3 font-medium">{event.eventType}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{event.message}</td>
+            <div className="max-h-[420px] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-muted/50 text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-medium">Time</th>
+                    <th className="px-4 py-3 text-left font-medium">Severity</th>
+                    <th className="px-4 py-3 text-left font-medium">Event</th>
+                    <th className="px-4 py-3 text-left font-medium">Message</th>
                   </tr>
-                ))}
-                {summaryQuery.isSuccess && (summary?.errors.length ?? 0) === 0 ? (
-                  <tr className="border-t border-border"><td className="px-4 py-4 text-muted-foreground" colSpan={4}>No recent events.</td></tr>
-                ) : null}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {(summary?.errors ?? []).map((event) => (
+                    <tr key={event.id} className="border-t border-border">
+                      <td className="px-4 py-3 text-muted-foreground">{new Date(event.createdAt).toUTCString().slice(17, 22)}</td>
+                      <td className="px-4 py-3"><SeverityBadge severity={event.severity} /></td>
+                      <td className="px-4 py-3 font-medium">{event.eventType}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{event.message}</td>
+                    </tr>
+                  ))}
+                  {summaryQuery.isSuccess && (summary?.errors.length ?? 0) === 0 ? (
+                    <tr className="border-t border-border"><td className="px-4 py-4 text-muted-foreground" colSpan={4}>No recent events.</td></tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
         <div className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60 lg:col-span-5">
           <h2 className="font-semibold">Alerts</h2>
           <p className="text-sm text-muted-foreground">Currently active conditions.</p>
-          <div className="mt-4 space-y-3">
+          <div className="mt-4 max-h-[420px] space-y-3 overflow-y-auto">
             {(summary?.alerts ?? []).map((alert) => (
               <div key={alert.alertKey} className="rounded-3xl bg-muted/35 p-4">
                 <div className="flex items-center gap-2">
