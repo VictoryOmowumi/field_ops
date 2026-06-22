@@ -6,6 +6,8 @@ import { generateShareToken, hashShareToken, resolvePublicBaseUrl } from "@/lib/
 import { getBrandByOrganizationId } from "@/lib/branding/server";
 import { buildTenantBaseUrl } from "@/lib/tenant/url";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { captureException } from "@/lib/observability/sentry";
+import { recordSystemEvent } from "@/lib/observability/system-events";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -205,6 +207,20 @@ export async function POST(request: NextRequest, context: RouteContext) {
         brandLogoUrl: orgBrand?.logoUrl ?? null,
       });
     } catch (sendError) {
+      captureException(sendError, {
+        userId: user.id,
+        organizationId: membership.organizationId,
+        campaignId: id,
+        route: "/api/admin/campaigns/[id]/share-links",
+        expected: false,
+      });
+      await recordSystemEvent({
+        eventType: "email_send_failed",
+        severity: "error",
+        message: (sendError as Error).message,
+        organizationId: membership.organizationId,
+        metadata: { campaignId: id },
+      });
       return NextResponse.json({ success: false, message: (sendError as Error).message }, { status: 500 });
     }
   }
