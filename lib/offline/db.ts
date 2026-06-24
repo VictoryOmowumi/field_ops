@@ -55,3 +55,16 @@ export class ActivationIQDB extends Dexie {
 }
 
 export const db = new ActivationIQDB();
+
+/** Retries once after reopening the connection if the browser closed it (e.g. backgrounding/memory pressure). */
+export async function withDbRetry<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof Dexie.DatabaseClosedError) {
+      await db.open();
+      return await operation();
+    }
+    throw error;
+  }
+}

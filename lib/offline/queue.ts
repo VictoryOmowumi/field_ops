@@ -1,7 +1,7 @@
-import { db, type SyncLogRecord, type SyncQueueRecord } from "@/lib/offline/db";
+import { db, withDbRetry, type SyncLogRecord, type SyncQueueRecord } from "@/lib/offline/db";
 
 export async function enqueueSyncRecord(record: SyncQueueRecord) {
-  await db.syncQueue.put({ ...record, status: "queued" });
+  await withDbRetry(() => db.syncQueue.put({ ...record, status: "queued" }));
   await appendSyncLog({
     id: `${record.id}-queued-${Date.now()}`,
     queueId: record.id,
@@ -11,15 +11,15 @@ export async function enqueueSyncRecord(record: SyncQueueRecord) {
 }
 
 export async function getPendingSyncRecords() {
-  return db.syncQueue.toArray();
+  return withDbRetry(() => db.syncQueue.toArray());
 }
 
 export async function removeSyncRecord(id: string) {
-  await db.syncQueue.delete(id);
+  await withDbRetry(() => db.syncQueue.delete(id));
 }
 
 export async function appendSyncLog(record: SyncLogRecord) {
-  await db.syncLogs.put(record);
+  await withDbRetry(() => db.syncLogs.put(record));
 }
 
 export function computeNextRetryAt(retryCount: number) {

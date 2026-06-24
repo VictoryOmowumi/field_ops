@@ -97,7 +97,13 @@ export function useCampaignDetailsPage(campaignId?: string) {
   const [registerRepForm, setRegisterRepForm] = useState<RepFormValues>(createDefaultRepFormValues);
   const [exportingActivities, setExportingActivities] = useState(false);
   const [summary, setSummary] = useState<CampaignAnalyticsSummary | null>(null);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
   const [mapPoints, setMapPoints] = useState<CampaignMapPoint[]>([]);
+  type DateWindow = { dateFrom: string | null; dateTo: string | null; isDefaultWindow: boolean };
+  const [activitiesDateWindow, setActivitiesDateWindow] = useState<DateWindow | null>(null);
+  const [mapDateWindow, setMapDateWindow] = useState<DateWindow | null>(null);
+  const [pendingRequests, setPendingRequests] = useState(0);
+  const refreshing = pendingRequests > 0;
   const [evidence, setEvidence] = useState<CampaignEvidenceItem[]>([]);
   const [evidencePagination, setEvidencePagination] = useState<CampaignEvidencePagination>({
     page: 1,
@@ -134,29 +140,36 @@ export function useCampaignDetailsPage(campaignId?: string) {
   const loadActivities = useCallback(
     async (token: string, nextPage: number, nextSearch: string, nextStatus: string) => {
       if (!campaignId) return;
-      const params = new URLSearchParams({
-        page: String(nextPage),
-        pageSize: "20",
-      });
-      if (nextSearch.trim()) params.set("search", nextSearch.trim());
-      if (nextStatus !== "all") params.set("status", nextStatus);
-      if (dateFrom) params.set("dateFrom", dateFrom);
-      if (dateTo) params.set("dateTo", dateTo);
-      const response = await fetch(`/api/admin/campaigns/${campaignId}/activities?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const result = (await response.json()) as {
-        success: boolean;
-        activities?: CampaignActivity[];
-        total?: number;
-        message?: string;
-      };
-      if (!response.ok || !result.success) {
-        toast.error(result.message ?? "Failed to load campaign activities.");
-        return;
+      setPendingRequests((n) => n + 1);
+      try {
+        const params = new URLSearchParams({
+          page: String(nextPage),
+          pageSize: "20",
+        });
+        if (nextSearch.trim()) params.set("search", nextSearch.trim());
+        if (nextStatus !== "all") params.set("status", nextStatus);
+        if (dateFrom) params.set("dateFrom", dateFrom);
+        if (dateTo) params.set("dateTo", dateTo);
+        const response = await fetch(`/api/admin/campaigns/${campaignId}/activities?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const result = (await response.json()) as {
+          success: boolean;
+          activities?: CampaignActivity[];
+          total?: number;
+          message?: string;
+          appliedDateWindow?: DateWindow;
+        };
+        if (!response.ok || !result.success) {
+          toast.error(result.message ?? "Failed to load campaign activities.");
+          return;
+        }
+        setActivities(result.activities ?? []);
+        setActivitiesTotal(result.total ?? 0);
+        setActivitiesDateWindow(result.appliedDateWindow ?? null);
+      } finally {
+        setPendingRequests((n) => n - 1);
       }
-      setActivities(result.activities ?? []);
-      setActivitiesTotal(result.total ?? 0);
     },
     [campaignId, dateFrom, dateTo]
   );
@@ -164,6 +177,8 @@ export function useCampaignDetailsPage(campaignId?: string) {
   const loadCampaignIntelligence = useCallback(
     async (token: string) => {
       if (!campaignId) return;
+      setPendingRequests((n) => n + 1);
+      try {
       const [analyticsResponse, evidenceResponse, shareLinksResponse] = await Promise.all([
         fetch(`/api/admin/campaigns/${campaignId}/analytics?${new URLSearchParams({
           ...(dateFrom ? { dateFrom } : {}),
@@ -182,12 +197,19 @@ export function useCampaignDetailsPage(campaignId?: string) {
 
       const analyticsResult = (await analyticsResponse.json()) as {
         success: boolean;
+        message?: string;
         summary?: CampaignAnalyticsSummary;
         mapPoints?: CampaignMapPoint[];
+        mapAppliedDateWindow?: DateWindow;
       };
       if (analyticsResponse.ok && analyticsResult.success) {
         setSummary(analyticsResult.summary ?? null);
         setMapPoints(analyticsResult.mapPoints ?? []);
+        setMapDateWindow(analyticsResult.mapAppliedDateWindow ?? null);
+        setSummaryError(null);
+      } else {
+        setSummaryError(analyticsResult.message ?? "Failed to load campaign analytics.");
+        toast.error(analyticsResult.message ?? "Failed to load campaign analytics.");
       }
 
       const evidenceResult = (await evidenceResponse.json()) as {
@@ -204,6 +226,9 @@ export function useCampaignDetailsPage(campaignId?: string) {
 
       const shareLinksResult = (await shareLinksResponse.json()) as { success: boolean; shareLinks?: CampaignShareLink[] };
       if (shareLinksResponse.ok && shareLinksResult.success) setShareLinks(shareLinksResult.shareLinks ?? []);
+      } finally {
+        setPendingRequests((n) => n - 1);
+      }
     },
     [campaignId, dateFrom, dateTo]
   );
@@ -705,8 +730,12 @@ export function useCampaignDetailsPage(campaignId?: string) {
     loading,
     launching,
     exportingActivities,
+    refreshing,
     summary,
+    summaryError,
     mapPoints,
+    activitiesDateWindow,
+    mapDateWindow,
     supervisorNames,
     supervisorRows,
     assignedRepRows,

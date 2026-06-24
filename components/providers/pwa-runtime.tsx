@@ -35,7 +35,7 @@ export function PwaRuntimeProvider() {
         return;
       }
       try {
-        const registration = await navigator.serviceWorker.register("/service-worker.js");
+        const registration = await navigator.serviceWorker.register("/service-worker.js", { scope: "/agent/" });
         await registration.update();
 
         navigator.serviceWorker.addEventListener("controllerchange", () => {

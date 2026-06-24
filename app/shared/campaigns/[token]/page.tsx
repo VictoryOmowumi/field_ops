@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
 import { addMonths, endOfMonth, format, getDay, isSameDay, isWithinInterval, startOfMonth, subMonths } from "date-fns";
 import { Area, AreaChart, BarChart, Bar, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Download, ImageIcon, MapPin, Moon, Search, Sun, X } from "lucide-react";
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Download, ImageIcon, Loader2, MapPin, Moon, Search, Sun, X } from "lucide-react";
 
 import EvidenceGallery from "@/components/shared/EvidenceGallery";
 import BackofficeBrand from "@/components/backoffice/BackofficeBrand";
@@ -242,12 +242,16 @@ export default function SharedCampaignPage() {
   const { theme, toggleTheme } = useThemeMode();
 
   const [loading, setLoading] = useState(true);
+  const [loadingSummary, setLoadingSummary] = useState(false);
   const [loadingSections, setLoadingSections] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [campaign, setCampaign] = useState<SharedCampaignPayload | null>(null);
   const [summary, setSummary] = useState<CampaignAnalyticsSummary | null>(null);
   const [brand, setBrand] = useState<SharedBrand | null>(null);
   const [mapPoints, setMapPoints] = useState<CampaignMapPoint[]>([]);
+  const [mapPagination, setMapPagination] = useState<{ page: number; pageSize: number; hasMore: boolean }>({ page: 1, pageSize: 500, hasMore: false });
+  const [loadingMoreMap, setLoadingMoreMap] = useState(false);
+  const [appliedDateWindow, setAppliedDateWindow] = useState<{ dateFrom: string | null; dateTo: string | null; isDefaultWindow: boolean } | null>(null);
   const [activities, setActivities] = useState<CampaignActivityRow[]>([]);
   const [activitiesTotal, setActivitiesTotal] = useState(0);
   const [evidence, setEvidence] = useState<CampaignEvidenceItem[]>([]);
@@ -277,20 +281,25 @@ export default function SharedCampaignPage() {
   // ── Load summary + brand ────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
-      const q = new URLSearchParams({ section: "summary" });
-      if (dateFrom) q.set("dateFrom", dateFrom);
-      if (dateTo) q.set("dateTo", dateTo);
-      if (areaFilter !== "all") q.set("area", areaFilter);
-      const res = await fetch(`/api/shared/campaigns/${token}?${q.toString()}`, { cache: "no-store" });
-      const data = await res.json();
-      setLoading(false);
-      if (!res.ok || !data.success) { setError(data.message ?? "Could not load."); return; }
-      setCampaign(data.campaign);
-      setSummary(data.summary);
-      if (data.brand) {
-        const b = data.brand as SharedBrand;
-        setBrand(b);
-        if (b.uiVariant === "enhanced") applySharedBrandTheme(b);
+      setLoadingSummary(true);
+      try {
+        const q = new URLSearchParams({ section: "summary" });
+        if (dateFrom) q.set("dateFrom", dateFrom);
+        if (dateTo) q.set("dateTo", dateTo);
+        if (areaFilter !== "all") q.set("area", areaFilter);
+        const res = await fetch(`/api/shared/campaigns/${token}?${q.toString()}`, { cache: "no-store" });
+        const data = await res.json();
+        setLoading(false);
+        if (!res.ok || !data.success) { setError(data.message ?? "Could not load."); return; }
+        setCampaign(data.campaign);
+        setSummary(data.summary);
+        if (data.brand) {
+          const b = data.brand as SharedBrand;
+          setBrand(b);
+          if (b.uiVariant === "enhanced") applySharedBrandTheme(b);
+        }
+      } finally {
+        setLoadingSummary(false);
       }
     }
     void load();
@@ -310,15 +319,20 @@ export default function SharedCampaignPage() {
 
       const [actRes, mapRes, evRes] = await Promise.all([
         fetch(`/api/shared/campaigns/${token}?${new URLSearchParams({ ...bo, section: "activities", activityPage: String(page), activityPageSize: String(PAGE_SIZE) })}`, { cache: "no-store" }),
-        fetch(`/api/shared/campaigns/${token}?${new URLSearchParams({ ...bo, section: "map" })}`, { cache: "no-store" }),
+        fetch(`/api/shared/campaigns/${token}?${new URLSearchParams({ ...bo, section: "map", mapPage: "1", mapPageSize: "500" })}`, { cache: "no-store" }),
         fetch(`/api/shared/campaigns/${token}?${new URLSearchParams({ ...bo, section: "evidence", evidencePage: "1", evidencePageSize: "20" })}`, { cache: "no-store" }),
       ]);
       const [actJson, mapJson, evJson] = await Promise.all([actRes.json().catch(() => null), mapRes.json().catch(() => null), evRes.json().catch(() => null)]);
       if (cancelled) return;
-      if (actRes.ok && actJson?.success) { setActivities(actJson.activities ?? []); setActivitiesTotal(Number(actJson.totalActivities ?? 0)); }
-      else { setActivities([]); setActivitiesTotal(0); }
-      if (mapRes.ok && mapJson?.success) setMapPoints(mapJson.mapPoints ?? []);
-      else setMapPoints([]);
+      if (actRes.ok && actJson?.success) {
+        setActivities(actJson.activities ?? []);
+        setActivitiesTotal(Number(actJson.totalActivities ?? 0));
+        if (actJson.appliedDateWindow) setAppliedDateWindow(actJson.appliedDateWindow);
+      } else { setActivities([]); setActivitiesTotal(0); }
+      if (mapRes.ok && mapJson?.success) {
+        setMapPoints(mapJson.mapPoints ?? []);
+        setMapPagination(mapJson.pagination ?? { page: 1, pageSize: 500, hasMore: false });
+      } else { setMapPoints([]); setMapPagination({ page: 1, pageSize: 500, hasMore: false }); }
       if (evRes.ok && evJson?.success) { setEvidence(evJson.evidence ?? []); setEvidencePagination(evJson.pagination ?? { page: 1, pageSize: 20, total: (evJson.evidence ?? []).length, hasMore: false }); }
       else { setEvidence([]); setEvidencePagination({ page: 1, pageSize: 20, total: 0, hasMore: false }); }
       setLoadingSections(false);
@@ -326,6 +340,27 @@ export default function SharedCampaignPage() {
     void loadSections();
     return () => { cancelled = true; };
   }, [campaign, token, dateFrom, dateTo, areaFilter, page]);
+
+  async function loadMoreMapPoints() {
+    if (loadingMoreMap || !mapPagination.hasMore) return;
+    setLoadingMoreMap(true);
+    try {
+      const q = new URLSearchParams({ section: "map", mapPage: String(mapPagination.page + 1), mapPageSize: String(mapPagination.pageSize) });
+      if (dateFrom) q.set("dateFrom", dateFrom);
+      if (dateTo) q.set("dateTo", dateTo);
+      if (areaFilter !== "all") q.set("area", areaFilter);
+      const res = await fetch(`/api/shared/campaigns/${token}?${q}`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok || !data.success) return;
+      setMapPoints((prev) => {
+        const seen = new Set(prev.map((point) => point.id));
+        return [...prev, ...(data.mapPoints ?? []).filter((point: CampaignMapPoint) => !seen.has(point.id))];
+      });
+      if (data.pagination) setMapPagination(data.pagination);
+    } finally {
+      setLoadingMoreMap(false);
+    }
+  }
 
   async function loadMoreEvidence() {
     if (loadingMoreEvidence || !evidencePagination.hasMore) return;
@@ -479,7 +514,7 @@ export default function SharedCampaignPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Button variant="outline" className="rounded-full" onClick={() => {
+            <Button variant="outline" className="rounded-full" disabled={loadingSummary} onClick={() => {
               setDateFrom("");
               setDateTo("");
               setAreaFilter("all");
@@ -487,6 +522,11 @@ export default function SharedCampaignPage() {
               Clear filters
             </Button>
           </div>
+          {loadingSummary ? (
+            <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="size-3.5 animate-spin" />Updating results…
+            </p>
+          ) : null}
         </section>
 
         <section className="grid gap-4 grid-cols-2 lg:grid-cols-5">
@@ -512,6 +552,11 @@ export default function SharedCampaignPage() {
             {loadingSections ? <span className="text-xs text-muted-foreground">Updating map...</span> : null}
           </div>
           <p className="text-sm text-muted-foreground">Plotted coordinates from visit activity. Tooltip shows sale quantity when available.</p>
+          {appliedDateWindow?.isDefaultWindow ? (
+            <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+              Showing the last 2 days only (no date range selected) — pick a date range above to see full history.
+            </p>
+          ) : null}
           <div className="relative mt-4">
             {loadingSections && mapPoints.length === 0 ? (
               <div className="h-72 rounded-3xl border border-border bg-muted/30" />
@@ -526,6 +571,13 @@ export default function SharedCampaignPage() {
               </div>
             ) : null}
           </div>
+          {mapPagination.hasMore ? (
+            <div className="mt-3">
+              <Button variant="outline" className="rounded-full" disabled={loadingMoreMap} onClick={loadMoreMapPoints}>
+                {loadingMoreMap ? "Loading…" : `Load more points · ${mapPoints.length} shown`}
+              </Button>
+            </div>
+          ) : null}
         </section>
 
         <section className="rounded-3xl border border-border bg-card p-5">
@@ -533,6 +585,11 @@ export default function SharedCampaignPage() {
             <h2 className="font-semibold">Captured Activity</h2>
             {loadingSections ? <span className="text-xs text-muted-foreground">Updating table...</span> : null}
           </div>
+          {appliedDateWindow?.isDefaultWindow ? (
+            <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+              Showing the last 2 days only (no date range selected) — pick a date range above to see full history.
+            </p>
+          ) : null}
           <div className="mt-4 grid gap-2 md:grid-cols-3">
             <Input
               placeholder="Search customer/outlet/area/products/actor"
@@ -818,12 +875,19 @@ export default function SharedCampaignPage() {
             </SelectContent>
           </Select>
 
+          {loadingSummary ? (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground sm:ml-auto">
+              <Loader2 className="size-3.5 animate-spin" />Updating…
+            </span>
+          ) : null}
+
           {(dateFrom || dateTo || areaFilter !== "all") && (
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              className="ml-0 h-9 gap-1 text-muted-foreground hover:text-foreground sm:ml-auto"
+              className={cn("h-9 gap-1 text-muted-foreground hover:text-foreground", !loadingSummary && "ml-0 sm:ml-auto")}
+              disabled={loadingSummary}
               onClick={() => { setDateFrom(""); setDateTo(""); setAreaFilter("all"); setPage(1); }}
             >
               <X className="h-4 w-4" />
@@ -873,6 +937,11 @@ export default function SharedCampaignPage() {
           {/* ── Coverage Map ── */}
           {activeTab === "map" ? (
             <div>
+              {appliedDateWindow?.isDefaultWindow ? (
+                <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+                  Showing the last 2 days only (no date range selected) — pick a date range above to see full history.
+                </p>
+              ) : null}
               <div className="relative">
                 <CampaignPointMap points={mapPoints} resizeTrigger={mapTabActivations} />
                 {loadingSections && mapPoints.length > 0 ? (
@@ -881,12 +950,24 @@ export default function SharedCampaignPage() {
                   </div>
                 ) : null}
               </div>
+              {mapPagination.hasMore ? (
+                <div className="mt-3">
+                  <Button variant="outline" className="rounded-full" disabled={loadingMoreMap} onClick={loadMoreMapPoints}>
+                    {loadingMoreMap ? "Loading…" : `Load more points · ${mapPoints.length} shown`}
+                  </Button>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
           {/* ── Data Table tab ── */}
           {activeTab === "data" && (
             <div className="mt-5 space-y-4">
+              {appliedDateWindow?.isDefaultWindow ? (
+                <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+                  Showing the last 2 days only (no date range selected) — pick a date range above to see full history.
+                </p>
+              ) : null}
               {/* Filter bar */}
               <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card px-3 py-2.5">
                 <div className="relative min-w-[180px] flex-1">

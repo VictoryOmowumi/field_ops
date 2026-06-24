@@ -4,6 +4,7 @@ import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-acces
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { resolveDateWindow } from "@/lib/server/query-window";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { captureException } from "@/lib/observability/sentry";
 
 function unauthorized() {
   return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
@@ -57,7 +58,13 @@ export async function GET(request: NextRequest) {
     salesQuery = salesQuery.lte("created_at", `${dateWindow.dateTo}T23:59:59.999Z`);
   }
 
-  const [{ data: visits }, { data: sales }] = await Promise.all([visitsQuery, salesQuery]);
+  try {
+  const [{ data: visits, error: visitsError }, { data: sales, error: salesError }] = await Promise.all([
+    visitsQuery,
+    salesQuery,
+  ]);
+  if (visitsError) throw new Error(`Failed to load visits for insights: ${visitsError.message}`);
+  if (salesError) throw new Error(`Failed to load sales for insights: ${salesError.message}`);
   const visitRows = visits ?? [];
   const saleRows = sales ?? [];
   const convertedVisitIds = new Set(
@@ -66,6 +73,21 @@ export async function GET(request: NextRequest) {
       .map((sale) => sale.visit_id)
       .filter(Boolean)
   );
+
+  // Leaderboard must be aggregated from the full visit set, not the small `recentActivity`
+  // page below — counting rep occurrences within a 5-item page ties everyone at 1.
+  const repCounts = new Map<string, { visits: number; conversions: number }>();
+  for (const visit of visitRows) {
+    if (!visit.agent_id) continue;
+    const bucket = repCounts.get(visit.agent_id) ?? { visits: 0, conversions: 0 };
+    bucket.visits += 1;
+    if (convertedVisitIds.has(visit.id)) bucket.conversions += 1;
+    repCounts.set(visit.agent_id, bucket);
+  }
+  const topRepIds = [...repCounts.entries()]
+    .sort((a, b) => b[1].visits - a[1].visits)
+    .slice(0, 5)
+    .map(([repId]) => repId);
 
   const trendBuckets = new Map<string, { day: string; visits: number; conversions: number }>();
   for (const visit of visitRows) {
@@ -122,7 +144,7 @@ export async function GET(request: NextRequest) {
   const start = (page - 1) * pageSize;
   const paged = recentSorted.slice(start, start + pageSize);
   const outletIds = [...new Set(paged.map((x) => x.outlet_id).filter(Boolean))] as string[];
-  const repIds = [...new Set(paged.map((x) => x.agent_id).filter(Boolean))] as string[];
+  const repIds = [...new Set([...paged.map((x) => x.agent_id), ...topRepIds].filter(Boolean))] as string[];
   const [{ data: outletNames }, { data: repNames }] = await Promise.all([
     outletIds.length ? supabase.from("outlets").select("id, name").in("id", outletIds) : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
     repIds.length ? supabase.from("profiles").select("user_id, full_name").in("user_id", repIds) : Promise.resolve({ data: [] as Array<{ user_id: string; full_name: string | null }> }),
@@ -130,10 +152,19 @@ export async function GET(request: NextRequest) {
   const outletMap = new Map((outletNames ?? []).map((x) => [x.id, x.name]));
   const repMap = new Map((repNames ?? []).map((x) => [x.user_id, x.full_name ?? "Unknown"]));
 
+  const repPerformance = topRepIds.map((repId, index) => ({
+    rank: index + 1,
+    repId,
+    name: repMap.get(repId) ?? "Unknown",
+    visits: repCounts.get(repId)?.visits ?? 0,
+    conversions: repCounts.get(repId)?.conversions ?? 0,
+  }));
+
   return NextResponse.json({
     success: true,
     trend,
     territoryPerformance,
+    repPerformance,
     recentActivity: paged.map((item) => ({
       id: item.id,
       campaignId: item.campaign_id ?? null,
@@ -145,4 +176,8 @@ export async function GET(request: NextRequest) {
     pagination: { page, pageSize, total, hasMore: page * pageSize < total },
     appliedDateWindow: dateWindow,
   });
+  } catch (error) {
+    captureException(error, { organizationId, route: "/api/admin/dashboard/insights" });
+    return NextResponse.json({ success: false, message: "Failed to load dashboard insights." }, { status: 500 });
+  }
 }
