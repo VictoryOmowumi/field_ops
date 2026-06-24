@@ -39,10 +39,16 @@ export async function authorizedFetch<T>(input: string, init?: RequestInit): Pro
     throw new Error("Session expired. Redirecting to login.");
   }
 
-  const result = (await response.json()) as T & { success?: boolean; message?: string };
-  if (!response.ok || ("success" in result && result.success === false)) {
-    throw new Error(result.message ?? "Request failed.");
+  let result: (T & { success?: boolean; message?: string }) | null = null;
+  try {
+    result = await response.json();
+  } catch {
+    throw new Error(`Request failed (${response.status} ${response.statusText || "error"}).`);
   }
 
-  return result;
+  if (!response.ok || (result && "success" in result && result.success === false)) {
+    throw new Error(result?.message ?? `Request failed (${response.status}).`);
+  }
+
+  return result as T & { success?: boolean; message?: string };
 }

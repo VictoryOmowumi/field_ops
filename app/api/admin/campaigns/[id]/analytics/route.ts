@@ -5,6 +5,8 @@ import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/ser
 import { getCampaignAnalyticsSummary, getCampaignMapPoints } from "@/lib/campaign/intelligence";
 import { resolveDateWindow } from "@/lib/server/query-window";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { captureException } from "@/lib/observability/sentry";
+import { withPerformanceTracking } from "@/lib/observability/performance";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -31,21 +33,36 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const mapPage = Math.max(1, Number(request.nextUrl.searchParams.get("mapPage") ?? "1"));
   const mapPageSize = Math.min(500, Math.max(20, Number(request.nextUrl.searchParams.get("mapPageSize") ?? "200")));
 
-  const [summary, mapPoints] = await Promise.all([
-    getCampaignAnalyticsSummary(supabase, membership.organizationId, id, { dateFrom, dateTo }),
-    getCampaignMapPoints(supabase, membership.organizationId, id, {
-      dateFrom: mapDateWindow.dateFrom,
-      dateTo: mapDateWindow.dateTo,
-      page: mapPage,
-      pageSize: mapPageSize,
-    }),
-  ]);
+  try {
+    const [summary, mapPoints] = await Promise.all([
+      withPerformanceTracking(
+        "query",
+        "campaign_analytics_summary",
+        () => getCampaignAnalyticsSummary(supabase, membership.organizationId, id, { dateFrom, dateTo }),
+        membership.organizationId
+      ),
+      getCampaignMapPoints(supabase, membership.organizationId, id, {
+        dateFrom: mapDateWindow.dateFrom,
+        dateTo: mapDateWindow.dateTo,
+        page: mapPage,
+        pageSize: mapPageSize,
+      }),
+    ]);
 
-  return NextResponse.json({
-    success: true,
-    summary,
-    mapPoints,
-    mapPagination: { page: mapPage, pageSize: mapPageSize, hasMore: mapPoints.length === mapPageSize },
-    mapAppliedDateWindow: mapDateWindow,
-  });
+    return NextResponse.json({
+      success: true,
+      summary,
+      mapPoints,
+      mapPagination: { page: mapPage, pageSize: mapPageSize, hasMore: mapPoints.length === mapPageSize },
+      mapAppliedDateWindow: mapDateWindow,
+    });
+  } catch (error) {
+    captureException(error, {
+      userId: user.id,
+      organizationId: membership.organizationId,
+      campaignId: id,
+      route: `/api/admin/campaigns/${id}/analytics`,
+    });
+    return NextResponse.json({ success: false, message: "Failed to load campaign analytics." }, { status: 500 });
+  }
 }

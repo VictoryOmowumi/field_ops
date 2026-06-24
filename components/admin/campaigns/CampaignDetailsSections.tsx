@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { More02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft, BarChart3, Download, ImageIcon, LayoutList, MapIcon, Pencil, Rocket, Share2, Trash2, Users } from "lucide-react";
+import { ArrowLeft, BarChart3, Download, ImageIcon, LayoutList, Loader2, MapIcon, Pencil, Rocket, Share2, Trash2, Users } from "lucide-react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 
 import {
@@ -86,10 +86,16 @@ type CampaignActivity = {
   saleCount?: number;
 };
 
+type DateWindow = { dateFrom: string | null; dateTo: string | null; isDefaultWindow: boolean };
+
 type CampaignDetailsSectionsProps = {
   campaign: Campaign;
   summary: CampaignAnalyticsSummary | null;
+  summaryError?: string | null;
+  refreshing?: boolean;
   mapPoints: CampaignMapPoint[];
+  activitiesDateWindow?: DateWindow | null;
+  mapDateWindow?: DateWindow | null;
   supervisorNames: string;
   supervisorRows: SupervisorRow[];
   assignedRepRows: AssignedRepRow[];
@@ -136,7 +142,11 @@ const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
 export function CampaignDetailsSections({
   campaign,
   summary,
+  summaryError,
+  refreshing,
   mapPoints,
+  activitiesDateWindow,
+  mapDateWindow,
   supervisorNames,
   supervisorRows,
   assignedRepRows,
@@ -195,6 +205,21 @@ export function CampaignDetailsSections({
     ?.free_sample_distribution ?? {}
   ) as Record<string, unknown>;
   const freeSampleEnabled = Boolean(freeSampleConfig.enabled);
+
+  const refreshingNote = refreshing ? (
+    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+      <Loader2 className="size-3.5 animate-spin" />Refreshing…
+    </span>
+  ) : null;
+
+  function dateWindowNote(window?: DateWindow | null) {
+    if (!window?.isDefaultWindow) return null;
+    return (
+      <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+        Showing the last 2 days only (no date range selected) — pick a date range above to see full history.
+      </p>
+    );
+  }
 
   function goToTab(tab: TabId) {
     setActiveTab(tab);
@@ -289,17 +314,24 @@ export function CampaignDetailsSections({
   // ── Reusable content blocks (shared between classic and enhanced) ──────────
 
   const kpiCards = (
-    <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-      <KpiCard label="Total submissions"  value={String(summary?.totalSubmissions ?? 0)}                        trend={summary?.recentTrend} dataKey="submissions" />
-      <KpiCard label="Unique outlets"     value={String(summary?.uniqueOutlets ?? 0)}                           trend={summary?.recentTrend} dataKey="submissions" />
-      <KpiCard label="Areas covered"      value={String(summary?.areasCovered ?? 0)}                            trend={summary?.recentTrend} dataKey="submissions" />
-      <KpiCard label="Conversions"        value={String(summary?.conversions ?? 0)}                             trend={summary?.recentTrend} dataKey="conversions" highlight />
-      <KpiCard label="Conversion rate"    value={`${(summary?.conversionRate ?? 0).toFixed(1)}%`}               trend={summary?.recentTrend} dataKey="conversions" highlight />
-      <KpiCard label="Sync health"        value={`${(summary?.syncHealth ?? 0).toFixed(1)}%`}                   trend={summary?.recentTrend} dataKey="submissions" />
-      {posmConfigured ? (
-        <KpiCard label="POSM deployed" value={`${summary?.posmDeployed ?? 0} (${summary?.posmUnits ?? 0} units)`} trend={summary?.recentTrend} dataKey="submissions" />
+    <>
+      {summaryError ? (
+        <p className="rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          {summaryError} — the numbers below may be incomplete.
+        </p>
       ) : null}
-    </section>
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+        <KpiCard label="Total submissions"  value={String(summary?.totalSubmissions ?? 0)}                        trend={summary?.recentTrend} dataKey="submissions" />
+        <KpiCard label="Unique outlets"     value={String(summary?.uniqueOutlets ?? 0)}                           trend={summary?.recentTrend} dataKey="submissions" />
+        <KpiCard label="Areas covered"      value={String(summary?.areasCovered ?? 0)}                            trend={summary?.recentTrend} dataKey="submissions" />
+        <KpiCard label="Conversions"        value={String(summary?.conversions ?? 0)}                             trend={summary?.recentTrend} dataKey="conversions" highlight />
+        <KpiCard label="Conversion rate"    value={`${(summary?.conversionRate ?? 0).toFixed(1)}%`}               trend={summary?.recentTrend} dataKey="conversions" highlight />
+        <KpiCard label="Sync health"        value={`${(summary?.syncHealth ?? 0).toFixed(1)}%`}                   trend={summary?.recentTrend} dataKey="submissions" />
+        {posmConfigured ? (
+          <KpiCard label="POSM deployed" value={`${summary?.posmDeployed ?? 0} (${summary?.posmUnits ?? 0} units)`} trend={summary?.recentTrend} dataKey="submissions" />
+        ) : null}
+      </section>
+    </>
   );
 
   const achievementCards = (
@@ -315,6 +347,7 @@ export function CampaignDetailsSections({
     <section className="rounded-3xl border border-border bg-card p-5">
       <h2 className="font-semibold">Coverage Map</h2>
       <p className="mt-0.5 text-sm text-muted-foreground">Plotted coordinates from visits and sales records.</p>
+      {dateWindowNote(mapDateWindow)}
       <div className="mt-4">
         <CampaignPointMap points={mapPoints} resizeTrigger={mapActivations} />
       </div>
@@ -473,14 +506,16 @@ export function CampaignDetailsSections({
     <section className="rounded-3xl border border-border bg-card p-5">
       <h2 className="font-semibold">Campaign Activities</h2>
       <p className="mt-0.5 text-sm text-muted-foreground">Latest visit events grouped with related sales lines.</p>
+      {dateWindowNote(activitiesDateWindow)}
 
       {/* Filters */}
       <div className="mt-4 space-y-3">
         <div className="grid gap-2 sm:grid-cols-3">
           <input type="date" className="h-10 rounded-xl border border-border bg-background px-4 text-sm" value={dateFrom} onChange={(e) => onDateFromChange(e.target.value)} />
           <input type="date" className="h-10 rounded-xl border border-border bg-background px-4 text-sm" value={dateTo} onChange={(e) => onDateToChange(e.target.value)} />
-          <Button variant="outline" className="h-10 rounded-xl" onClick={onClearDateFilter}>Clear dates</Button>
+          <Button variant="outline" className="h-10 rounded-xl" disabled={refreshing} onClick={onClearDateFilter}>Clear dates</Button>
         </div>
+        {refreshingNote}
         <div className="flex flex-wrap gap-2">
           <input className="h-10 flex-1 rounded-xl border border-border bg-background px-4 text-sm" placeholder="Search outlet / actor / status" value={activitySearch} onChange={(e) => onActivitySearchChange(e.target.value)} />
           <Select value={activityStatusFilter} onValueChange={onActivityStatusFilterChange}>
@@ -493,7 +528,7 @@ export function CampaignDetailsSections({
               <SelectItem value="no_sale">No sale</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" className="rounded-xl" onClick={onApplyFilters}>Apply</Button>
+          <Button variant="outline" className="rounded-xl" disabled={refreshing} onClick={onApplyFilters}>Apply</Button>
         </div>
       </div>
 
@@ -661,27 +696,15 @@ export function CampaignDetailsSections({
       {campaignHeader}
 
       {/* KPI sparkline cards */}
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-        <KpiCard label="Total submissions"  value={String(summary?.totalSubmissions ?? 0)}                  trend={summary?.recentTrend} dataKey="submissions" />
-        <KpiCard label="Unique outlets"     value={String(summary?.uniqueOutlets ?? 0)}                     trend={summary?.recentTrend} dataKey="submissions" />
-        <KpiCard label="Areas covered"      value={String(summary?.areasCovered ?? 0)}                      trend={summary?.recentTrend} dataKey="submissions" />
-        <KpiCard label="Conversions"        value={String(summary?.conversions ?? 0)}                       trend={summary?.recentTrend} dataKey="conversions" highlight />
-        <KpiCard label="Conversion rate"    value={`${(summary?.conversionRate ?? 0).toFixed(1)}%`}         trend={summary?.recentTrend} dataKey="conversions" highlight />
-        <KpiCard label="Sync health"        value={`${(summary?.syncHealth ?? 0).toFixed(1)}%`}             trend={summary?.recentTrend} dataKey="submissions" />
-        {posmConfigured ? <KpiCard label="POSM deployed" value={`${summary?.posmDeployed ?? 0} (${summary?.posmUnits ?? 0} units)`} trend={summary?.recentTrend} dataKey="submissions" /> : null}
-      </section>
+      {kpiCards}
 
       {/* Achievement progress */}
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <AchievementCard label="Visit achievement"      achieved={summary?.achievedVisits ?? 0}       target={campaign.target_outlets ?? 0} />
-        <AchievementCard label="Conversion achievement" achieved={summary?.convertedOutlets ?? 0}     target={campaign.target_conversions ?? 0} />
-        {freeSampleEnabled ? <AchievementCard label="Free samples distributed" achieved={summary?.distributedFreeSamples ?? 0} target={summary?.plannedFreeSamples ?? 0} /> : null}
-        {freeSampleEnabled ? <KpiCard label="Free samples remaining" value={String(summary?.remainingFreeSamples ?? 0)} trend={summary?.recentTrend} dataKey="submissions" /> : null}
-      </section>
+      {achievementCards}
 
       <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60">
         <h2 className="font-semibold">Campaign Coverage Map</h2>
         <p className="mt-1 text-sm text-muted-foreground">Plotted coordinates captured from visits and sales records.</p>
+        {dateWindowNote(mapDateWindow)}
         <div className="mt-4"><CampaignPointMap points={mapPoints} /></div>
       </section>
 
@@ -816,11 +839,13 @@ export function CampaignDetailsSections({
       <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60">
         <h2 className="font-semibold">Campaign Activities</h2>
         <p className="mt-1 text-sm text-muted-foreground">Latest visit events grouped with related sales lines.</p>
+        {dateWindowNote(activitiesDateWindow)}
         <div className="mt-3 grid gap-2 md:grid-cols-3">
           <input type="date" className="h-11 rounded-full border border-border bg-background px-4 text-sm" value={dateFrom} onChange={(e) => onDateFromChange(e.target.value)} />
           <input type="date" className="h-11 rounded-full border border-border bg-background px-4 text-sm" value={dateTo} onChange={(e) => onDateToChange(e.target.value)} />
-          <Button variant="outline" className="h-11 rounded-full" onClick={onClearDateFilter}>Clear Date Filter</Button>
+          <Button variant="outline" className="h-11 rounded-full" disabled={refreshing} onClick={onClearDateFilter}>Clear Date Filter</Button>
         </div>
+        <div className="mt-2">{refreshingNote}</div>
         <div className="mt-4 flex flex-wrap gap-2">
           <input className="h-11 rounded-full border border-border bg-background px-4 text-sm" placeholder="Search outlet/actor/status" value={activitySearch} onChange={(e) => onActivitySearchChange(e.target.value)} />
           <Select value={activityStatusFilter} onValueChange={onActivityStatusFilterChange}>
@@ -833,7 +858,7 @@ export function CampaignDetailsSections({
               <SelectItem value="no_sale">No sale</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" className="rounded-full" onClick={onApplyFilters}>Apply Filters</Button>
+          <Button variant="outline" className="rounded-full" disabled={refreshing} onClick={onApplyFilters}>Apply Filters</Button>
         </div>
         <div className="mt-4 overflow-hidden rounded-3xl border border-border">
           <table className="w-full text-sm">

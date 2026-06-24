@@ -1,4 +1,4 @@
-const VERSION = "v1.0.3";
+const VERSION = "v1.0.4";
 const APP_SHELL_CACHE = `app-shell-${VERSION}`;
 const API_CACHE = `api-get-${VERSION}`;
 
@@ -93,7 +93,14 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request).catch(() => caches.match("/login"))
+      fetch(request).catch(async () => {
+        const cachedRequest = await caches.match(request);
+        if (cachedRequest) return cachedRequest;
+        return new Response(
+          "<!DOCTYPE html><html><body><h1>You're offline</h1><p>This page isn't cached yet. Reconnect and try again.</p></body></html>",
+          { status: 503, headers: { "Content-Type": "text/html" } }
+        );
+      })
     );
     return;
   }
@@ -101,14 +108,12 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     caches.match(request).then((cached) => {
       if (cached) return cached;
-      return fetch(request)
-        .then((response) => {
-          if (!isStaticAssetRequest(request) || !response.ok) return response;
-          const cloned = response.clone();
-          caches.open(APP_SHELL_CACHE).then((cache) => cache.put(request, cloned));
-          return response;
-        })
-        .catch(() => caches.match("/login"));
+      return fetch(request).then((response) => {
+        if (!isStaticAssetRequest(request) || !response.ok) return response;
+        const cloned = response.clone();
+        caches.open(APP_SHELL_CACHE).then((cache) => cache.put(request, cloned));
+        return response;
+      });
     })
   );
 });

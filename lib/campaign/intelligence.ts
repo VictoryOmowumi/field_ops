@@ -202,49 +202,90 @@ export async function getCampaignAnalyticsSummary(
   campaignId: string,
   filters?: { dateFrom?: string | null; dateTo?: string | null; area?: string | null }
 ): Promise<CampaignAnalyticsSummary> {
-  let visitsQuery = supabase
-      .from("visits")
-      .select("id, created_at, outcome, sync_status, outlet_id, state, lga, task_payload")
-      .eq("organization_id", organizationId)
-      .eq("campaign_id", campaignId);
-  let salesQuery = supabase
-      .from("sales")
-      .select("id, created_at, visit_id, outlet_id, quantity, sales_value")
-      .eq("organization_id", organizationId)
-      .eq("campaign_id", campaignId);
-  if (filters?.dateFrom) {
-    visitsQuery = visitsQuery.gte("created_at", `${filters.dateFrom}T00:00:00.000Z`);
-    salesQuery = salesQuery.gte("created_at", `${filters.dateFrom}T00:00:00.000Z`);
-  }
-  if (filters?.dateTo) {
-    visitsQuery = visitsQuery.lte("created_at", `${filters.dateTo}T23:59:59.999Z`);
-    salesQuery = salesQuery.lte("created_at", `${filters.dateTo}T23:59:59.999Z`);
-  }
-  if (filters?.area && filters.area !== "all") {
-    visitsQuery = visitsQuery.eq("lga", filters.area);
-  }
-  const [{ data: visits }, { data: sales }, { data: campaign }] = await Promise.all([
-    visitsQuery,
-    salesQuery,
-    supabase
-      .from("campaigns")
-      .select("runtime_form_config")
-      .eq("organization_id", organizationId)
-      .eq("id", campaignId)
-      .maybeSingle(),
-  ]);
-  const scopedVisits = (visits ?? []) as MetricsVisitRow[];
-  const scopedVisitIds = new Set(scopedVisits.map((row) => row.id));
-  const scopedSales = filters?.area && filters.area !== "all"
-    ? ((sales ?? []) as MetricsSaleRow[]).filter((row) => row.visit_id && scopedVisitIds.has(row.visit_id))
-    : ((sales ?? []) as MetricsSaleRow[]);
-  const summary = computeMetricsFromRows(
-    scopedVisits,
-    scopedSales,
-    `campaign:${campaignId}`
-  ).summary;
+  const { data: campaign, error: campaignError } = await supabase
+    .from("campaigns")
+    .select("runtime_form_config")
+    .eq("organization_id", organizationId)
+    .eq("id", campaignId)
+    .maybeSingle();
+  if (campaignError) throw new Error(`Failed to load campaign config for analytics: ${campaignError.message}`);
+
   const tasks = ((campaign?.runtime_form_config as { tasks?: Record<string, Record<string, unknown>> } | null)?.tasks ?? {});
   const freeSampleConfig = tasks.free_sample_distribution ?? {};
+  const needsTaskPayload = Boolean(tasks.posm_deployment) || Boolean(freeSampleConfig.enabled);
+  const hasAreaFilter = Boolean(filters?.area && filters.area !== "all");
+  // Only fall back to a full row fetch when we genuinely need row-level data (task_payload
+  // extraction or area-scoped sales filtering). Otherwise let Postgres do the counting —
+  // pulling every visit row (with task_payload) for a large campaign is what was timing out.
+  const needsRowFetch = needsTaskPayload || hasAreaFilter;
+
+  let salesQuery = supabase
+    .from("sales")
+    .select("id, created_at, visit_id, outlet_id, quantity, sales_value")
+    .eq("organization_id", organizationId)
+    .eq("campaign_id", campaignId);
+  if (filters?.dateFrom) salesQuery = salesQuery.gte("created_at", `${filters.dateFrom}T00:00:00.000Z`);
+  if (filters?.dateTo) salesQuery = salesQuery.lte("created_at", `${filters.dateTo}T23:59:59.999Z`);
+
+  let summary: CampaignAnalyticsSummary;
+
+  if (needsRowFetch) {
+    const visitColumns = needsTaskPayload
+      ? "id, created_at, outcome, sync_status, outlet_id, state, lga, task_payload"
+      : "id, created_at, outcome, sync_status, outlet_id, state, lga";
+    let visitsQuery = supabase
+      .from("visits")
+      .select(visitColumns)
+      .eq("organization_id", organizationId)
+      .eq("campaign_id", campaignId);
+    if (filters?.dateFrom) visitsQuery = visitsQuery.gte("created_at", `${filters.dateFrom}T00:00:00.000Z`);
+    if (filters?.dateTo) visitsQuery = visitsQuery.lte("created_at", `${filters.dateTo}T23:59:59.999Z`);
+    if (hasAreaFilter) visitsQuery = visitsQuery.eq("lga", filters?.area as string);
+
+    const [{ data: visits, error: visitsError }, { data: sales, error: salesError }] = await Promise.all([
+      visitsQuery,
+      salesQuery,
+    ]);
+    if (visitsError) throw new Error(`Failed to load visits for analytics: ${visitsError.message}`);
+    if (salesError) throw new Error(`Failed to load sales for analytics: ${salesError.message}`);
+
+    const scopedVisits = (visits ?? []) as unknown as MetricsVisitRow[];
+    const scopedVisitIds = new Set(scopedVisits.map((row) => row.id));
+    const scopedSales = hasAreaFilter
+      ? ((sales ?? []) as MetricsSaleRow[]).filter((row) => row.visit_id && scopedVisitIds.has(row.visit_id))
+      : ((sales ?? []) as MetricsSaleRow[]);
+    summary = computeMetricsFromRows(scopedVisits, scopedSales, `campaign:${campaignId}`).summary;
+  } else {
+    const [{ data: counts, error: rpcError }, { data: sales, error: salesError }] = await Promise.all([
+      supabase
+        .rpc("visit_metrics_summary", {
+          p_organization_id: organizationId,
+          p_campaign_id: campaignId,
+          p_date_from: filters?.dateFrom ? `${filters.dateFrom}T00:00:00.000Z` : null,
+          p_date_to: filters?.dateTo ? `${filters.dateTo}T23:59:59.999Z` : null,
+        })
+        .single(),
+      salesQuery,
+    ]);
+    if (rpcError) throw new Error(`Failed to load visit metrics for analytics: ${rpcError.message}`);
+    if (salesError) throw new Error(`Failed to load sales for analytics: ${salesError.message}`);
+
+    const countsRow = counts as { total_visits: number; unique_outlets: number; unique_areas: number; synced_visits: number } | null;
+    const totalVisits = Number(countsRow?.total_visits ?? 0);
+    const uniqueOutlets = Number(countsRow?.unique_outlets ?? 0);
+    const salesOnly = computeMetricsFromRows([], (sales ?? []) as MetricsSaleRow[], `campaign:${campaignId}`).summary;
+    summary = {
+      ...salesOnly,
+      totalSubmissions: totalVisits,
+      uniqueOutlets,
+      achievedVisits: uniqueOutlets,
+      areasCovered: Number(countsRow?.unique_areas ?? 0),
+      syncHealth: totalVisits > 0 ? (Number(countsRow?.synced_visits ?? 0) / totalVisits) * 100 : 100,
+      conversionRate: uniqueOutlets > 0 ? (salesOnly.convertedOutlets / uniqueOutlets) * 100 : 0,
+      recentTrend: [],
+    };
+  }
+
   const plannedValue = Number(freeSampleConfig.targetQuantity ?? 0);
   const plannedFreeSamples = Number.isFinite(plannedValue) && plannedValue > 0 ? plannedValue : 0;
   const distributedFreeSamples = summary.distributedFreeSamples ?? 0;
@@ -261,7 +302,7 @@ export async function getCampaignMetricsDiagnostics(
   organizationId: string,
   campaignId: string
 ): Promise<MetricsDiagnostics> {
-  const [{ data: visits }, { data: sales }] = await Promise.all([
+  const [{ data: visits, error: visitsError }, { data: sales, error: salesError }] = await Promise.all([
     supabase
       .from("visits")
       .select("id, created_at, sync_status, outlet_id, state, lga, task_payload")
@@ -273,6 +314,8 @@ export async function getCampaignMetricsDiagnostics(
       .eq("organization_id", organizationId)
       .eq("campaign_id", campaignId),
   ]);
+  if (visitsError) throw new Error(`Failed to load visits diagnostics: ${visitsError.message}`);
+  if (salesError) throw new Error(`Failed to load sales diagnostics: ${salesError.message}`);
   return computeMetricsFromRows(
     (visits ?? []) as MetricsVisitRow[],
     (sales ?? []) as MetricsSaleRow[],

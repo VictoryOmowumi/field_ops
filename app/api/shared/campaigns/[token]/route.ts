@@ -45,7 +45,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const evidencePage = Math.max(1, Number(request.nextUrl.searchParams.get("evidencePage") ?? "1"));
   const evidencePageSize = Math.min(20, Math.max(1, Number(request.nextUrl.searchParams.get("evidencePageSize") ?? "20")));
   const mapPage = Math.max(1, Number(request.nextUrl.searchParams.get("mapPage") ?? "1"));
-  const mapPageSize = Math.min(500, Math.max(20, Number(request.nextUrl.searchParams.get("mapPageSize") ?? "200")));
+  const mapPageSize = Math.min(2000, Math.max(20, Number(request.nextUrl.searchParams.get("mapPageSize") ?? "500")));
   const nonSummaryDateWindow = resolveDateWindow(dateFrom, dateTo, 2);
   const ip = extractClientIp(request);
   if (isRateLimited(ip)) {

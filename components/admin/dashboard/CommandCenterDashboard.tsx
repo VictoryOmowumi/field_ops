@@ -21,7 +21,9 @@ import {
   AreaChart,
   Bar,
   BarChart,
+  CartesianGrid,
   Cell,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -120,6 +122,7 @@ export default function CommandCenterDashboard() {
         recentActivity: RecentActivity[];
         trend: TrendPoint[];
         territoryPerformance: TerritoryPoint[];
+        repPerformance: Array<{ rank: number; repId: string; name: string; visits: number; conversions: number }>;
         pagination: { total: number };
       }>(`/api/admin/dashboard/insights${queryString}${queryString ? "&" : "?"}page=1&pageSize=5`),
   });
@@ -148,17 +151,10 @@ export default function CommandCenterDashboard() {
     [insightsQuery.data?.recentActivity]
   );
 
-  // Leaderboard: aggregate by rep name from recent activity
-  const leaderboard = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const item of recentActivity) {
-      map.set(item.rep, (map.get(item.rep) ?? 0) + 1);
-    }
-    return Array.from(map.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([name, visits], i) => ({ rank: i + 1, name, visits }));
-  }, [recentActivity]);
+  const leaderboard = useMemo(
+    () => insightsQuery.data?.repPerformance ?? [],
+    [insightsQuery.data?.repPerformance]
+  );
 
   const conversionRate = summary?.conversionRate ?? 0;
   const syncHealth = summary?.syncHealth ?? 100;
@@ -259,14 +255,25 @@ export default function CommandCenterDashboard() {
           <div className="h-52 rounded-3xl bg-background p-4">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={trend}>
+                <CartesianGrid vertical={false} stroke="var(--color-border)" strokeDasharray="4 4" />
                 <XAxis
                   dataKey="day"
                   axisLine={false}
                   tickLine={false}
                   tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
                 />
-                <YAxis hide />
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+                  allowDecimals={false}
+                  width={32}
+                />
                 <Tooltip cursor={false} />
+                <Legend
+                  iconType="circle"
+                  wrapperStyle={{ fontSize: 12 }}
+                />
                 <Area
                   type="monotone"
                   dataKey="visits"
@@ -401,27 +408,38 @@ export default function CommandCenterDashboard() {
             <p className="text-sm text-muted-foreground">No activity yet.</p>
           ) : (
             <ul className="space-y-2">
-              {recentActivity.slice(0, 5).map((item) => (
-                <li
-                  key={item.id}
-                  className="flex items-start gap-3 rounded-2xl bg-background px-4 py-3"
-                >
-                  <span
-                    className={`mt-0.5 size-2 shrink-0 rounded-full ${
-                      item.status.toLowerCase() === "converted"
-                        ? "bg-primary"
-                        : "bg-muted-foreground/50"
-                    }`}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{item.rep}</p>
-                    <p className="truncate text-xs text-muted-foreground">{item.outlet}</p>
-                  </div>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {new Date(item.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </span>
-                </li>
-              ))}
+              {recentActivity.slice(0, 5).map((item) => {
+                const rowClassName = "flex items-start gap-3 rounded-2xl bg-background px-4 py-3 transition-colors hover:bg-muted/40";
+                const rowContent = (
+                  <>
+                    <span
+                      className={`mt-0.5 size-2 shrink-0 rounded-full ${
+                        item.status.toLowerCase() === "converted"
+                          ? "bg-primary"
+                          : "bg-muted-foreground/50"
+                      }`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{item.rep}</p>
+                      <p className="truncate text-xs text-muted-foreground">{item.outlet}</p>
+                    </div>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {new Date(item.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  </>
+                );
+                return (
+                  <li key={item.id}>
+                    {item.campaignId ? (
+                      <Link href={`/admin/campaigns/${item.campaignId}/activities/${item.id}`} className={rowClassName}>
+                        {rowContent}
+                      </Link>
+                    ) : (
+                      <div className={rowClassName}>{rowContent}</div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>

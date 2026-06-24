@@ -43,7 +43,11 @@ export default function CampaignDetailsPage() {
       <CampaignDetailsSections
         campaign={vm.campaign}
         summary={vm.summary}
+        summaryError={vm.summaryError}
+        refreshing={vm.refreshing}
         mapPoints={vm.mapPoints}
+        activitiesDateWindow={vm.activitiesDateWindow}
+        mapDateWindow={vm.mapDateWindow}
         supervisorNames={vm.supervisorNames}
         supervisorRows={vm.supervisorRows}
         assignedRepRows={vm.assignedRepRows}
