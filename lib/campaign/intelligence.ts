@@ -214,10 +214,11 @@ export async function getCampaignAnalyticsSummary(
   const freeSampleConfig = tasks.free_sample_distribution ?? {};
   const needsTaskPayload = Boolean(tasks.posm_deployment) || Boolean(freeSampleConfig.enabled);
   const hasAreaFilter = Boolean(filters?.area && filters.area !== "all");
-  // Only fall back to a full row fetch when we genuinely need row-level data (task_payload
-  // extraction or area-scoped sales filtering). Otherwise let Postgres do the counting —
-  // pulling every visit row (with task_payload) for a large campaign is what was timing out.
-  const needsRowFetch = needsTaskPayload || hasAreaFilter;
+  // Only fall back to a full row fetch when there's an explicit area filter — that bounds the
+  // row count to one LGA, so fetching task_payload there is cheap. POSM/free-sample aggregation
+  // is now computed by the RPC itself, so a campaign-wide row fetch (which is what was timing
+  // out on large campaigns) is never needed just because POSM/free-sample tasks are configured.
+  const needsRowFetch = hasAreaFilter;
 
   let salesQuery = supabase
     .from("sales")
@@ -270,9 +271,20 @@ export async function getCampaignAnalyticsSummary(
     if (rpcError) throw new Error(`Failed to load visit metrics for analytics: ${rpcError.message}`);
     if (salesError) throw new Error(`Failed to load sales for analytics: ${salesError.message}`);
 
-    const countsRow = counts as { total_visits: number; unique_outlets: number; unique_areas: number; synced_visits: number } | null;
+    const countsRow = counts as {
+      total_visits: number;
+      unique_outlets: number;
+      unique_areas: number;
+      synced_visits: number;
+      posm_checks: number;
+      posm_deployed: number;
+      posm_units: number;
+      distributed_free_samples: number;
+    } | null;
     const totalVisits = Number(countsRow?.total_visits ?? 0);
     const uniqueOutlets = Number(countsRow?.unique_outlets ?? 0);
+    const posmChecks = Number(countsRow?.posm_checks ?? 0);
+    const posmDeployed = Number(countsRow?.posm_deployed ?? 0);
     const salesOnly = computeMetricsFromRows([], (sales ?? []) as MetricsSaleRow[], `campaign:${campaignId}`).summary;
     summary = {
       ...salesOnly,
@@ -282,6 +294,11 @@ export async function getCampaignAnalyticsSummary(
       areasCovered: Number(countsRow?.unique_areas ?? 0),
       syncHealth: totalVisits > 0 ? (Number(countsRow?.synced_visits ?? 0) / totalVisits) * 100 : 100,
       conversionRate: uniqueOutlets > 0 ? (salesOnly.convertedOutlets / uniqueOutlets) * 100 : 0,
+      posmChecks,
+      posmDeployed,
+      posmUnits: Number(countsRow?.posm_units ?? 0),
+      posmDeploymentRate: posmChecks > 0 ? (posmDeployed / posmChecks) * 100 : 0,
+      distributedFreeSamples: Number(countsRow?.distributed_free_samples ?? 0),
       recentTrend: [],
     };
   }
