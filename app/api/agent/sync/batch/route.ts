@@ -70,10 +70,36 @@ async function syncBatch(
         if (error) throw error;
       } else if (item.entityType === "visit") {
         const rawPayload = item.payload as Record<string, unknown>;
+        const id = String(rawPayload.id ?? "");
+        if (!id) throw new Error("Visit id is required for sync.");
+
+        const outletId = rawPayload.outlet_id ? String(rawPayload.outlet_id) : "";
+        if (!outletId) {
+          await recordSystemEvent({
+            eventType: "sync_outlet_id_missing",
+            severity: "warning",
+            message: "Visit sync rejected: outlet_id is missing.",
+            organizationId: membership.organizationId,
+            metadata: {
+              campaignId: rawPayload.campaign_id ?? null,
+              organizationId: membership.organizationId,
+              entityType: item.entityType,
+              idempotencyKey: item.idempotencyKey,
+              mode: rawPayload.outlet_ref_mode ?? null,
+            },
+          });
+          results.push({
+            idempotencyKey: item.idempotencyKey,
+            status: "failed_terminal",
+            message: "Outlet is required before a visit can be synced.",
+          });
+          continue;
+        }
+
         const payload = {
           id: rawPayload.id,
           campaign_id: rawPayload.campaign_id,
-          outlet_id: rawPayload.outlet_id ?? null,
+          outlet_id: outletId,
           outcome: rawPayload.outcome ?? null,
           task_type: rawPayload.task_type ?? null,
           task_payload: rawPayload.task_payload ?? null,
@@ -88,8 +114,6 @@ async function syncBatch(
           organization_id: membership.organizationId,
           agent_id: user.id,
         };
-        const id = String(rawPayload.id ?? "");
-        if (!id) throw new Error("Visit id is required for sync.");
         const { data: existing } = await supabase
           .from("visits")
           .select("id")
@@ -123,12 +147,31 @@ async function syncBatch(
         const { error } = await supabase.from("sales").insert(payload);
         if (error) throw error;
       } else if (item.entityType === "photo") {
+        const rawPayload = item.payload as Record<string, unknown>;
         const payload = {
           ...item.payload,
           organization_id: membership.organizationId,
         };
-        const id = String((item.payload as Record<string, unknown>).id ?? "");
+        const id = String(rawPayload.id ?? "");
         if (!id) throw new Error("Photo evidence id is required for sync.");
+
+        const visitId = rawPayload.visit_id ? String(rawPayload.visit_id) : "";
+        if (!visitId) throw new Error("Visit id is required for evidence sync.");
+        const { data: parentVisit } = await supabase
+          .from("visits")
+          .select("id")
+          .eq("id", visitId)
+          .eq("organization_id", membership.organizationId)
+          .maybeSingle();
+        if (!parentVisit) {
+          results.push({
+            idempotencyKey: item.idempotencyKey,
+            status: "failed_terminal",
+            message: "Evidence cannot be synced: its visit was never created.",
+          });
+          continue;
+        }
+
         const { data: existing } = await supabase
           .from("visit_evidence")
           .select("id")

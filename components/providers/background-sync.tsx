@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-import { db } from "@/lib/offline/db";
+import { getSyncableRecords } from "@/lib/offline/queue";
 import { pwaFlags } from "@/lib/pwa/flags";
 import { syncRecord } from "@/lib/offline/sync";
 
@@ -17,7 +17,7 @@ export default function BackgroundSyncProvider() {
       if (!navigator.onLine) return;
       syncing = true;
       try {
-        const queue = await db.syncQueue.toArray();
+        const queue = await getSyncableRecords();
         for (const item of queue) {
           await syncRecord(item);
         }
