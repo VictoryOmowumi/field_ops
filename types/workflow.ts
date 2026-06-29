@@ -55,21 +55,29 @@ export interface GuidedStep {
   activityId?: WorkflowActivityId;
 }
 
+export interface ExistingOutletRef {
+  mode: "existing";
+  outletId: string;
+}
+
+export interface NewOutletRef {
+  mode: "new";
+  outlet: {
+    name: string;
+    outletType?: string;
+    contactPerson: string;
+    phone: string;
+    address: string;
+    state?: string;
+    lga: string;
+  };
+}
+
+export type SelectedOutletRef = ExistingOutletRef | NewOutletRef;
+
 export interface WorkflowSubmissionPayload {
   campaignId: string;
-  selectedOutletRef: {
-    mode: "existing" | "new";
-    outletId?: string;
-    outlet?: {
-      name?: string;
-      outletType?: string;
-      contactPerson?: string;
-      phone?: string;
-      address?: string;
-      state?: string;
-      lga?: string;
-    };
-  };
+  selectedOutletRef: SelectedOutletRef;
   activityPayloads: Array<{
     activityId: WorkflowActivityId;
     payload: Record<string, unknown>;

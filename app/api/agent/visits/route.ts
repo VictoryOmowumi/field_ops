@@ -84,14 +84,15 @@ async function submitVisit(
     return NextResponse.json({ success: false, message: `At least ${validationRules.minimumPhotos} photo(s) are required.` }, { status: 400 });
   }
 
-  let outletId = payload.selectedOutletRef.outletId;
+  let outletId: string;
   if (payload.selectedOutletRef.mode === "existing") {
-    if (!outletId) {
+    if (!payload.selectedOutletRef.outletId) {
       return NextResponse.json({ success: false, message: "Existing outlet selection is required." }, { status: 400 });
     }
+    outletId = payload.selectedOutletRef.outletId;
   } else {
     const outletInput = payload.selectedOutletRef.outlet;
-    if (!outletInput?.name?.trim()) {
+    if (!outletInput.name.trim()) {
       return NextResponse.json({ success: false, message: "Outlet name is required." }, { status: 400 });
     }
 
@@ -162,6 +163,10 @@ async function submitVisit(
   }
   const activityPath = payload.activityPayloads.map((item) => item.activityId);
   const visitOutcome = mapWorkflowOutcomeToVisitOutcome(payload.outcome.code);
+  const visitState = payload.selectedOutletRef.mode === "new"
+    ? payload.selectedOutletRef.outlet.state ?? campaign.state ?? null
+    : campaign.state ?? null;
+  const visitLga = payload.selectedOutletRef.mode === "new" ? payload.selectedOutletRef.outlet.lga ?? null : null;
 
   const { data: visit, error: visitError } = await supabase
     .from("visits")
@@ -185,8 +190,8 @@ async function submitVisit(
       visit_activity_path: activityPath,
       visit_outcome_code: payload.outcome.code,
       visit_outcome_label: payload.outcome.label,
-      state: payload.selectedOutletRef.outlet?.state ?? campaign.state ?? null,
-      lga: payload.selectedOutletRef.outlet?.lga ?? null,
+      state: visitState,
+      lga: visitLga,
       latitude: payload.gps?.latitude ?? null,
       longitude: payload.gps?.longitude ?? null,
       location_accuracy: payload.gps?.locationAccuracy ?? null,

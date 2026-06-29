@@ -6,6 +6,7 @@ export type SystemEventType =
   | "storage_unreachable"
   | "email_send_failed"
   | "unexpected_sync_error"
+  | "sync_outlet_id_missing"
   | "login_failed"
   | "login_succeeded"
   | "alert_dispatched"

@@ -216,6 +216,10 @@ export default function AgentVisitStartPage() {
       throw new Error("GPS capture is required by campaign configuration.");
     }
 
+    if (payload.selectedOutletRef.mode === "existing" && !payload.selectedOutletRef.outletId) {
+      throw new Error("Existing outlet selection is required.");
+    }
+
     const submittedKey =
       typeof payload.idempotencyKey === "string" && payload.idempotencyKey.trim().length > 0
         ? payload.idempotencyKey.trim()
@@ -239,15 +243,61 @@ export default function AgentVisitStartPage() {
     const compressedPhotos = await Promise.all(photos.map((file) => compressEvidencePhoto(file)));
 
     if (!isOnline) {
+      const outletDependencyIds: string[] = [];
+      let resolvedOutletId: string;
+      let visitState: string | null;
+      let visitLga: string | null;
+
+      if (payload.selectedOutletRef.mode === "existing") {
+        resolvedOutletId = payload.selectedOutletRef.outletId;
+        visitState = campaignQuery.data?.state ?? null;
+        visitLga = null;
+      } else {
+        const outletInput = payload.selectedOutletRef.outlet;
+        const outletQueueId = clientId("outlet");
+        const outletEntityId = clientUuid();
+        resolvedOutletId = outletEntityId;
+        visitState = outletInput.state ?? campaignQuery.data?.state ?? null;
+        visitLga = outletInput.lga ?? null;
+        outletDependencyIds.push(outletQueueId);
+
+        await enqueueSyncRecord({
+          id: outletQueueId,
+          entityType: "outlet",
+          entityId: outletEntityId,
+          campaignId,
+          payload: {
+            id: outletEntityId,
+            campaign_id: campaignId,
+            name: outletInput.name,
+            outlet_type: outletInput.outletType ?? null,
+            contact_person: outletInput.contactPerson,
+            phone: outletInput.phone,
+            address: outletInput.address,
+            state: visitState,
+            lga: outletInput.lga,
+            latitude: payload.gps?.latitude ?? null,
+            longitude: payload.gps?.longitude ?? null,
+            location_accuracy: payload.gps?.locationAccuracy ?? null,
+            sync_status: "pending",
+          },
+          idempotencyKey: outletQueueId,
+          retryCount: 0,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
       await enqueueSyncRecord({
         id: submissionId,
         entityType: "visit",
         entityId: visitId,
         campaignId,
+        dependencyIds: outletDependencyIds.length > 0 ? outletDependencyIds : undefined,
         payload: {
           id: visitId,
           campaign_id: campaignId,
-          outlet_id: payload.selectedOutletRef.outletId ?? null,
+          outlet_id: resolvedOutletId,
+          outlet_ref_mode: payload.selectedOutletRef.mode,
           outcome: "pending",
           task_type: deriveVisitTaskType(
             payload.activityPayloads.map((item) => item.activityId),
@@ -262,8 +312,8 @@ export default function AgentVisitStartPage() {
           },
           visit_outcome_code: payload.outcome.code,
           visit_outcome_label: payload.outcome.label,
-          state: payload.selectedOutletRef.outlet?.state ?? campaignQuery.data?.state ?? null,
-          lga: payload.selectedOutletRef.outlet?.lga ?? null,
+          state: visitState,
+          lga: visitLga,
           latitude: payload.gps?.latitude ?? null,
           longitude: payload.gps?.longitude ?? null,
           location_accuracy: payload.gps?.locationAccuracy ?? null,

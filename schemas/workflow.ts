@@ -57,21 +57,28 @@ export const campaignWorkflowConfigV1Schema = z.object({
   }),
 });
 
+const selectedOutletRefSchema = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("existing"),
+    outletId: z.string().uuid(),
+  }),
+  z.object({
+    mode: z.literal("new"),
+    outlet: z.object({
+      name: z.string().min(1),
+      outletType: z.string().optional(),
+      contactPerson: z.string().min(1),
+      phone: z.string().min(1),
+      address: z.string().min(1),
+      state: z.string().optional(),
+      lga: z.string().min(1),
+    }),
+  }),
+]);
+
 export const workflowSubmissionSchema = z.object({
   campaignId: z.string().uuid(),
-  selectedOutletRef: z.object({
-    mode: z.enum(["existing", "new"]),
-    outletId: z.string().uuid().optional(),
-    outlet: z.object({
-      name: z.string().optional(),
-      outletType: z.string().optional(),
-      contactPerson: z.string().optional(),
-      phone: z.string().optional(),
-      address: z.string().optional(),
-      state: z.string().optional(),
-      lga: z.string().optional(),
-    }).optional(),
-  }),
+  selectedOutletRef: selectedOutletRefSchema,
   activityPayloads: z.array(z.object({
     activityId: workflowActivityIdSchema,
     payload: z.record(z.string(), z.unknown()),
