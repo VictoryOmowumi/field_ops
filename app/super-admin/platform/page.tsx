@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Area, AreaChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { authorizedFetch } from "@/lib/api/client";
 import type { PlatformMonitoringSummary } from "@/types/platform";
 
@@ -62,6 +63,7 @@ export default function SuperAdminPlatformPage() {
   const storagePing = useLivePing("/api/health/storage");
 
   const summary = summaryQuery.data?.summary;
+  const summaryLoading = summaryQuery.isLoading;
 
   const overallTone: Tone = useMemo(() => {
     if (!summary) return "gray";
@@ -94,21 +96,21 @@ export default function SuperAdminPlatformPage() {
       <section>
         <h2 className="mb-3 font-semibold">Infrastructure</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <InfraCard label="Database" status={summary?.infrastructure.database.status ?? "checking"} latencyMs={summary?.infrastructure.database.latencyMs} />
-          <InfraCard label="Storage" status={summary?.infrastructure.storage.status ?? "checking"} latencyMs={summary?.infrastructure.storage.latencyMs} />
-          <InfraCard label="API" status={summary?.infrastructure.api.status ?? "checking"} latencyMs={summary?.infrastructure.api.latencyMs} />
-          <InfraCard label="Sentry" status={summary?.infrastructure.sentry.status ?? "checking"} />
+          <InfraCard label="Database" status={summary?.infrastructure.database.status ?? "checking"} latencyMs={summary?.infrastructure.database.latencyMs} loading={summaryLoading} />
+          <InfraCard label="Storage" status={summary?.infrastructure.storage.status ?? "checking"} latencyMs={summary?.infrastructure.storage.latencyMs} loading={summaryLoading} />
+          <InfraCard label="API" status={summary?.infrastructure.api.status ?? "checking"} latencyMs={summary?.infrastructure.api.latencyMs} loading={summaryLoading} />
+          <InfraCard label="Sentry" status={summary?.infrastructure.sentry.status ?? "checking"} loading={summaryLoading} />
         </div>
       </section>
 
       <section>
         <h2 className="mb-3 font-semibold">Activity (24h)</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <ActivityCard label="Submissions today" value={summary?.activity.submissionsToday ?? 0} series={summary?.activity.submissionsSparkline} />
-          <ActivityCard label="Photos uploaded" value={summary?.activity.photosUploadedToday ?? 0} series={summary?.activity.photosSparkline} />
-          <ActivityCard label="Active reps" value={summary?.activity.activeRepsToday ?? 0} series={summary?.activity.activeRepsSparkline} />
-          <ActivityCard label="Failed logins" value={summary?.activity.failedLoginsToday ?? 0} series={summary?.activity.failedLoginsSparkline} />
-          <ActivityCard label="Upload failures" value={summary?.activity.uploadFailuresToday ?? 0} series={summary?.activity.uploadFailuresSparkline} />
+          <ActivityCard label="Submissions today" value={summary?.activity.submissionsToday ?? 0} series={summary?.activity.submissionsSparkline} loading={summaryLoading} />
+          <ActivityCard label="Photos uploaded" value={summary?.activity.photosUploadedToday ?? 0} series={summary?.activity.photosSparkline} loading={summaryLoading} />
+          <ActivityCard label="Active reps" value={summary?.activity.activeRepsToday ?? 0} series={summary?.activity.activeRepsSparkline} loading={summaryLoading} />
+          <ActivityCard label="Failed logins" value={summary?.activity.failedLoginsToday ?? 0} series={summary?.activity.failedLoginsSparkline} loading={summaryLoading} />
+          <ActivityCard label="Upload failures" value={summary?.activity.uploadFailuresToday ?? 0} series={summary?.activity.uploadFailuresSparkline} loading={summaryLoading} />
         </div>
       </section>
 
@@ -128,17 +130,27 @@ export default function SuperAdminPlatformPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(summary?.errors ?? []).map((event) => (
-                    <tr key={event.id} className="border-t border-border">
-                      <td className="px-4 py-3 text-muted-foreground">{new Date(event.createdAt).toUTCString().slice(17, 22)}</td>
-                      <td className="px-4 py-3"><SeverityBadge severity={event.severity} /></td>
-                      <td className="px-4 py-3 font-medium">{event.eventType}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{event.message}</td>
-                    </tr>
-                  ))}
-                  {summaryQuery.isSuccess && (summary?.errors.length ?? 0) === 0 ? (
-                    <tr className="border-t border-border"><td className="px-4 py-4 text-muted-foreground" colSpan={4}>No recent events.</td></tr>
-                  ) : null}
+                  {summaryLoading ? (
+                    Array.from({ length: 4 }).map((_, i) => (
+                      <tr key={i} className="border-t border-border">
+                        <td className="px-4 py-3" colSpan={4}><Skeleton className="h-5 w-full" /></td>
+                      </tr>
+                    ))
+                  ) : (
+                    <>
+                      {(summary?.errors ?? []).map((event) => (
+                        <tr key={event.id} className="border-t border-border">
+                          <td className="px-4 py-3 text-muted-foreground">{new Date(event.createdAt).toUTCString().slice(17, 22)}</td>
+                          <td className="px-4 py-3"><SeverityBadge severity={event.severity} /></td>
+                          <td className="px-4 py-3 font-medium">{event.eventType}</td>
+                          <td className="px-4 py-3 text-muted-foreground">{event.message}</td>
+                        </tr>
+                      ))}
+                      {summaryQuery.isSuccess && (summary?.errors.length ?? 0) === 0 ? (
+                        <tr className="border-t border-border"><td className="px-4 py-4 text-muted-foreground" colSpan={4}>No recent events.</td></tr>
+                      ) : null}
+                    </>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -149,18 +161,24 @@ export default function SuperAdminPlatformPage() {
           <h2 className="font-semibold">Alerts</h2>
           <p className="text-sm text-muted-foreground">Currently active conditions.</p>
           <div className="mt-4 max-h-[420px] space-y-3 overflow-y-auto">
-            {(summary?.alerts ?? []).map((alert) => (
-              <div key={alert.alertKey} className="rounded-3xl bg-muted/35 p-4">
-                <div className="flex items-center gap-2">
-                  <SeverityBadge severity={alert.severity} />
-                  <p className="font-medium">{alert.subject}</p>
-                </div>
-                <p className="mt-1 text-sm text-muted-foreground">{alert.message}</p>
-              </div>
-            ))}
-            {summaryQuery.isSuccess && (summary?.alerts.length ?? 0) === 0 ? (
-              <div className="rounded-3xl bg-muted/35 p-4 text-sm text-muted-foreground">No active alerts.</div>
-            ) : null}
+            {summaryLoading ? (
+              Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-3xl" />)
+            ) : (
+              <>
+                {(summary?.alerts ?? []).map((alert) => (
+                  <div key={alert.alertKey} className="rounded-3xl bg-muted/35 p-4">
+                    <div className="flex items-center gap-2">
+                      <SeverityBadge severity={alert.severity} />
+                      <p className="font-medium">{alert.subject}</p>
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">{alert.message}</p>
+                  </div>
+                ))}
+                {summaryQuery.isSuccess && (summary?.alerts.length ?? 0) === 0 ? (
+                  <div className="rounded-3xl bg-muted/35 p-4 text-sm text-muted-foreground">No active alerts.</div>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
       </section>
@@ -179,10 +197,10 @@ export default function SuperAdminPlatformPage() {
         <h2 className="font-semibold">Performance</h2>
         <p className="text-sm text-muted-foreground">Today&apos;s average durations and slow-operation counts (2s warning / 5s critical).</p>
         <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Metric label="Avg visit submission" value={`${summary?.performance.avgVisitSubmissionMs ?? 0}ms`} />
-          <Metric label="Avg upload duration" value={`${summary?.performance.avgUploadMs ?? 0}ms`} />
-          <Metric label="Slow endpoints today" value={summary?.performance.slowEndpointCount ?? 0} />
-          <Metric label="Slow queries today" value={summary?.performance.slowQueryCount ?? 0} />
+          <Metric label="Avg visit submission" value={`${summary?.performance.avgVisitSubmissionMs ?? 0}ms`} loading={summaryLoading} />
+          <Metric label="Avg upload duration" value={`${summary?.performance.avgUploadMs ?? 0}ms`} loading={summaryLoading} />
+          <Metric label="Slow endpoints today" value={summary?.performance.slowEndpointCount ?? 0} loading={summaryLoading} />
+          <Metric label="Slow queries today" value={summary?.performance.slowQueryCount ?? 0} loading={summaryLoading} />
         </div>
       </section>
 
@@ -190,32 +208,38 @@ export default function SuperAdminPlatformPage() {
         <div className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60 lg:col-span-6">
           <h2 className="font-semibold">Authentication</h2>
           <div className="mt-4 grid grid-cols-2 gap-4">
-            <Metric label="Successful logins today" value={summary?.auth.successfulLoginsToday ?? 0} />
-            <Metric label="Failed logins today" value={summary?.auth.failedLoginsToday ?? 0} />
-            <Metric label="Failure rate" value={summary?.auth.failureRate ?? "0.0%"} />
+            <Metric label="Successful logins today" value={summary?.auth.successfulLoginsToday ?? 0} loading={summaryLoading} />
+            <Metric label="Failed logins today" value={summary?.auth.failedLoginsToday ?? 0} loading={summaryLoading} />
+            <Metric label="Failure rate" value={summary?.auth.failureRate ?? "0.0%"} loading={summaryLoading} />
           </div>
           <p className="mt-4 text-xs font-medium text-muted-foreground">Top auth events</p>
           <div className="mt-2 space-y-1">
-            {(summary?.auth.topAuthEvents ?? []).map((item) => (
-              <div key={item.message} className="flex justify-between text-sm">
-                <span className="text-muted-foreground">{item.message}</span>
-                <span className="font-medium">{item.count}</span>
-              </div>
-            ))}
-            {summaryQuery.isSuccess && (summary?.auth.topAuthEvents.length ?? 0) === 0 ? (
-              <p className="text-sm text-muted-foreground">No auth failures today.</p>
-            ) : null}
+            {summaryLoading ? (
+              <Skeleton className="h-12 w-full rounded-xl" />
+            ) : (
+              <>
+                {(summary?.auth.topAuthEvents ?? []).map((item) => (
+                  <div key={item.message} className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">{item.message}</span>
+                    <span className="font-medium">{item.count}</span>
+                  </div>
+                ))}
+                {summaryQuery.isSuccess && (summary?.auth.topAuthEvents.length ?? 0) === 0 ? (
+                  <p className="text-sm text-muted-foreground">No auth failures today.</p>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
 
         <div className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60 lg:col-span-6">
           <h2 className="font-semibold">Campaign Activity</h2>
           <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
-            <Metric label="Submissions today" value={summary?.campaignActivity.totalSubmissionsToday ?? 0} />
-            <Metric label="Active campaigns" value={summary?.campaignActivity.activeCampaigns ?? 0} />
-            <Metric label="Active reps" value={summary?.campaignActivity.activeReps ?? 0} />
-            <Metric label="Photos uploaded" value={summary?.campaignActivity.photosUploaded ?? 0} />
-            <Metric label="Velocity (last hr)" value={summary?.campaignActivity.submissionVelocityPerHour ?? 0} />
+            <Metric label="Submissions today" value={summary?.campaignActivity.totalSubmissionsToday ?? 0} loading={summaryLoading} />
+            <Metric label="Active campaigns" value={summary?.campaignActivity.activeCampaigns ?? 0} loading={summaryLoading} />
+            <Metric label="Active reps" value={summary?.campaignActivity.activeReps ?? 0} loading={summaryLoading} />
+            <Metric label="Photos uploaded" value={summary?.campaignActivity.photosUploaded ?? 0} loading={summaryLoading} />
+            <Metric label="Velocity (last hr)" value={summary?.campaignActivity.submissionVelocityPerHour ?? 0} loading={summaryLoading} />
           </div>
         </div>
       </section>
@@ -224,10 +248,10 @@ export default function SuperAdminPlatformPage() {
         <h2 className="font-semibold">Import Tracking</h2>
         <p className="text-sm text-muted-foreground">No import pipeline yet — all records are currently app-captured.</p>
         <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Metric label="Imported records" value={summary?.importTracking.importedRecords ?? 0} />
-          <Metric label="App-captured records" value={summary?.importTracking.appCapturedRecords ?? 0} />
-          <Metric label="Import batches" value={summary?.importTracking.importBatches ?? 0} />
-          <Metric label="Import errors" value={summary?.importTracking.importErrors ?? 0} />
+          <Metric label="Imported records" value={summary?.importTracking.importedRecords ?? 0} loading={summaryLoading} />
+          <Metric label="App-captured records" value={summary?.importTracking.appCapturedRecords ?? 0} loading={summaryLoading} />
+          <Metric label="Import batches" value={summary?.importTracking.importBatches ?? 0} loading={summaryLoading} />
+          <Metric label="Import errors" value={summary?.importTracking.importErrors ?? 0} loading={summaryLoading} />
         </div>
       </section>
 
@@ -237,22 +261,26 @@ export default function SuperAdminPlatformPage() {
         <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
           <div className="rounded-[1.6rem] bg-background p-4">
             <p className="text-xs text-muted-foreground">Image count</p>
-            <p className="mt-2 text-2xl font-semibold">{summary?.costInsights.storage.imageCount ?? 0}</p>
+            {summaryLoading ? <Skeleton className="mt-2 h-7 w-14" /> : <p className="mt-2 text-2xl font-semibold">{summary?.costInsights.storage.imageCount ?? 0}</p>}
           </div>
           <div className="rounded-[1.6rem] bg-background p-4">
             <p className="text-xs text-muted-foreground">Avg image size (7d)</p>
-            <p className="mt-2 text-2xl font-semibold">{formatBytes(summary?.costInsights.storage.averageImageSizeBytes ?? 0)}</p>
+            {summaryLoading ? <Skeleton className="mt-2 h-7 w-16" /> : <p className="mt-2 text-2xl font-semibold">{formatBytes(summary?.costInsights.storage.averageImageSizeBytes ?? 0)}</p>}
           </div>
           <div className="rounded-[1.6rem] bg-background p-4">
             <p className="text-xs text-muted-foreground">Est. monthly growth</p>
-            <p className={`mt-2 text-2xl font-semibold ${summary?.costInsights.storage.approachingLimit ? "text-amber-600" : ""}`}>
-              {formatBytes(summary?.costInsights.storage.estimatedMonthlyGrowthBytes ?? 0)}
-            </p>
-            {summary?.costInsights.storage.approachingLimit ? <p className="mt-1 text-xs text-amber-600">Approaching warning threshold</p> : null}
+            {summaryLoading ? (
+              <Skeleton className="mt-2 h-7 w-16" />
+            ) : (
+              <p className={`mt-2 text-2xl font-semibold ${summary?.costInsights.storage.approachingLimit ? "text-amber-600" : ""}`}>
+                {formatBytes(summary?.costInsights.storage.estimatedMonthlyGrowthBytes ?? 0)}
+              </p>
+            )}
+            {!summaryLoading && summary?.costInsights.storage.approachingLimit ? <p className="mt-1 text-xs text-amber-600">Approaching warning threshold</p> : null}
           </div>
           <div className="rounded-[1.6rem] bg-background p-4">
             <p className="text-xs text-muted-foreground">Records stored</p>
-            <p className="mt-2 text-2xl font-semibold">{summary?.costInsights.database.totalRecordsStored ?? 0}</p>
+            {summaryLoading ? <Skeleton className="mt-2 h-7 w-14" /> : <p className="mt-2 text-2xl font-semibold">{summary?.costInsights.database.totalRecordsStored ?? 0}</p>}
             <p className="mt-1 text-xs text-muted-foreground">Proxy for DB activity, not query counts</p>
           </div>
           <div className="rounded-[1.6rem] bg-background p-4">
@@ -278,32 +306,50 @@ function formatBytes(bytes: number) {
   return `${(mb / 1024).toFixed(2)} GB`;
 }
 
-function InfraCard({ label, status, latencyMs }: { label: string; status: string; latencyMs?: number }) {
+function InfraCard({
+  label,
+  status,
+  latencyMs,
+  loading = false,
+}: {
+  label: string;
+  status: string;
+  latencyMs?: number;
+  loading?: boolean;
+}) {
   const tone = status === "healthy" || status === "unhealthy" ? (status === "healthy" ? latencyTone(latencyMs) : "red") : statusTone(status);
   return (
     <div className="rounded-[1.6rem] bg-card p-4 shadow-sm ring-1 ring-border/60">
       <div className="flex items-center gap-2">
-        <span className={`size-2.5 rounded-full ${TONE_DOT[tone]}`} />
+        <span className={`size-2.5 rounded-full ${loading ? TONE_DOT.gray : TONE_DOT[tone]}`} />
         <p className="text-sm font-medium">{label}</p>
       </div>
-      <p className="mt-2 text-xl font-semibold">{latencyMs !== undefined ? `${latencyMs}ms` : status === "configured" ? "Configured" : status === "not_configured" ? "Not configured" : "—"}</p>
+      {loading ? (
+        <Skeleton className="mt-2 h-6 w-20" />
+      ) : (
+        <p className="mt-2 text-xl font-semibold">{latencyMs !== undefined ? `${latencyMs}ms` : status === "configured" ? "Configured" : status === "not_configured" ? "Not configured" : "—"}</p>
+      )}
     </div>
   );
 }
 
-function ActivityCard({ label, value, series }: { label: string; value: number; series?: number[] }) {
+function ActivityCard({ label, value, series, loading = false }: { label: string; value: number; series?: number[]; loading?: boolean }) {
   const data = (series ?? new Array(24).fill(0)).map((count, index) => ({ hour: index, count }));
   return (
     <div className="rounded-[1.6rem] bg-card p-4 shadow-sm ring-1 ring-border/60">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-2xl font-semibold">{value}</p>
+      {loading ? <Skeleton className="mt-1 h-7 w-12" /> : <p className="mt-1 text-2xl font-semibold">{value}</p>}
       <div className="mt-3 h-14">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data}>
-            <Tooltip cursor={false} formatter={(val) => [String(val), label]} />
-            <Area type="monotone" dataKey="count" stroke="var(--color-chart-1)" strokeWidth={2} fill="var(--color-chart-1)" fillOpacity={0.18} />
-          </AreaChart>
-        </ResponsiveContainer>
+        {loading ? (
+          <Skeleton className="h-full w-full rounded-lg" />
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data}>
+              <Tooltip cursor={false} formatter={(val) => [String(val), label]} />
+              <Area type="monotone" dataKey="count" stroke="var(--color-chart-1)" strokeWidth={2} fill="var(--color-chart-1)" fillOpacity={0.18} />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
       </div>
     </div>
   );
@@ -322,11 +368,11 @@ function HealthRow({ label, ping }: { label: string; ping?: HealthPing }) {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string | number }) {
+function Metric({ label, value, loading = false }: { label: string; value: string | number; loading?: boolean }) {
   return (
     <div className="rounded-[1.6rem] bg-background p-4">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-2 text-2xl font-semibold">{value}</p>
+      {loading ? <Skeleton className="mt-2 h-7 w-14" /> : <p className="mt-2 text-2xl font-semibold">{value}</p>}
     </div>
   );
 }

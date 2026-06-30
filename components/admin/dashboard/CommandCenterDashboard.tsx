@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Activity01Icon,
@@ -33,6 +34,7 @@ import { useTerminology } from "@/components/providers/tenant-experience-provide
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { authorizedFetch } from "@/lib/api/client";
 
 type DateWindow = { dateFrom: string | null; dateTo: string | null; isDefaultWindow: boolean };
@@ -161,6 +163,10 @@ export default function CommandCenterDashboard() {
 
   const summary = summaryQuery.data?.summary;
   const appliedDateWindow = summaryQuery.data?.appliedDateWindow ?? insightsQuery.data?.appliedDateWindow ?? null;
+  const summaryLoading = summaryQuery.isLoading;
+  const insightsLoading = insightsQuery.isLoading;
+  const isRefetching =
+    !summaryLoading && !insightsLoading && (summaryQuery.isFetching || insightsQuery.isFetching);
   const trend = useMemo(() => insightsQuery.data?.trend ?? [], [insightsQuery.data?.trend]);
   const territory = useMemo(
     () =>
@@ -192,10 +198,17 @@ export default function CommandCenterDashboard() {
             Campaign intelligence, activation velocity, and field performance — all in one view.
           </p>
         </div>
-        <Button variant="outline" className="rounded-full" onClick={() => setShowFilters((value) => !value)}>
-          <HugeiconsIcon icon={FilterHorizontalIcon} size={16} />
-          {showFilters ? "Hide Filters" : "Filters"}
-        </Button>
+        <div className="flex items-center gap-3">
+          {isRefetching ? (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="size-3.5 animate-spin" />Refreshing…
+            </span>
+          ) : null}
+          <Button variant="outline" className="rounded-full" onClick={() => setShowFilters((value) => !value)}>
+            <HugeiconsIcon icon={FilterHorizontalIcon} size={16} />
+            {showFilters ? "Hide Filters" : "Filters"}
+          </Button>
+        </div>
       </div>
 
       {showFilters ? (
@@ -240,6 +253,7 @@ export default function CommandCenterDashboard() {
           label={`Active ${t("campaigns")}`}
           value={String(summary?.activeCampaigns ?? 0)}
           sub={`of ${summary?.totalCampaigns ?? 0} total`}
+          loading={summaryLoading}
           accent
         />
         <KpiCard
@@ -247,18 +261,21 @@ export default function CommandCenterDashboard() {
           label={`Active ${t("agents")}`}
           value={String(summary?.activeReps ?? 0)}
           sub="In the field"
+          loading={summaryLoading}
         />
         <KpiCard
           icon={Store01Icon}
           label={`${t("outlets")} covered`}
           value={String(summary?.totalOutlets ?? 0)}
           sub="Unique locations"
+          loading={summaryLoading}
         />
         <KpiCard
           icon={Chart01Icon}
           label={`${t("conversion")} rate`}
           value={`${conversionRate.toFixed(1)}%`}
           sub={`${summary?.conversions ?? 0} ${t("conversions").toLowerCase()}`}
+          loading={summaryLoading}
         />
       </div>
 
@@ -273,11 +290,14 @@ export default function CommandCenterDashboard() {
             </p>
           </div>
           <div className="grid grid-cols-3 gap-4 mb-5">
-            <VelocityMini label={`Total ${t("visits").toLowerCase()}`} value={String(summary?.totalVisits ?? 0)} />
-            <VelocityMini label={t("conversions")} value={String(summary?.conversions ?? 0)} />
-            <VelocityMini label="Units sold" value={String(summary?.unitsSold ?? 0)} />
+            <VelocityMini label={`Total ${t("visits").toLowerCase()}`} value={String(summary?.totalVisits ?? 0)} loading={summaryLoading} />
+            <VelocityMini label={t("conversions")} value={String(summary?.conversions ?? 0)} loading={summaryLoading} />
+            <VelocityMini label="Units sold" value={String(summary?.unitsSold ?? 0)} loading={summaryLoading} />
           </div>
           <div className="h-52 rounded-3xl bg-background p-4">
+            {insightsLoading ? (
+              <Skeleton className="h-full w-full rounded-2xl" />
+            ) : (
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={trend}>
                 <CartesianGrid vertical={false} stroke="var(--color-border)" strokeDasharray="4 4" />
@@ -319,6 +339,7 @@ export default function CommandCenterDashboard() {
                 />
               </AreaChart>
             </ResponsiveContainer>
+            )}
           </div>
         </section>
 
@@ -328,7 +349,13 @@ export default function CommandCenterDashboard() {
             <h2 className="font-semibold">Top Territories</h2>
             <p className="text-sm text-muted-foreground">By {t("conversions").toLowerCase()}</p>
           </div>
-          {territory.length === 0 ? (
+          {insightsLoading ? (
+            <div className="h-52 space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-full rounded-xl" />
+              ))}
+            </div>
+          ) : territory.length === 0 ? (
             <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
               No territory data yet.
             </div>
@@ -366,7 +393,13 @@ export default function CommandCenterDashboard() {
             <HugeiconsIcon icon={RankingIcon} size={17} strokeWidth={1.8} className="text-primary" />
             <h2 className="font-semibold">{t("agent")} Leaderboard</h2>
           </div>
-          {leaderboard.length === 0 ? (
+          {insightsLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full rounded-2xl" />
+              ))}
+            </div>
+          ) : leaderboard.length === 0 ? (
             <p className="text-sm text-muted-foreground">No activity data yet.</p>
           ) : (
             <ol className="space-y-2">
@@ -403,18 +436,21 @@ export default function CommandCenterDashboard() {
             label="Field sync health"
             value={`${syncHealth.toFixed(1)}%`}
             ok={syncHealth >= 90}
+            loading={summaryLoading}
           />
           <HealthCard
             icon={Activity01Icon}
             label={`${t("freeSample")} achievement`}
             value={`${(summary?.freeSampleAchievementRate ?? 0).toFixed(1)}%`}
             ok={(summary?.freeSampleAchievementRate ?? 0) >= 70}
+            loading={summaryLoading}
           />
           <HealthCard
             icon={Alert01Icon}
             label="POSM deployed"
             value={`${summary?.posmDeployed ?? 0} / ${summary?.posmUnits ?? 0}`}
             ok={(summary?.posmDeployed ?? 0) >= (summary?.posmUnits ?? 1) * 0.7}
+            loading={summaryLoading}
           />
         </section>
 
@@ -429,7 +465,13 @@ export default function CommandCenterDashboard() {
               All campaigns
             </Link>
           </div>
-          {recentActivity.length === 0 ? (
+          {insightsLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-14 w-full rounded-2xl" />
+              ))}
+            </div>
+          ) : recentActivity.length === 0 ? (
             <p className="text-sm text-muted-foreground">No activity yet.</p>
           ) : (
             <ul className="space-y-2">
@@ -481,12 +523,14 @@ function KpiCard({
   value,
   sub,
   accent = false,
+  loading = false,
 }: {
   icon: unknown;
   label: string;
   value: string;
   sub: string;
   accent?: boolean;
+  loading?: boolean;
 }) {
   return (
     <div
@@ -506,19 +550,23 @@ function KpiCard({
       <p className={`mt-4 text-xs ${accent ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
         {label}
       </p>
-      <p className="mt-1 text-3xl font-semibold tracking-tight">{value}</p>
+      {loading ? (
+        <Skeleton className={`mt-2 h-8 w-16 ${accent ? "bg-white/20" : ""}`} />
+      ) : (
+        <p className="mt-1 text-3xl font-semibold tracking-tight">{value}</p>
+      )}
       <p className={`mt-1 text-xs ${accent ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-        {sub}
+        {loading ? " " : sub}
       </p>
     </div>
   );
 }
 
-function VelocityMini({ label, value }: { label: string; value: string }) {
+function VelocityMini({ label, value, loading = false }: { label: string; value: string; loading?: boolean }) {
   return (
     <div>
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-xl font-semibold">{value}</p>
+      {loading ? <Skeleton className="mt-1.5 h-6 w-12" /> : <p className="mt-1 text-xl font-semibold">{value}</p>}
     </div>
   );
 }
@@ -528,11 +576,13 @@ function HealthCard({
   label,
   value,
   ok,
+  loading = false,
 }: {
   icon: unknown;
   label: string;
   value: string;
   ok: boolean;
+  loading?: boolean;
 }) {
   return (
     <div className="flex flex-1 items-center gap-4 rounded-3xl bg-card p-4 shadow-sm ring-1 ring-border/60">
@@ -541,11 +591,13 @@ function HealthCard({
       </span>
       <div className="flex-1">
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="mt-0.5 text-lg font-semibold">{value}</p>
+        {loading ? <Skeleton className="mt-1 h-5 w-20" /> : <p className="mt-0.5 text-lg font-semibold">{value}</p>}
       </div>
-      <span
-        className={`size-2.5 shrink-0 rounded-full ${ok ? "bg-primary" : "bg-destructive/70"}`}
-      />
+      {loading ? null : (
+        <span
+          className={`size-2.5 shrink-0 rounded-full ${ok ? "bg-primary" : "bg-destructive/70"}`}
+        />
+      )}
     </div>
   );
 }

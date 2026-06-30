@@ -14,6 +14,7 @@ import TableLoadingState from "@/components/shared/TableLoadingState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { authorizedFetch } from "@/lib/api/client";
 import { useTerminology, useTenantExperience } from "@/components/providers/tenant-experience-provider";
 import CommandCenterDashboard from "@/components/admin/dashboard/CommandCenterDashboard";
@@ -120,6 +121,8 @@ export default function AdminDashboardPage() {
   }, [insightsQuery.error]);
 
   const summary = query.data?.summary;
+  const summaryLoading = query.isLoading;
+  const insightsLoading = insightsQuery.isLoading;
   const trend = useMemo(() => insightsQuery.data?.trend ?? [], [insightsQuery.data?.trend]);
   const territoryPerformance = useMemo(
     () => insightsQuery.data?.territoryPerformance ?? [],
@@ -193,17 +196,21 @@ export default function AdminDashboardPage() {
           <h2 className="font-semibold">{t("visit")} Trend</h2>
           <p className="text-sm text-muted-foreground">Last 7 days {t("visits").toLowerCase()} and {t("conversions").toLowerCase()}.</p>
           <div className="mt-4 mb-5 grid grid-cols-2 gap-4">
-            <MetricMini label={`Total ${t("visits").toLowerCase()}`} value={String(summary?.totalVisits ?? 0)} trend="Live" />
-            <MetricMini label={t("conversions")} value={String(summary?.conversions ?? 0)} trend={`${summary?.conversionRate.toFixed(1) ?? "0"}%`} />
+            <MetricMini label={`Total ${t("visits").toLowerCase()}`} value={String(summary?.totalVisits ?? 0)} trend="Live" loading={summaryLoading} />
+            <MetricMini label={t("conversions")} value={String(summary?.conversions ?? 0)} trend={`${summary?.conversionRate.toFixed(1) ?? "0"}%`} loading={summaryLoading} />
           </div>
           <div className="h-52 rounded-3xl bg-background p-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={trend}>
-                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "var(--color-muted-foreground)" }} />
-                <Tooltip cursor={false} />
-                <Bar dataKey="visits" radius={[12, 12, 0, 0]} fill="var(--color-chart-1)" />
-              </BarChart>
-            </ResponsiveContainer>
+            {insightsLoading ? (
+              <Skeleton className="h-full w-full rounded-2xl" />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={trend}>
+                  <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "var(--color-muted-foreground)" }} />
+                  <Tooltip cursor={false} />
+                  <Bar dataKey="visits" radius={[12, 12, 0, 0]} fill="var(--color-chart-1)" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -211,31 +218,33 @@ export default function AdminDashboardPage() {
           <h2 className="font-semibold">Operational Health</h2>
           <p className="text-sm text-muted-foreground">Core data points from filtered records.</p>
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-            <InsightCard icon={UserGroupIcon} title={`Active ${t("agents").toLowerCase()}`} value={String(summary?.activeReps ?? 0)} data={trend} dataKey="visits" />
-            <InsightCard icon={Store01Icon} title={`${t("outlets")} covered`} value={String(summary?.totalOutlets ?? 0)} data={trend} dataKey="conversions" />
-            <DarkInsightCard failedUploads={pendingUploads} data={failedUploadsTrend} />
+            <InsightCard icon={UserGroupIcon} title={`Active ${t("agents").toLowerCase()}`} value={String(summary?.activeReps ?? 0)} data={trend} dataKey="visits" loading={summaryLoading || insightsLoading} />
+            <InsightCard icon={Store01Icon} title={`${t("outlets")} covered`} value={String(summary?.totalOutlets ?? 0)} data={trend} dataKey="conversions" loading={summaryLoading || insightsLoading} />
+            <DarkInsightCard failedUploads={pendingUploads} data={failedUploadsTrend} loading={summaryLoading || insightsLoading} />
           </div>
         </div>
       </section>
 
       <section className="grid grid-cols-1 gap-5 lg:grid-cols-12">
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:col-span-5">
-          <SmallStat icon={Chart01Icon} label={`${t("conversion")} rate`} value={`${summary?.conversionRate.toFixed(1) ?? "0"}%`} trend="Live" />
+          <SmallStat icon={Chart01Icon} label={`${t("conversion")} rate`} value={`${summary?.conversionRate.toFixed(1) ?? "0"}%`} trend="Live" loading={summaryLoading} />
           <SmallStat
             icon={Chart01Icon}
             label="Sales count with units sold"
             value={`${summary?.salesCount ?? 0} (${summary?.unitsSold ?? 0})`}
             trend="units sold"
+            loading={summaryLoading}
           />
           <SmallStat
             icon={CloudUploadIcon}
             label={`${t("freeSample")}s`}
             value={String(summary?.distributedFreeSamples ?? 0)}
             trend={`${(summary?.freeSampleAchievementRate ?? 0).toFixed(1)}% of ${summary?.plannedFreeSamples ?? 0}`}
+            loading={summaryLoading}
           />
-          <SmallStat icon={Store01Icon} label={`Active ${t("campaigns").toLowerCase()}`} value={String(summary?.activeCampaigns ?? 0)} trend={`${summary?.totalCampaigns ?? 0} total`} />
-          <SmallStat icon={CloudUploadIcon} label="Field sync health" value={`${summary?.syncHealth.toFixed(1) ?? "100"}%`} trend="Live" />
-          <SmallStat icon={Alert01Icon} label="Pending uploads" value={String(pendingUploads)} trend="Derived" />
+          <SmallStat icon={Store01Icon} label={`Active ${t("campaigns").toLowerCase()}`} value={String(summary?.activeCampaigns ?? 0)} trend={`${summary?.totalCampaigns ?? 0} total`} loading={summaryLoading} />
+          <SmallStat icon={CloudUploadIcon} label="Field sync health" value={`${summary?.syncHealth.toFixed(1) ?? "100"}%`} trend="Live" loading={summaryLoading} />
+          <SmallStat icon={Alert01Icon} label="Pending uploads" value={String(pendingUploads)} trend="Derived" loading={summaryLoading} />
         </div>
 
         <div className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60 lg:col-span-7">
@@ -258,7 +267,9 @@ export default function AdminDashboardPage() {
             </Select>
           </div>
           <div className="mt-4">
-            {filteredTerritoryPerformance.length === 0 ? (
+            {insightsLoading ? (
+              <Skeleton className="h-64 w-full rounded-2xl" />
+            ) : filteredTerritoryPerformance.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-muted-foreground">
                 No territory geodata for selected state/filter.
               </div>
@@ -327,19 +338,33 @@ export default function AdminDashboardPage() {
   );
 }
 
-function MetricMini({ label, value, trend }: { label: string; value: string; trend: string }) {
+function MetricMini({ label, value, trend, loading = false }: { label: string; value: string; trend: string; loading?: boolean }) {
   return (
     <div>
       <p className="text-xs text-muted-foreground">{label}</p>
       <div className="mt-1 flex items-center gap-2">
-        <p className="text-2xl font-semibold">{value}</p>
-        <span className="text-xs text-primary">{trend}</span>
+        {loading ? <Skeleton className="h-7 w-12" /> : <p className="text-2xl font-semibold">{value}</p>}
+        {loading ? null : <span className="text-xs text-primary">{trend}</span>}
       </div>
     </div>
   );
 }
 
-function InsightCard({ icon, title, value, data, dataKey }: { icon: unknown; title: string; value: string; data: TrendPoint[]; dataKey: "visits" | "conversions" }) {
+function InsightCard({
+  icon,
+  title,
+  value,
+  data,
+  dataKey,
+  loading = false,
+}: {
+  icon: unknown;
+  title: string;
+  value: string;
+  data: TrendPoint[];
+  dataKey: "visits" | "conversions";
+  loading?: boolean;
+}) {
   return (
     <div className="rounded-[1.6rem] bg-background p-5">
       <div className="mb-4 flex items-center gap-2">
@@ -348,20 +373,32 @@ function InsightCard({ icon, title, value, data, dataKey }: { icon: unknown; tit
         </span>
         <p className="font-medium">{title}</p>
       </div>
-      <p className="mt-1 text-2xl font-semibold">{value}</p>
+      {loading ? <Skeleton className="h-7 w-14" /> : <p className="mt-1 text-2xl font-semibold">{value}</p>}
       <div className="mt-4 h-20">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data}>
-            <Tooltip cursor={false} formatter={(val) => [String(val), dataKey]} />
-            <Area type="monotone" dataKey={dataKey} stroke="var(--color-chart-1)" strokeWidth={2} fill="var(--color-chart-1)" fillOpacity={0.18} />
-          </AreaChart>
-        </ResponsiveContainer>
+        {loading ? (
+          <Skeleton className="h-full w-full rounded-xl" />
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data}>
+              <Tooltip cursor={false} formatter={(val) => [String(val), dataKey]} />
+              <Area type="monotone" dataKey={dataKey} stroke="var(--color-chart-1)" strokeWidth={2} fill="var(--color-chart-1)" fillOpacity={0.18} />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
       </div>
     </div>
   );
 }
 
-function DarkInsightCard({ failedUploads, data }: { failedUploads: number; data: Array<TrendPoint & { failedUploads: number }> }) {
+function DarkInsightCard({
+  failedUploads,
+  data,
+  loading = false,
+}: {
+  failedUploads: number;
+  data: Array<TrendPoint & { failedUploads: number }>;
+  loading?: boolean;
+}) {
   return (
     <div className="rounded-[1.6rem] bg-foreground p-5 text-background">
       <div className="mb-4 flex items-center gap-2">
@@ -370,20 +407,24 @@ function DarkInsightCard({ failedUploads, data }: { failedUploads: number; data:
         </span>
         <p className="font-medium">Failed uploads</p>
       </div>
-      <p className="mt-1 text-2xl font-semibold">{failedUploads}</p>
+      {loading ? <Skeleton className="h-7 w-10 bg-background/20" /> : <p className="mt-1 text-2xl font-semibold">{failedUploads}</p>}
       <div className="mt-4 h-20">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data}>
-            <Tooltip cursor={false} formatter={(val) => [String(val), "failed uploads"]} />
-            <Area type="monotone" dataKey="failedUploads" stroke="var(--color-chart-1)" strokeWidth={2} fill="var(--color-chart-1)" fillOpacity={0.25} />
-          </AreaChart>
-        </ResponsiveContainer>
+        {loading ? (
+          <Skeleton className="h-full w-full rounded-xl bg-background/20" />
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data}>
+              <Tooltip cursor={false} formatter={(val) => [String(val), "failed uploads"]} />
+              <Area type="monotone" dataKey="failedUploads" stroke="var(--color-chart-1)" strokeWidth={2} fill="var(--color-chart-1)" fillOpacity={0.25} />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
       </div>
     </div>
   );
 }
 
-function SmallStat({ icon, label, value, trend }: { icon: unknown; label: string; value: string; trend: string }) {
+function SmallStat({ icon, label, value, trend, loading = false }: { icon: unknown; label: string; value: string; trend: string; loading?: boolean }) {
   return (
     <div className="rounded-[1.6rem] bg-card p-5 shadow-sm ring-1 ring-border/60">
       <span className="grid size-10 place-items-center rounded-full bg-muted">
@@ -391,8 +432,8 @@ function SmallStat({ icon, label, value, trend }: { icon: unknown; label: string
       </span>
       <p className="mt-5 text-xs text-muted-foreground">{label}</p>
       <div className="mt-1 flex items-center justify-between">
-        <p className="text-2xl font-semibold">{value}</p>
-        <span className="text-xs text-primary">{trend}</span>
+        {loading ? <Skeleton className="h-7 w-14" /> : <p className="text-2xl font-semibold">{value}</p>}
+        {loading ? null : <span className="text-xs text-primary">{trend}</span>}
       </div>
     </div>
   );
