@@ -9,6 +9,7 @@ import TableLoadingState from "@/components/shared/TableLoadingState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { authorizedFetch } from "@/lib/api/client";
 import { supabaseClient } from "@/lib/supabase/client";
 import type { PerformanceMeta, PerformanceRow } from "@/lib/reporting/types";
@@ -155,10 +156,10 @@ export default function PerformanceReportsPage() {
       </section>
 
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Planned visits" value={totals ? totals.plannedVisits.toFixed(2) : "-"} />
-        <Stat label="Achieved visits" value={totals ? String(totals.achievedVisits) : "-"} />
-        <Stat label="Visit achievement" value={totals ? `${totals.visitAchievementRate.toFixed(1)}%` : "-"} />
-        <Stat label="Sales achievement" value={totals ? `${totals.salesAchievementRate.toFixed(1)}%` : "-"} />
+        <Stat label="Planned visits" value={totals ? totals.plannedVisits.toFixed(2) : "-"} loading={performanceQuery.isLoading} />
+        <Stat label="Achieved visits" value={totals ? String(totals.achievedVisits) : "-"} loading={performanceQuery.isLoading} />
+        <Stat label="Visit achievement" value={totals ? `${totals.visitAchievementRate.toFixed(1)}%` : "-"} loading={performanceQuery.isLoading} />
+        <Stat label="Sales achievement" value={totals ? `${totals.salesAchievementRate.toFixed(1)}%` : "-"} loading={performanceQuery.isLoading} />
       </div>
 
       <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60">
@@ -302,11 +303,11 @@ export default function PerformanceReportsPage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, loading = false }: { label: string; value: string; loading?: boolean }) {
   return (
     <div className="rounded-[1.6rem] bg-card p-5 shadow-sm ring-1 ring-border/60">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-2 text-3xl font-semibold">{value}</p>
+      {loading ? <Skeleton className="mt-2 h-9 w-20" /> : <p className="mt-2 text-3xl font-semibold">{value}</p>}
     </div>
   );
 }

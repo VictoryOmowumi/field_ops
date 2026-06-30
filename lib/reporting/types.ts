@@ -37,6 +37,7 @@ export type PerformanceMeta = {
     campaignId: string | null;
     dateFrom: string | null;
     dateTo: string | null;
+    isDefaultWindow: boolean;
   };
 };
 

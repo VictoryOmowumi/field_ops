@@ -4,6 +4,7 @@ import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-acces
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { resolveDateWindow } from "@/lib/server/query-window";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { captureException } from "@/lib/observability/sentry";
 
 function unauthorized() {
   return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
@@ -12,6 +13,8 @@ function unauthorized() {
 function forbidden() {
   return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
 }
+
+type RepRow = { agent_id: string; visits: number; conversions: number; sales_value: number };
 
 export async function GET(request: NextRequest) {
   const user = await getAuthenticatedUserFromRequest(request);
@@ -22,7 +25,8 @@ export async function GET(request: NextRequest) {
 
   const supabase = createServerSupabaseClient();
   const organizationId = membership.organizationId;
-  const campaignId = request.nextUrl.searchParams.get("campaignId");
+  const campaignIdParam = request.nextUrl.searchParams.get("campaignId");
+  const campaignId = campaignIdParam && campaignIdParam !== "all" ? campaignIdParam : null;
   const dateWindow = resolveDateWindow(
     request.nextUrl.searchParams.get("dateFrom"),
     request.nextUrl.searchParams.get("dateTo"),
@@ -31,87 +35,50 @@ export async function GET(request: NextRequest) {
   const page = Math.max(1, Number(request.nextUrl.searchParams.get("page") ?? "1"));
   const pageSize = Math.min(100, Math.max(10, Number(request.nextUrl.searchParams.get("pageSize") ?? "20")));
 
-  let visitsQuery = supabase
-    .from("visits")
-    .select("id, agent_id")
-    .eq("organization_id", organizationId);
-  if (campaignId && campaignId !== "all") visitsQuery = visitsQuery.eq("campaign_id", campaignId);
-  if (dateWindow.dateFrom) visitsQuery = visitsQuery.gte("created_at", `${dateWindow.dateFrom}T00:00:00.000Z`);
-  if (dateWindow.dateTo) visitsQuery = visitsQuery.lte("created_at", `${dateWindow.dateTo}T23:59:59.999Z`);
+  try {
+    const [repRes, profilesRes, repProfilesRes] = await Promise.all([
+      supabase.rpc("reports_rep_performance", {
+        p_organization_id: organizationId,
+        p_campaign_id: campaignId,
+        p_date_from: dateWindow.dateFrom ? `${dateWindow.dateFrom}T00:00:00.000Z` : null,
+        p_date_to: dateWindow.dateTo ? `${dateWindow.dateTo}T23:59:59.999Z` : null,
+      }),
+      supabase.from("profiles").select("user_id, full_name"),
+      supabase.from("rep_profiles").select("user_id, state, lga").eq("organization_id", organizationId),
+    ]);
+    if (repRes.error) throw new Error(`Failed to load rep performance: ${repRes.error.message}`);
 
-  let salesQuery = supabase
-    .from("sales")
-    .select("agent_id, sales_value, quantity, visit_id")
-    .eq("organization_id", organizationId);
-  if (campaignId && campaignId !== "all") salesQuery = salesQuery.eq("campaign_id", campaignId);
-  if (dateWindow.dateFrom) salesQuery = salesQuery.gte("created_at", `${dateWindow.dateFrom}T00:00:00.000Z`);
-  if (dateWindow.dateTo) salesQuery = salesQuery.lte("created_at", `${dateWindow.dateTo}T23:59:59.999Z`);
+    const profileMap = new Map((profilesRes.data ?? []).map((p) => [p.user_id, p.full_name ?? "Unnamed Rep"]));
+    const territoryMap = new Map(
+      (repProfilesRes.data ?? []).map((p) => [p.user_id, [p.lga, p.state].filter(Boolean).join(", ")])
+    );
 
-  const [{ data: visits, error: visitsError }, { data: sales, error: salesError }, { data: profiles }, { data: repProfiles }] = await Promise.all([
-    visitsQuery,
-    salesQuery,
-    supabase.from("profiles").select("user_id, full_name"),
-    supabase.from("rep_profiles").select("user_id, state, lga").eq("organization_id", organizationId),
-  ]);
+    const performanceAll = ((repRes.data ?? []) as RepRow[])
+      .map((row) => ({
+        rep: profileMap.get(row.agent_id) ?? "Unknown Rep",
+        territory: territoryMap.get(row.agent_id) ?? "-",
+        visits: Number(row.visits),
+        conversions: Number(row.conversions),
+        salesValue: Number(row.sales_value),
+        rate: row.visits ? (Number(row.conversions) / Number(row.visits)) * 100 : 0,
+      }))
+      .sort((a, b) => b.visits - a.visits);
 
-  if (visitsError) return NextResponse.json({ success: false, message: visitsError.message }, { status: 500 });
-  if (salesError) return NextResponse.json({ success: false, message: salesError.message }, { status: 500 });
+    const total = performanceAll.length;
+    const start = (page - 1) * pageSize;
+    const performance = performanceAll.slice(start, start + pageSize);
 
-  const profileMap = new Map((profiles ?? []).map((p) => [p.user_id, p.full_name ?? "Unnamed Rep"]));
-  const territoryMap = new Map((repProfiles ?? []).map((p) => [p.user_id, [p.lga, p.state].filter(Boolean).join(", ")]));
-  const rows = new Map<string, { rep: string; territory: string; visits: number; conversions: number; salesValue: number }>();
-
-  const convertedVisitIds = new Set(
-    (sales ?? [])
-      .filter((sale) => Number(sale.quantity ?? 0) > 0 || Number(sale.sales_value ?? 0) > 0)
-      .map((sale) => sale.visit_id)
-      .filter(Boolean)
-  );
-
-  for (const visit of visits ?? []) {
-    if (!visit.agent_id) continue;
-    const existing = rows.get(visit.agent_id) ?? {
-      rep: profileMap.get(visit.agent_id) ?? "Unknown Rep",
-      territory: territoryMap.get(visit.agent_id) ?? "-",
-      visits: 0,
-      conversions: 0,
-      salesValue: 0,
-    };
-    existing.visits += 1;
-    if (convertedVisitIds.has(visit.id)) existing.conversions += 1;
-    rows.set(visit.agent_id, existing);
+    return NextResponse.json({
+      success: true,
+      performance,
+      page,
+      pageSize,
+      total,
+      hasMore: page * pageSize < total,
+      appliedDateWindow: dateWindow,
+    });
+  } catch (error) {
+    captureException(error, { organizationId, route: "/api/admin/reports/rep-performance" });
+    return NextResponse.json({ success: false, message: "Failed to load rep performance." }, { status: 500 });
   }
-
-  for (const sale of sales ?? []) {
-    if (!sale.agent_id) continue;
-    const existing = rows.get(sale.agent_id) ?? {
-      rep: profileMap.get(sale.agent_id) ?? "Unknown Rep",
-      territory: territoryMap.get(sale.agent_id) ?? "-",
-      visits: 0,
-      conversions: 0,
-      salesValue: 0,
-    };
-    existing.salesValue += Number(sale.sales_value ?? 0);
-    rows.set(sale.agent_id, existing);
-  }
-
-  const performanceAll = Array.from(rows.values())
-    .map((item) => ({
-      ...item,
-      rate: item.visits ? (item.conversions / item.visits) * 100 : 0,
-    }))
-    .sort((a, b) => b.visits - a.visits);
-  const total = performanceAll.length;
-  const start = (page - 1) * pageSize;
-  const performance = performanceAll.slice(start, start + pageSize);
-
-  return NextResponse.json({
-    success: true,
-    performance,
-    page,
-    pageSize,
-    total,
-    hasMore: page * pageSize < total,
-    appliedDateWindow: dateWindow,
-  });
 }

@@ -257,19 +257,18 @@ export async function getCampaignAnalyticsSummary(
       : ((sales ?? []) as MetricsSaleRow[]);
     summary = computeMetricsFromRows(scopedVisits, scopedSales, `campaign:${campaignId}`).summary;
   } else {
-    const [{ data: counts, error: rpcError }, { data: sales, error: salesError }] = await Promise.all([
-      supabase
-        .rpc("visit_metrics_summary", {
-          p_organization_id: organizationId,
-          p_campaign_id: campaignId,
-          p_date_from: filters?.dateFrom ? `${filters.dateFrom}T00:00:00.000Z` : null,
-          p_date_to: filters?.dateTo ? `${filters.dateTo}T23:59:59.999Z` : null,
-        })
-        .single(),
-      salesQuery,
+    const rpcParams = {
+      p_organization_id: organizationId,
+      p_campaign_id: campaignId,
+      p_date_from: filters?.dateFrom ? `${filters.dateFrom}T00:00:00.000Z` : null,
+      p_date_to: filters?.dateTo ? `${filters.dateTo}T23:59:59.999Z` : null,
+    };
+    const [{ data: counts, error: rpcError }, { data: extras, error: extrasError }] = await Promise.all([
+      supabase.rpc("visit_metrics_summary", rpcParams).single(),
+      supabase.rpc("dashboard_summary_extras", rpcParams).single(),
     ]);
     if (rpcError) throw new Error(`Failed to load visit metrics for analytics: ${rpcError.message}`);
-    if (salesError) throw new Error(`Failed to load sales for analytics: ${salesError.message}`);
+    if (extrasError) throw new Error(`Failed to load sales metrics for analytics: ${extrasError.message}`);
 
     const countsRow = counts as {
       total_visits: number;
@@ -281,24 +280,36 @@ export async function getCampaignAnalyticsSummary(
       posm_units: number;
       distributed_free_samples: number;
     } | null;
+    const extrasRow = extras as {
+      qualifying_sales_count: number;
+      units_sold: number;
+      distinct_converted_outlets: number;
+      distinct_converted_visits: number;
+    } | null;
     const totalVisits = Number(countsRow?.total_visits ?? 0);
     const uniqueOutlets = Number(countsRow?.unique_outlets ?? 0);
     const posmChecks = Number(countsRow?.posm_checks ?? 0);
     const posmDeployed = Number(countsRow?.posm_deployed ?? 0);
-    const salesOnly = computeMetricsFromRows([], (sales ?? []) as MetricsSaleRow[], `campaign:${campaignId}`).summary;
+    const convertedOutlets = Number(extrasRow?.distinct_converted_outlets ?? 0);
     summary = {
-      ...salesOnly,
       totalSubmissions: totalVisits,
+      conversions: Number(extrasRow?.distinct_converted_visits ?? 0),
+      convertedOutlets,
+      salesCount: Number(extrasRow?.qualifying_sales_count ?? 0),
+      unitsSold: Number(extrasRow?.units_sold ?? 0),
       uniqueOutlets,
       achievedVisits: uniqueOutlets,
       areasCovered: Number(countsRow?.unique_areas ?? 0),
       syncHealth: totalVisits > 0 ? (Number(countsRow?.synced_visits ?? 0) / totalVisits) * 100 : 100,
-      conversionRate: uniqueOutlets > 0 ? (salesOnly.convertedOutlets / uniqueOutlets) * 100 : 0,
+      conversionRate: uniqueOutlets > 0 ? (convertedOutlets / uniqueOutlets) * 100 : 0,
       posmChecks,
       posmDeployed,
       posmUnits: Number(countsRow?.posm_units ?? 0),
       posmDeploymentRate: posmChecks > 0 ? (posmDeployed / posmChecks) * 100 : 0,
+      plannedFreeSamples: 0,
       distributedFreeSamples: Number(countsRow?.distributed_free_samples ?? 0),
+      remainingFreeSamples: 0,
+      freeSampleAchievementRate: 0,
       recentTrend: [],
     };
   }
