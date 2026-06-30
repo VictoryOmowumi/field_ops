@@ -17,13 +17,20 @@ export async function GET(request: NextRequest) {
   if (auth.error) return auth.error;
 
   const supabase = createServerSupabaseClient();
+  // Nothing computed below looks further back than syncWindowStart (7 days), so the
+  // visits/sales fetch is bounded to that window instead of pulling all-time history
+  // across every organization on every dashboard load.
+  const sevenDaysAgoIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const [{ data: organizations }, { data: campaigns }, { data: orgUsers }, { data: visits }, { data: sales }] =
     await Promise.all([
       supabase.from("organizations").select("id, name, status"),
       supabase.from("campaigns").select("id, organization_id, status"),
       supabase.from("organization_users").select("organization_id, role, status, invite_sent_at, accepted_at"),
-      supabase.from("visits").select("id, organization_id, sync_status, created_at, outcome"),
-      supabase.from("sales").select("id, organization_id, sync_status, created_at"),
+      supabase
+        .from("visits")
+        .select("id, organization_id, sync_status, created_at, outcome")
+        .gte("created_at", sevenDaysAgoIso),
+      supabase.from("sales").select("id, organization_id, sync_status, created_at").gte("created_at", sevenDaysAgoIso),
     ]);
 
   const orgs = organizations ?? [];
