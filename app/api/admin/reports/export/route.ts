@@ -124,7 +124,37 @@ export async function GET(request: NextRequest) {
   }
 
   // campaign-activities: a genuine per-visit/per-activity breakdown — this is
-  // row-level data by nature and can't be replaced by an aggregate RPC.
+  // row-level data by nature and can't be replaced by an aggregate RPC. But it
+  // still pulls task_payload per row, so check the row count cheaply first
+  // (via the existing aggregate RPC) and fail fast with a clear message
+  // instead of letting a too-wide range hang for 20+ seconds and time out
+  // anyway — this campaign alone runs ~2,000 visits/day.
+  const MAX_CAMPAIGN_ACTIVITIES_EXPORT_ROWS = 8000;
+  try {
+    const { data: preflightCounts, error: preflightError } = await supabase
+      .rpc("visit_metrics_summary", {
+        p_organization_id: organizationId,
+        p_campaign_id: campaignId,
+        p_date_from: dateWindow.dateFrom ? `${dateWindow.dateFrom}T00:00:00.000Z` : null,
+        p_date_to: dateWindow.dateTo ? `${dateWindow.dateTo}T23:59:59.999Z` : null,
+      })
+      .single();
+    if (preflightError) throw new Error(preflightError.message);
+    const totalVisits = Number((preflightCounts as { total_visits: number } | null)?.total_visits ?? 0);
+    if (totalVisits > MAX_CAMPAIGN_ACTIVITIES_EXPORT_ROWS) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `This range has ${totalVisits.toLocaleString()} visits — too many for a single export (limit ${MAX_CAMPAIGN_ACTIVITIES_EXPORT_ROWS.toLocaleString()}). Narrow the date range and try again.`,
+        },
+        { status: 400 }
+      );
+    }
+  } catch (error) {
+    captureException(error, { organizationId, route: "/api/admin/reports/export?type=campaign-activities-preflight" });
+    return NextResponse.json({ success: false, message: "Failed to check export size." }, { status: 500 });
+  }
+
   let salesQuery = supabase
     .from("sales")
     .select("id, visit_id, created_at, campaign_id, outlet_id, agent_id, product_name, quantity, sales_value, conversion_status")

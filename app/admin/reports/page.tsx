@@ -10,6 +10,7 @@ import TableLoadingState from "@/components/shared/TableLoadingState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { authorizedFetch } from "@/lib/api/client";
 import { supabaseClient } from "@/lib/supabase/client";
 import { useTerminology } from "@/components/providers/tenant-experience-provider";
@@ -104,6 +105,13 @@ export default function ReportsPage() {
   const [exporting, setExporting] = useState<"rep" | "activities" | null>(null);
 
   async function downloadExport(type: "rep-performance" | "campaign-activities") {
+    // campaign-activities is a per-visit/per-activity CSV (task_payload per row),
+    // not an aggregate — this campaign alone runs ~2,000 visits/day, so it needs
+    // a bounded range chosen up front rather than relying on a server default.
+    if (type === "campaign-activities" && (!dateFrom || !dateTo)) {
+      toast.error("Pick a date range before exporting activities — this report is too large to export without one.");
+      return;
+    }
     setExporting(type === "rep-performance" ? "rep" : "activities");
     try {
       const { data } = await supabaseClient.auth.getSession();
@@ -199,10 +207,10 @@ export default function ReportsPage() {
       </section>
 
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label={`Total ${t("visits").toLowerCase()}`} value={overview ? `${overview.totalVisits}` : "-"} />
-        <Stat label={t("conversions")} value={overview ? `${overview.conversions}` : "-"} />
-        <Stat label={`${t("conversion")} rate`} value={overview ? `${overview.conversionRate.toFixed(1)}%` : "-"} />
-        <Stat label="Sales value" value={overview ? formatCurrency(overview.salesValue) : "-"} />
+        <Stat label={`Total ${t("visits").toLowerCase()}`} value={overview ? `${overview.totalVisits}` : "-"} loading={overviewQuery.isLoading} />
+        <Stat label={t("conversions")} value={overview ? `${overview.conversions}` : "-"} loading={overviewQuery.isLoading} />
+        <Stat label={`${t("conversion")} rate`} value={overview ? `${overview.conversionRate.toFixed(1)}%` : "-"} loading={overviewQuery.isLoading} />
+        <Stat label="Sales value" value={overview ? formatCurrency(overview.salesValue) : "-"} loading={overviewQuery.isLoading} />
       </div>
 
       <section className="rounded-4xl bg-card p-5 shadow-sm ring-1 ring-border/60">
@@ -283,11 +291,11 @@ export default function ReportsPage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, loading = false }: { label: string; value: string; loading?: boolean }) {
   return (
     <div className="rounded-[1.6rem] bg-card p-5 shadow-sm ring-1 ring-border/60">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-2 text-3xl font-semibold">{value}</p>
+      {loading ? <Skeleton className="mt-2 h-9 w-20" /> : <p className="mt-2 text-3xl font-semibold">{value}</p>}
     </div>
   );
 }
