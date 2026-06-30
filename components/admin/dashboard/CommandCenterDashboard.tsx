@@ -35,6 +35,27 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { authorizedFetch } from "@/lib/api/client";
 
+type DateWindow = { dateFrom: string | null; dateTo: string | null; isDefaultWindow: boolean };
+
+function dateWindowNote(window?: DateWindow | null) {
+  if (!window) return null;
+  if (window.isDefaultWindow) {
+    return (
+      <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+        Showing the last 2 days only (no date range selected) — pick a date range above to see full history.
+      </p>
+    );
+  }
+  if (window.dateFrom || window.dateTo) {
+    return (
+      <p className="rounded-xl bg-muted px-3 py-2 text-xs text-muted-foreground">
+        Showing {window.dateFrom ?? "the beginning"} – {window.dateTo ?? "now"}.
+      </p>
+    );
+  }
+  return null;
+}
+
 // Types from the existing dashboard API shapes
 type DashboardSummary = {
   activeCampaigns: number;
@@ -109,7 +130,7 @@ export default function CommandCenterDashboard() {
   const summaryQuery = useQuery({
     queryKey: ["cc-summary", queryString],
     queryFn: () =>
-      authorizedFetch<{ success: boolean; summary: DashboardSummary }>(
+      authorizedFetch<{ success: boolean; summary: DashboardSummary; appliedDateWindow?: DateWindow }>(
         `/api/admin/dashboard/summary${queryString}`
       ),
   });
@@ -124,6 +145,7 @@ export default function CommandCenterDashboard() {
         territoryPerformance: TerritoryPoint[];
         repPerformance: Array<{ rank: number; repId: string; name: string; visits: number; conversions: number }>;
         pagination: { total: number };
+        appliedDateWindow?: DateWindow;
       }>(`/api/admin/dashboard/insights${queryString}${queryString ? "&" : "?"}page=1&pageSize=5`),
   });
 
@@ -138,6 +160,7 @@ export default function CommandCenterDashboard() {
   }, [insightsQuery.error]);
 
   const summary = summaryQuery.data?.summary;
+  const appliedDateWindow = summaryQuery.data?.appliedDateWindow ?? insightsQuery.data?.appliedDateWindow ?? null;
   const trend = useMemo(() => insightsQuery.data?.trend ?? [], [insightsQuery.data?.trend]);
   const territory = useMemo(
     () =>
@@ -208,6 +231,8 @@ export default function CommandCenterDashboard() {
         </section>
       ) : null}
 
+      {dateWindowNote(appliedDateWindow)}
+
       {/* ── KPI strip ── */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard
@@ -244,7 +269,7 @@ export default function CommandCenterDashboard() {
           <div className="mb-4">
             <h2 className="font-semibold">Activation Velocity</h2>
             <p className="text-sm text-muted-foreground">
-              {t("visits")} vs {t("conversions")} — last 7 days
+              {t("visits")} vs {t("conversions")}
             </p>
           </div>
           <div className="grid grid-cols-3 gap-4 mb-5">
