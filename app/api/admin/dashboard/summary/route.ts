@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-access";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
-import { computeMetricsFromRows } from "@/lib/campaign/intelligence";
 import { resolveDateWindow } from "@/lib/server/query-window";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { withPerformanceTracking } from "@/lib/observability/performance";
@@ -25,7 +24,8 @@ export async function GET(request: NextRequest) {
 
   const supabase = createServerSupabaseClient();
   const organizationId = membership.organizationId;
-  const campaignId = request.nextUrl.searchParams.get("campaignId");
+  const campaignIdParam = request.nextUrl.searchParams.get("campaignId");
+  const campaignId = campaignIdParam && campaignIdParam !== "all" ? campaignIdParam : null;
   const dateWindow = resolveDateWindow(
     request.nextUrl.searchParams.get("dateFrom"),
     request.nextUrl.searchParams.get("dateTo"),
@@ -35,119 +35,85 @@ export async function GET(request: NextRequest) {
   const dateTo = dateWindow.dateTo;
 
   let campaignsQuery = supabase.from("campaigns").select("id, status").eq("organization_id", organizationId);
-  let salesQuery = supabase
-    .from("sales")
-    .select("id, created_at, campaign_id, agent_id, visit_id, outlet_id, quantity, sales_value")
-    .eq("organization_id", organizationId);
-  // Lighter than the old unbounded select: drops outlet_id/state/lga/outcome since those
-  // counts now come from the visit_metrics_summary RPC, which runs entirely in Postgres
-  // instead of transferring every visit row (the actual cause of the statement timeouts).
-  let activityQuery = supabase
-    .from("visits")
-    .select("id, created_at, campaign_id, agent_id, task_payload")
-    .eq("organization_id", organizationId);
+  if (campaignId) campaignsQuery = campaignsQuery.eq("id", campaignId);
 
-  if (campaignId && campaignId !== "all") {
-    campaignsQuery = campaignsQuery.eq("id", campaignId);
-    salesQuery = salesQuery.eq("campaign_id", campaignId);
-    activityQuery = activityQuery.eq("campaign_id", campaignId);
-  }
-  if (dateFrom) {
-    salesQuery = salesQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
-    activityQuery = activityQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
-  }
-  if (dateTo) {
-    salesQuery = salesQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);
-    activityQuery = activityQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);
-  }
+  // Shared by both RPCs below — neither one transfers row data, both scale
+  // with the aggregate result size, not with how many visits/sales exist in
+  // the date range. This is what lets a 39k-row campaign respond as fast as
+  // a 2-day slice.
+  const rpcParams = {
+    p_organization_id: organizationId,
+    p_campaign_id: campaignId,
+    p_date_from: dateFrom ? `${dateFrom}T00:00:00.000Z` : null,
+    p_date_to: dateTo ? `${dateTo}T23:59:59.999Z` : null,
+  };
 
   try {
-    const [campaignsRes, salesRes, activityRes, countsRes] = await withPerformanceTracking(
+    const [campaignsRes, countsRes, extrasRes] = await withPerformanceTracking(
       "query",
       "admin_dashboard_summary",
       () =>
         Promise.all([
           campaignsQuery,
-          salesQuery,
-          activityQuery,
-          supabase
-            .rpc("visit_metrics_summary", {
-              p_organization_id: organizationId,
-              p_campaign_id: campaignId && campaignId !== "all" ? campaignId : null,
-              p_date_from: dateFrom ? `${dateFrom}T00:00:00.000Z` : null,
-              p_date_to: dateTo ? `${dateTo}T23:59:59.999Z` : null,
-            })
-            .single(),
+          supabase.rpc("visit_metrics_summary", rpcParams).single(),
+          supabase.rpc("dashboard_summary_extras", rpcParams).single(),
         ]),
       organizationId
     );
 
     if (campaignsRes.error) throw new Error(`Failed to load campaigns: ${campaignsRes.error.message}`);
-    if (salesRes.error) throw new Error(`Failed to load sales: ${salesRes.error.message}`);
-    if (activityRes.error) throw new Error(`Failed to load visit activity: ${activityRes.error.message}`);
     if (countsRes.error) throw new Error(`Failed to load visit metrics: ${countsRes.error.message}`);
+    if (extrasRes.error) throw new Error(`Failed to load sales metrics: ${extrasRes.error.message}`);
 
     const campaigns = campaignsRes.data ?? [];
-    const sales = salesRes.data ?? [];
-    const activityRows = activityRes.data ?? [];
     const counts = countsRes.data as {
       total_visits: number;
       unique_outlets: number;
       unique_areas: number;
       synced_visits: number;
+      posm_checks: number;
+      posm_deployed: number;
+      posm_units: number;
+      distributed_free_samples: number;
     } | null;
-
-    const canonical = computeMetricsFromRows(
-      activityRows.map((visit) => ({
-        id: visit.id,
-        created_at: visit.created_at,
-        sync_status: null,
-        outlet_id: null,
-        state: null,
-        lga: null,
-        task_payload: visit.task_payload ?? null,
-      })),
-      sales.map((sale) => ({
-        id: sale.id,
-        visit_id: sale.visit_id ?? null,
-        outlet_id: sale.outlet_id ?? null,
-        created_at: sale.created_at,
-        quantity: sale.quantity ?? null,
-        sales_value: sale.sales_value ?? null,
-      })),
-      `dashboard-summary:${organizationId}:${campaignId ?? "all"}:${dateFrom ?? "-"}:${dateTo ?? "-"}`
-    );
+    const extras = extrasRes.data as {
+      total_sales_records: number;
+      qualifying_sales_count: number;
+      units_sold: number;
+      distinct_converted_outlets: number;
+      total_sales_value: number;
+      active_agents: number;
+    } | null;
 
     const totalVisits = Number(counts?.total_visits ?? 0);
     const uniqueOutlets = Number(counts?.unique_outlets ?? 0);
-
-    const activeRepIds = new Set<string>();
-    for (const visit of activityRows) if (visit.agent_id) activeRepIds.add(visit.agent_id);
-    for (const sale of sales as Array<{ agent_id?: string | null }>) if (sale.agent_id) activeRepIds.add(sale.agent_id);
+    const posmChecks = Number(counts?.posm_checks ?? 0);
+    const posmDeployed = Number(counts?.posm_deployed ?? 0);
+    const conversions = Number(extras?.distinct_converted_outlets ?? 0);
 
     return NextResponse.json({
       success: true,
       summary: {
         activeCampaigns: campaigns.filter((c) => c.status === "active").length,
         totalCampaigns: campaigns.length,
-        activeReps: activeRepIds.size,
+        activeReps: Number(extras?.active_agents ?? 0),
         totalOutlets: uniqueOutlets,
         totalVisits,
-        totalSalesRecords: sales.length,
-        conversions: canonical.summary.convertedOutlets,
-        salesCount: canonical.summary.salesCount ?? 0,
-        unitsSold: canonical.summary.unitsSold ?? 0,
-        conversionRate: uniqueOutlets > 0 ? (canonical.summary.convertedOutlets / uniqueOutlets) * 100 : 0,
-        salesValue: sales.reduce((sum, item) => sum + Number(item.sales_value ?? 0), 0),
+        totalSalesRecords: Number(extras?.total_sales_records ?? 0),
+        conversions,
+        salesCount: Number(extras?.qualifying_sales_count ?? 0),
+        unitsSold: Number(extras?.units_sold ?? 0),
+        conversionRate: uniqueOutlets > 0 ? (conversions / uniqueOutlets) * 100 : 0,
+        salesValue: Number(extras?.total_sales_value ?? 0),
         syncHealth: totalVisits > 0 ? (Number(counts?.synced_visits ?? 0) / totalVisits) * 100 : 100,
-        posmChecks: canonical.summary.posmChecks,
-        posmDeployed: canonical.summary.posmDeployed,
-        posmUnits: canonical.summary.posmUnits,
-        posmDeploymentRate: canonical.summary.posmDeploymentRate,
-        plannedFreeSamples: canonical.summary.plannedFreeSamples ?? 0,
-        distributedFreeSamples: canonical.summary.distributedFreeSamples ?? 0,
-        remainingFreeSamples: canonical.summary.remainingFreeSamples ?? 0,
-        freeSampleAchievementRate: canonical.summary.freeSampleAchievementRate ?? 0,
+        posmChecks,
+        posmDeployed,
+        posmUnits: Number(counts?.posm_units ?? 0),
+        posmDeploymentRate: posmChecks > 0 ? (posmDeployed / posmChecks) * 100 : 0,
+        plannedFreeSamples: 0,
+        distributedFreeSamples: Number(counts?.distributed_free_samples ?? 0),
+        remainingFreeSamples: 0,
+        freeSampleAchievementRate: 0,
       },
       appliedDateWindow: dateWindow,
     });

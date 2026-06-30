@@ -43,14 +43,14 @@ function dateWindowNote(window?: DateWindow | null) {
   if (!window) return null;
   if (window.isDefaultWindow) {
     return (
-      <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+      <p className=" w-max rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
         Showing the last 2 days only (no date range selected) — pick a date range above to see full history.
       </p>
     );
   }
   if (window.dateFrom || window.dateTo) {
     return (
-      <p className="rounded-xl bg-muted px-3 py-2 text-xs text-muted-foreground">
+      <p className="rounded-xl bg-primary/10 px-3 py-2 text-xs text-primary font-medium w-max ">
         Showing {window.dateFrom ?? "the beginning"} – {window.dateTo ?? "now"}.
       </p>
     );
