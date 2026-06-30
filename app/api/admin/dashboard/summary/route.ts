@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-access";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { computeMetricsFromRows } from "@/lib/campaign/intelligence";
+import { resolveDateWindow } from "@/lib/server/query-window";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { withPerformanceTracking } from "@/lib/observability/performance";
 import { captureException } from "@/lib/observability/sentry";
@@ -25,8 +26,13 @@ export async function GET(request: NextRequest) {
   const supabase = createServerSupabaseClient();
   const organizationId = membership.organizationId;
   const campaignId = request.nextUrl.searchParams.get("campaignId");
-  const dateFrom = request.nextUrl.searchParams.get("dateFrom");
-  const dateTo = request.nextUrl.searchParams.get("dateTo");
+  const dateWindow = resolveDateWindow(
+    request.nextUrl.searchParams.get("dateFrom"),
+    request.nextUrl.searchParams.get("dateTo"),
+    2
+  );
+  const dateFrom = dateWindow.dateFrom;
+  const dateTo = dateWindow.dateTo;
 
   let campaignsQuery = supabase.from("campaigns").select("id, status").eq("organization_id", organizationId);
   let salesQuery = supabase
@@ -143,6 +149,7 @@ export async function GET(request: NextRequest) {
         remainingFreeSamples: canonical.summary.remainingFreeSamples ?? 0,
         freeSampleAchievementRate: canonical.summary.freeSampleAchievementRate ?? 0,
       },
+      appliedDateWindow: dateWindow,
     });
   } catch (error) {
     captureException(error, { organizationId, route: "/api/admin/dashboard/summary" });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-access";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
+import { resolveDateWindow } from "@/lib/server/query-window";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 function unauthorized() {
@@ -59,8 +60,14 @@ export async function GET(request: NextRequest) {
   const type = request.nextUrl.searchParams.get("type");
   const exportMode = request.nextUrl.searchParams.get("mode") === "raw" ? "raw" : "summary";
   const campaignId = request.nextUrl.searchParams.get("campaignId");
-  const dateFrom = request.nextUrl.searchParams.get("dateFrom");
-  const dateTo = request.nextUrl.searchParams.get("dateTo");
+  // No fallback (0): exporting with no dates at all is a deliberate "everything" request
+  // and stays unbounded, same as before. But a one-sided range (the bug that helped take
+  // Postgres down on 2026-06-30) now always gets the open side capped by resolveDateWindow.
+  const dateWindow = resolveDateWindow(
+    request.nextUrl.searchParams.get("dateFrom"),
+    request.nextUrl.searchParams.get("dateTo"),
+    0
+  );
   if (type !== "rep-performance" && type !== "campaign-activities") {
     return NextResponse.json({ success: false, message: "Unsupported export type." }, { status: 400 });
   }
@@ -72,16 +79,16 @@ export async function GET(request: NextRequest) {
     .select("id, visit_id, created_at, campaign_id, outlet_id, agent_id, product_name, quantity, sales_value, conversion_status")
     .eq("organization_id", membership.organizationId);
   if (campaignId && campaignId !== "all") salesQuery = salesQuery.eq("campaign_id", campaignId);
-  if (dateFrom) salesQuery = salesQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
-  if (dateTo) salesQuery = salesQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);
+  if (dateWindow.dateFrom) salesQuery = salesQuery.gte("created_at", `${dateWindow.dateFrom}T00:00:00.000Z`);
+  if (dateWindow.dateTo) salesQuery = salesQuery.lte("created_at", `${dateWindow.dateTo}T23:59:59.999Z`);
 
   let visitsQuery = supabase
     .from("visits")
     .select("id, created_at, campaign_id, outlet_id, agent_id, task_type, outcome, visit_outcome_label, task_payload, state, lga")
     .eq("organization_id", membership.organizationId);
   if (campaignId && campaignId !== "all") visitsQuery = visitsQuery.eq("campaign_id", campaignId);
-  if (dateFrom) visitsQuery = visitsQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
-  if (dateTo) visitsQuery = visitsQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);
+  if (dateWindow.dateFrom) visitsQuery = visitsQuery.gte("created_at", `${dateWindow.dateFrom}T00:00:00.000Z`);
+  if (dateWindow.dateTo) visitsQuery = visitsQuery.lte("created_at", `${dateWindow.dateTo}T23:59:59.999Z`);
 
   const [{ data: visits, error: visitsError }, { data: sales, error: salesError }] = await Promise.all([
     visitsQuery,

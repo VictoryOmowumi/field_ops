@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-access";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
+import { resolveDateWindow } from "@/lib/server/query-window";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 function unauthorized() {
@@ -21,24 +22,27 @@ export async function GET(request: NextRequest) {
 
   const supabase = createServerSupabaseClient();
   const campaignId = request.nextUrl.searchParams.get("campaignId");
-  const dateFrom = request.nextUrl.searchParams.get("dateFrom");
-  const dateTo = request.nextUrl.searchParams.get("dateTo");
+  const dateWindow = resolveDateWindow(
+    request.nextUrl.searchParams.get("dateFrom"),
+    request.nextUrl.searchParams.get("dateTo"),
+    30
+  );
 
   let visitsQuery = supabase
     .from("visits")
     .select("id, created_at, outlet_id")
     .eq("organization_id", membership.organizationId);
   if (campaignId && campaignId !== "all") visitsQuery = visitsQuery.eq("campaign_id", campaignId);
-  if (dateFrom) visitsQuery = visitsQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
-  if (dateTo) visitsQuery = visitsQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);
+  if (dateWindow.dateFrom) visitsQuery = visitsQuery.gte("created_at", `${dateWindow.dateFrom}T00:00:00.000Z`);
+  if (dateWindow.dateTo) visitsQuery = visitsQuery.lte("created_at", `${dateWindow.dateTo}T23:59:59.999Z`);
 
   let salesQuery = supabase
     .from("sales")
     .select("id, created_at, product_name, quantity, sales_value, visit_id, outlet_id")
     .eq("organization_id", membership.organizationId);
   if (campaignId && campaignId !== "all") salesQuery = salesQuery.eq("campaign_id", campaignId);
-  if (dateFrom) salesQuery = salesQuery.gte("created_at", `${dateFrom}T00:00:00.000Z`);
-  if (dateTo) salesQuery = salesQuery.lte("created_at", `${dateTo}T23:59:59.999Z`);
+  if (dateWindow.dateFrom) salesQuery = salesQuery.gte("created_at", `${dateWindow.dateFrom}T00:00:00.000Z`);
+  if (dateWindow.dateTo) salesQuery = salesQuery.lte("created_at", `${dateWindow.dateTo}T23:59:59.999Z`);
 
   const [{ data: visits, error: visitsError }, { data: sales, error: salesError }] = await Promise.all([
     visitsQuery,
@@ -76,5 +80,6 @@ export async function GET(request: NextRequest) {
       conversionRate: achievedOutletIds.size ? (convertedOutletIds.size / achievedOutletIds.size) * 100 : 0,
       salesValue: totalValue,
     },
+    appliedDateWindow: dateWindow,
   });
 }

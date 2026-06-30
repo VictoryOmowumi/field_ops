@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-access";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
+import { resolveDateWindow } from "@/lib/server/query-window";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 type CreateSalePayload = {
@@ -35,11 +36,19 @@ export async function GET(request: NextRequest) {
   if (!membership || !hasAllowedOrgRole(membership.role, ["org_admin", "supervisor"])) return forbidden();
 
   const supabase = createServerSupabaseClient();
-  const { data, error } = await supabase
+  const dateWindow = resolveDateWindow(
+    request.nextUrl.searchParams.get("dateFrom"),
+    request.nextUrl.searchParams.get("dateTo"),
+    30
+  );
+  let salesQuery = supabase
     .from("sales")
     .select("id, product_name, quantity, sales_value, conversion_status, sync_status, created_at, campaign_id, outlet_id, agent_id, campaigns(name), outlets(name)")
     .eq("organization_id", membership.organizationId)
     .order("created_at", { ascending: false });
+  if (dateWindow.dateFrom) salesQuery = salesQuery.gte("created_at", `${dateWindow.dateFrom}T00:00:00.000Z`);
+  if (dateWindow.dateTo) salesQuery = salesQuery.lte("created_at", `${dateWindow.dateTo}T23:59:59.999Z`);
+  const { data, error } = await salesQuery;
 
   if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 });
 
@@ -62,7 +71,7 @@ export async function GET(request: NextRequest) {
     time: item.created_at,
   }));
 
-  return NextResponse.json({ success: true, sales });
+  return NextResponse.json({ success: true, sales, appliedDateWindow: dateWindow });
 }
 
 export async function POST(request: NextRequest) {
