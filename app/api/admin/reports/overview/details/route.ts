@@ -4,6 +4,7 @@ import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-acces
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { resolveDateWindow } from "@/lib/server/query-window";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { captureException } from "@/lib/observability/sentry";
 
 function unauthorized() {
   return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
@@ -11,6 +12,14 @@ function unauthorized() {
 
 function forbidden() {
   return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
+}
+
+function toDayLabel(isoDate: string) {
+  return new Date(`${isoDate}T00:00:00.000Z`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "2-digit",
+    timeZone: "UTC",
+  });
 }
 
 export async function GET(request: NextRequest) {
@@ -21,7 +30,9 @@ export async function GET(request: NextRequest) {
   if (!membership || !hasAllowedOrgRole(membership.role, ["org_admin", "supervisor"])) return forbidden();
 
   const supabase = createServerSupabaseClient();
-  const campaignId = request.nextUrl.searchParams.get("campaignId");
+  const organizationId = membership.organizationId;
+  const campaignIdParam = request.nextUrl.searchParams.get("campaignId");
+  const campaignId = campaignIdParam && campaignIdParam !== "all" ? campaignIdParam : null;
   const dateWindow = resolveDateWindow(
     request.nextUrl.searchParams.get("dateFrom"),
     request.nextUrl.searchParams.get("dateTo"),
@@ -30,64 +41,46 @@ export async function GET(request: NextRequest) {
   const productPage = Math.max(1, Number(request.nextUrl.searchParams.get("productPage") ?? "1"));
   const productPageSize = Math.min(50, Math.max(5, Number(request.nextUrl.searchParams.get("productPageSize") ?? "10")));
 
-  let visitsQuery = supabase.from("visits").select("id, created_at").eq("organization_id", membership.organizationId);
-  let salesQuery = supabase
-    .from("sales")
-    .select("created_at, product_name, quantity, sales_value, visit_id")
-    .eq("organization_id", membership.organizationId);
-  if (campaignId && campaignId !== "all") {
-    visitsQuery = visitsQuery.eq("campaign_id", campaignId);
-    salesQuery = salesQuery.eq("campaign_id", campaignId);
-  }
-  if (dateWindow.dateFrom) {
-    visitsQuery = visitsQuery.gte("created_at", `${dateWindow.dateFrom}T00:00:00.000Z`);
-    salesQuery = salesQuery.gte("created_at", `${dateWindow.dateFrom}T00:00:00.000Z`);
-  }
-  if (dateWindow.dateTo) {
-    visitsQuery = visitsQuery.lte("created_at", `${dateWindow.dateTo}T23:59:59.999Z`);
-    salesQuery = salesQuery.lte("created_at", `${dateWindow.dateTo}T23:59:59.999Z`);
-  }
+  const rpcParams = {
+    p_organization_id: organizationId,
+    p_campaign_id: campaignId,
+    p_date_from: dateWindow.dateFrom ? `${dateWindow.dateFrom}T00:00:00.000Z` : null,
+    p_date_to: dateWindow.dateTo ? `${dateWindow.dateTo}T23:59:59.999Z` : null,
+  };
 
-  const [{ data: visits }, { data: sales }] = await Promise.all([visitsQuery, salesQuery]);
-  const convertedVisitIds = new Set(
-    (sales ?? [])
-      .filter((item) => Number(item.quantity ?? 0) > 0 || Number(item.sales_value ?? 0) > 0)
-      .map((item) => item.visit_id)
-      .filter(Boolean)
-  );
+  try {
+    const [trendRes, productsRes] = await Promise.all([
+      supabase.rpc("dashboard_trend", rpcParams),
+      supabase.rpc("reports_product_performance", rpcParams),
+    ]);
+    if (trendRes.error) throw new Error(`Failed to load trend: ${trendRes.error.message}`);
+    if (productsRes.error) throw new Error(`Failed to load product performance: ${productsRes.error.message}`);
 
-  const byDay = new Map<string, { day: string; visits: number; conversions: number }>();
-  for (const item of visits ?? []) {
-    const day = new Date(item.created_at).toISOString().slice(0, 10);
-    const bucket = byDay.get(day) ?? { day, visits: 0, conversions: 0 };
-    bucket.visits += 1;
-    if (convertedVisitIds.has(item.id)) bucket.conversions += 1;
-    byDay.set(day, bucket);
+    const trend = ((trendRes.data ?? []) as Array<{ day: string; visits: number; conversions: number }>)
+      .map((row) => ({ day: toDayLabel(row.day), visits: Number(row.visits), conversions: Number(row.conversions) }))
+      .slice(-14);
+
+    const productsAll = ((productsRes.data ?? []) as Array<{ product_name: string; total_quantity: number }>).map(
+      (row) => ({ product: row.product_name, value: Number(row.total_quantity) })
+    );
+    const total = productsAll.length;
+    const start = (productPage - 1) * productPageSize;
+    const products = productsAll.slice(start, start + productPageSize);
+
+    return NextResponse.json({
+      success: true,
+      trend,
+      products,
+      productPagination: {
+        page: productPage,
+        pageSize: productPageSize,
+        total,
+        hasMore: productPage * productPageSize < total,
+      },
+      appliedDateWindow: dateWindow,
+    });
+  } catch (error) {
+    captureException(error, { organizationId, route: "/api/admin/reports/overview/details" });
+    return NextResponse.json({ success: false, message: "Failed to load report details." }, { status: 500 });
   }
-  const trend = [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day)).slice(-14);
-
-  const byProduct = new Map<string, number>();
-  for (const item of sales ?? []) {
-    const product = item.product_name || "Unknown";
-    byProduct.set(product, (byProduct.get(product) ?? 0) + Number(item.quantity ?? 0));
-  }
-  const productsAll = [...byProduct.entries()]
-    .map(([product, value]) => ({ product, value }))
-    .sort((a, b) => b.value - a.value);
-  const total = productsAll.length;
-  const start = (productPage - 1) * productPageSize;
-  const products = productsAll.slice(start, start + productPageSize);
-
-  return NextResponse.json({
-    success: true,
-    trend,
-    products,
-    productPagination: {
-      page: productPage,
-      pageSize: productPageSize,
-      total,
-      hasMore: productPage * productPageSize < total,
-    },
-    appliedDateWindow: dateWindow,
-  });
 }

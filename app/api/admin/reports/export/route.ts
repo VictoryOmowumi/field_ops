@@ -4,6 +4,7 @@ import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-acces
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { resolveDateWindow } from "@/lib/server/query-window";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { captureException } from "@/lib/observability/sentry";
 
 function unauthorized() {
   return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
@@ -59,34 +60,84 @@ export async function GET(request: NextRequest) {
 
   const type = request.nextUrl.searchParams.get("type");
   const exportMode = request.nextUrl.searchParams.get("mode") === "raw" ? "raw" : "summary";
-  const campaignId = request.nextUrl.searchParams.get("campaignId");
-  // No fallback (0): exporting with no dates at all is a deliberate "everything" request
-  // and stays unbounded, same as before. But a one-sided range (the bug that helped take
-  // Postgres down on 2026-06-30) now always gets the open side capped by resolveDateWindow.
+  const campaignIdParam = request.nextUrl.searchParams.get("campaignId");
+  const campaignId = campaignIdParam && campaignIdParam !== "all" ? campaignIdParam : null;
+  // 30-day default (matches reports/overview): campaign-activities still pulls
+  // task_payload per row for this export, so "no dates" can no longer mean a
+  // truly unbounded scan — that was the same class of risk as the
+  // reports/performance incident. rep-performance export is RPC-aggregated
+  // regardless of window size, so this only meaningfully affects
+  // campaign-activities. Pick an explicit wide range if you need more.
   const dateWindow = resolveDateWindow(
     request.nextUrl.searchParams.get("dateFrom"),
     request.nextUrl.searchParams.get("dateTo"),
-    0
+    30
   );
   if (type !== "rep-performance" && type !== "campaign-activities") {
     return NextResponse.json({ success: false, message: "Unsupported export type." }, { status: 400 });
   }
 
   const supabase = createServerSupabaseClient();
+  const organizationId = membership.organizationId;
 
+  if (type === "rep-performance") {
+    try {
+      const [repRes, profilesRes] = await Promise.all([
+        supabase.rpc("reports_rep_performance", {
+          p_organization_id: organizationId,
+          p_campaign_id: campaignId,
+          p_date_from: dateWindow.dateFrom ? `${dateWindow.dateFrom}T00:00:00.000Z` : null,
+          p_date_to: dateWindow.dateTo ? `${dateWindow.dateTo}T23:59:59.999Z` : null,
+        }),
+        supabase.from("profiles").select("user_id, full_name"),
+      ]);
+      if (repRes.error) throw new Error(`Failed to load rep performance: ${repRes.error.message}`);
+
+      const profileMap = new Map((profilesRes.data ?? []).map((p) => [p.user_id, p.full_name ?? "Unknown Rep"]));
+      const rows = (repRes.data ?? []) as Array<{ agent_id: string; visits: number; conversions: number; sales_value: number }>;
+
+      const lines = ["Rep,Visits,Conversions,ConversionRatePercent,SalesValue"];
+      for (const row of rows) {
+        const repName = profileMap.get(row.agent_id) ?? "Unknown Rep";
+        const rate = row.visits ? (Number(row.conversions) / Number(row.visits)) * 100 : 0;
+        lines.push([
+          csvEscape(repName),
+          csvEscape(row.visits),
+          csvEscape(row.conversions),
+          csvEscape(rate.toFixed(2)),
+          csvEscape(Number(row.sales_value).toFixed(2)),
+        ].join(","));
+      }
+
+      const csv = lines.join("\n");
+      return new NextResponse(csv, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": 'attachment; filename="rep-performance.csv"',
+        },
+      });
+    } catch (error) {
+      captureException(error, { organizationId, route: "/api/admin/reports/export?type=rep-performance" });
+      return NextResponse.json({ success: false, message: "Failed to export rep performance." }, { status: 500 });
+    }
+  }
+
+  // campaign-activities: a genuine per-visit/per-activity breakdown — this is
+  // row-level data by nature and can't be replaced by an aggregate RPC.
   let salesQuery = supabase
     .from("sales")
     .select("id, visit_id, created_at, campaign_id, outlet_id, agent_id, product_name, quantity, sales_value, conversion_status")
-    .eq("organization_id", membership.organizationId);
-  if (campaignId && campaignId !== "all") salesQuery = salesQuery.eq("campaign_id", campaignId);
+    .eq("organization_id", organizationId);
+  if (campaignId) salesQuery = salesQuery.eq("campaign_id", campaignId);
   if (dateWindow.dateFrom) salesQuery = salesQuery.gte("created_at", `${dateWindow.dateFrom}T00:00:00.000Z`);
   if (dateWindow.dateTo) salesQuery = salesQuery.lte("created_at", `${dateWindow.dateTo}T23:59:59.999Z`);
 
   let visitsQuery = supabase
     .from("visits")
     .select("id, created_at, campaign_id, outlet_id, agent_id, task_type, outcome, visit_outcome_label, task_payload, state, lga")
-    .eq("organization_id", membership.organizationId);
-  if (campaignId && campaignId !== "all") visitsQuery = visitsQuery.eq("campaign_id", campaignId);
+    .eq("organization_id", organizationId);
+  if (campaignId) visitsQuery = visitsQuery.eq("campaign_id", campaignId);
   if (dateWindow.dateFrom) visitsQuery = visitsQuery.gte("created_at", `${dateWindow.dateFrom}T00:00:00.000Z`);
   if (dateWindow.dateTo) visitsQuery = visitsQuery.lte("created_at", `${dateWindow.dateTo}T23:59:59.999Z`);
 
@@ -99,8 +150,8 @@ export async function GET(request: NextRequest) {
 
   const [{ data: profiles }, { data: campaigns }, { data: outlets }] = await Promise.all([
     supabase.from("profiles").select("user_id, full_name"),
-    supabase.from("campaigns").select("id, name").eq("organization_id", membership.organizationId),
-    supabase.from("outlets").select("id, name, phone, address, state, lga").eq("organization_id", membership.organizationId),
+    supabase.from("campaigns").select("id, name").eq("organization_id", organizationId),
+    supabase.from("outlets").select("id, name, phone, address, state, lga").eq("organization_id", organizationId),
   ]);
   const profileMap = new Map((profiles ?? []).map((p) => [p.user_id, p.full_name ?? "Unknown Rep"]));
   const campaignMap = new Map((campaigns ?? []).map((c) => [c.id, c.name ?? "Unknown Campaign"]));
@@ -174,239 +225,121 @@ export async function GET(request: NextRequest) {
     outletContextMap.set(outletId, existing);
   }
 
-  if (type === "campaign-activities") {
-    if (exportMode === "summary") {
-      const lines = [
-        "ActivityId,Campaign,Outlet Name,Outlet Address,Outlet Phone Number,Outlet Status,POSM Installed,POSM Units,Free Sample Given,Free Sample Product,Free Sample Quantity,Agent,Area,Visit Timestamp,Activities Completed,Products Checked,Availability Summary,Price Survey Summary,Product Survey Summary,Quantity Sold,Total Sales Value,Buying Price Summary,Selling Price Summary",
-      ];
-
-      for (const visit of visits ?? []) {
-        const context = visit.outlet_id ? outletContextMap.get(visit.outlet_id) : null;
-        const payload = normalizeTaskPayload(visit.task_payload);
-        const activitiesCompleted = new Set<string>();
-        const productsChecked = new Set<string>();
-        const availabilitySummary = new Set<string>();
-        const priceSummary = new Set<string>();
-        const productSurveySummary = new Set<string>();
-        const buyingPriceSummary = new Set<string>();
-        const sellingPriceSummary = new Set<string>();
-        let posmInstalled: "Yes" | "No" = "No";
-        let posmUnits = 0;
-        let freeSampleGiven: "Yes" | "No" = "No";
-        let freeSampleProduct = "";
-        let freeSampleQuantity = 0;
-
-        for (const activity of payload.activities ?? []) {
-          const activityId = activity.activityId ?? "-";
-          activitiesCompleted.add(activityId);
-          const products = Array.isArray(activity.payload?.products) ? activity.payload?.products : [];
-          for (const row of products) {
-            const productName = String(row.productName ?? row.product ?? "").trim();
-            if (productName) productsChecked.add(productName);
-
-            if (activityId === "availability_survey" && productName) {
-              const available = row.available === true ? "Yes" : row.available === false ? "No" : "-";
-              availabilitySummary.add(`${productName}: ${available}`);
-            }
-            if (activityId === "price_survey" && productName) {
-              const bp = row.buyingPrice ?? "-";
-              const sp = row.sellingPrice ?? "-";
-              priceSummary.add(`${productName}: BP ${bp}, SP ${sp}`);
-              if (row.buyingPrice !== undefined && row.buyingPrice !== null && row.buyingPrice !== "") {
-                buyingPriceSummary.add(`${productName}: ${row.buyingPrice}`);
-              }
-              if (row.sellingPrice !== undefined && row.sellingPrice !== null && row.sellingPrice !== "") {
-                sellingPriceSummary.add(`${productName}: ${row.sellingPrice}`);
-              }
-            }
-            if (activityId === "product_survey" && productName) {
-              const available = row.available === true ? "Yes" : row.available === false ? "No" : "-";
-              const qty = row.quantity ?? 0;
-              productSurveySummary.add(`${productName}: Available ${available}, Qty ${qty}`);
-            }
-            if (activityId === "sell_to_outlet" && productName) {
-              if (row.buyingPrice !== undefined && row.buyingPrice !== null && row.buyingPrice !== "") {
-                buyingPriceSummary.add(`${productName}: ${row.buyingPrice}`);
-              }
-              if (row.sellingPrice !== undefined && row.sellingPrice !== null && row.sellingPrice !== "") {
-                sellingPriceSummary.add(`${productName}: ${row.sellingPrice}`);
-              }
-            }
-          }
-
-          if (activityId === "posm_deployment") {
-            const deployed = Boolean(activity.payload?.deployed);
-            if (deployed) {
-              posmInstalled = "Yes";
-              const qty = Number(activity.payload?.quantity ?? 0);
-              if (Number.isFinite(qty) && qty > 0) posmUnits += qty;
-            }
-          }
-          if (activityId === "free_sample_distribution") {
-            const given = Boolean(activity.payload?.given);
-            if (given) {
-              freeSampleGiven = "Yes";
-              const qty = Number(activity.payload?.quantity ?? 0);
-              if (Number.isFinite(qty) && qty > 0) freeSampleQuantity += qty;
-            }
-            const productName = String(activity.payload?.productName ?? "").trim();
-            if (productName) freeSampleProduct = productName;
-          }
-        }
-
-        const visitSales = salesByVisit.get(visit.id) ?? [];
-        const quantitySold = visitSales.reduce((sum, row) => {
-          if (!(Number(row.quantity ?? 0) > 0 || Number(row.sales_value ?? 0) > 0)) return sum;
-          return sum + Number(row.quantity ?? 0);
-        }, 0);
-        const totalSalesValue = visitSales.reduce((sum, row) => {
-          if (!(Number(row.quantity ?? 0) > 0 || Number(row.sales_value ?? 0) > 0)) return sum;
-          return sum + Number(row.sales_value ?? 0);
-        }, 0);
-        const outletStatus: "Converted" | "Onboarded" =
-          quantitySold > 0 || totalSalesValue > 0 ? "Converted" : "Onboarded";
-
-        lines.push([
-          csvEscape(visit.id),
-          csvEscape(campaignMap.get(visit.campaign_id ?? "") ?? "-"),
-          csvEscape(context?.name ?? "Unknown Outlet"),
-          csvEscape(context?.address ?? "N/A"),
-          csvEscape(context?.phone ?? "N/A"),
-          csvEscape(outletStatus),
-          csvEscape(posmInstalled),
-          csvEscape(posmUnits),
-          csvEscape(freeSampleGiven),
-          csvEscape(freeSampleProduct || "-"),
-          csvEscape(freeSampleQuantity),
-          csvEscape(profileMap.get(visit.agent_id ?? "") ?? "-"),
-          csvEscape(context?.area ?? "N/A"),
-          csvEscape(visit.created_at),
-          csvEscape([...activitiesCompleted].join(", ") || "-"),
-          csvEscape([...productsChecked].join(", ") || "-"),
-          csvEscape([...availabilitySummary].join("; ") || "-"),
-          csvEscape([...priceSummary].join("; ") || "-"),
-          csvEscape([...productSurveySummary].join("; ") || "-"),
-          csvEscape(quantitySold),
-          csvEscape(totalSalesValue.toFixed(2)),
-          csvEscape([...buyingPriceSummary].join("; ") || "-"),
-          csvEscape([...sellingPriceSummary].join("; ") || "-"),
-        ].join(","));
-      }
-
-      const csv = lines.join("\n");
-      return new NextResponse(csv, {
-        status: 200,
-        headers: {
-          "Content-Type": "text/csv; charset=utf-8",
-          "Content-Disposition": 'attachment; filename="campaign-business-summary.csv"',
-        },
-      });
-    }
-
+  if (exportMode === "summary") {
     const lines = [
-      "ActivityType,ActivityId,Campaign,Outlet,Outlet Address,Outlet Phone Number,Outlet Status,POSM Installed,POSM Units,Free Sample Given,Free Sample Product,Free Sample Quantity,Agent,Area,Timestamp,Status,TaskType,Activity,Product,Availability,Quantity,BuyingPrice,SellingPrice,SalesValue",
+      "ActivityId,Campaign,Outlet Name,Outlet Address,Outlet Phone Number,Outlet Status,POSM Installed,POSM Units,Free Sample Given,Free Sample Product,Free Sample Quantity,Agent,Area,Visit Timestamp,Activities Completed,Products Checked,Availability Summary,Price Survey Summary,Product Survey Summary,Quantity Sold,Total Sales Value,Buying Price Summary,Selling Price Summary",
     ];
 
     for (const visit of visits ?? []) {
       const context = visit.outlet_id ? outletContextMap.get(visit.outlet_id) : null;
-      const base = [
-        csvEscape("visit"),
-        csvEscape(visit.id),
-        csvEscape(campaignMap.get(visit.campaign_id ?? "") ?? "-"),
-        csvEscape(context?.name ?? (visit.outlet_id ? outletDbMap.get(visit.outlet_id)?.name ?? "-" : "-")),
-        csvEscape(context?.address ?? "N/A"),
-        csvEscape(context?.phone ?? "N/A"),
-        csvEscape(context?.status ?? "Onboarded"),
-        csvEscape(context?.posmInstalled ?? "No"),
-        csvEscape(context?.posmUnits ?? 0),
-        csvEscape(profileMap.get(visit.agent_id ?? "") ?? "-"),
-        csvEscape(context?.area ?? ([visit.lga, visit.state].filter(Boolean).join(", ") || "N/A")),
-        csvEscape(visit.created_at),
-        csvEscape(visit.visit_outcome_label ?? visit.outcome ?? "-"),
-        csvEscape(visit.task_type ?? "-"),
-      ];
-
       const payload = normalizeTaskPayload(visit.task_payload);
-      const activities = Array.isArray(payload.activities) ? payload.activities : [];
-      const freeSampleActivity = activities.find((item) => item.activityId === "free_sample_distribution");
-      const freeSampleGiven = Boolean(freeSampleActivity?.payload?.given) ? "Yes" : "No";
-      const freeSampleProduct = String(freeSampleActivity?.payload?.productName ?? "").trim() || "-";
-      const freeSampleQuantityValue = Number(freeSampleActivity?.payload?.quantity ?? 0);
-      const freeSampleQuantity = Number.isFinite(freeSampleQuantityValue) && freeSampleQuantityValue > 0 ? freeSampleQuantityValue : 0;
+      const activitiesCompleted = new Set<string>();
+      const productsChecked = new Set<string>();
+      const availabilitySummary = new Set<string>();
+      const priceSummary = new Set<string>();
+      const productSurveySummary = new Set<string>();
+      const buyingPriceSummary = new Set<string>();
+      const sellingPriceSummary = new Set<string>();
+      let posmInstalled: "Yes" | "No" = "No";
+      let posmUnits = 0;
+      let freeSampleGiven: "Yes" | "No" = "No";
+      let freeSampleProduct = "";
+      let freeSampleQuantity = 0;
 
-      if (activities.length === 0) {
-        lines.push([
-          ...base,
-          csvEscape(freeSampleGiven),
-          csvEscape(freeSampleProduct),
-          csvEscape(freeSampleQuantity),
-          csvEscape(""),
-          csvEscape(""),
-          csvEscape(""),
-          csvEscape(""),
-          csvEscape(""),
-          csvEscape(""),
-          csvEscape(""),
-        ].join(","));
-        continue;
-      }
-
-      for (const activity of activities) {
-        const activityName = activity.activityId ?? "-";
+      for (const activity of payload.activities ?? []) {
+        const activityId = activity.activityId ?? "-";
+        activitiesCompleted.add(activityId);
         const products = Array.isArray(activity.payload?.products) ? activity.payload?.products : [];
-        const expandedRows = products.length > 0 ? products : [activity.payload ?? {}];
+        for (const row of products) {
+          const productName = String(row.productName ?? row.product ?? "").trim();
+          if (productName) productsChecked.add(productName);
 
-        for (const row of expandedRows) {
-          const typedRow = row as Record<string, unknown>;
-          const availability = typedRow.available === true ? "Yes" : typedRow.available === false ? "No" : "";
-          const quantity = typedRow.quantity ?? "";
-          const buyingPrice = typedRow.buyingPrice ?? "";
-          const sellingPrice = typedRow.sellingPrice ?? "";
-          const salesValue = typedRow.price ?? "";
-          lines.push([
-            ...base,
-            csvEscape(freeSampleGiven),
-            csvEscape(freeSampleProduct),
-            csvEscape(freeSampleQuantity),
-            csvEscape(activityName),
-            csvEscape(String(typedRow.productName ?? "-")),
-            csvEscape(String(availability)),
-            csvEscape(String(quantity)),
-            csvEscape(String(buyingPrice)),
-            csvEscape(String(sellingPrice)),
-            csvEscape(String(salesValue)),
-          ].join(","));
+          if (activityId === "availability_survey" && productName) {
+            const available = row.available === true ? "Yes" : row.available === false ? "No" : "-";
+            availabilitySummary.add(`${productName}: ${available}`);
+          }
+          if (activityId === "price_survey" && productName) {
+            const bp = row.buyingPrice ?? "-";
+            const sp = row.sellingPrice ?? "-";
+            priceSummary.add(`${productName}: BP ${bp}, SP ${sp}`);
+            if (row.buyingPrice !== undefined && row.buyingPrice !== null && row.buyingPrice !== "") {
+              buyingPriceSummary.add(`${productName}: ${row.buyingPrice}`);
+            }
+            if (row.sellingPrice !== undefined && row.sellingPrice !== null && row.sellingPrice !== "") {
+              sellingPriceSummary.add(`${productName}: ${row.sellingPrice}`);
+            }
+          }
+          if (activityId === "product_survey" && productName) {
+            const available = row.available === true ? "Yes" : row.available === false ? "No" : "-";
+            const qty = row.quantity ?? 0;
+            productSurveySummary.add(`${productName}: Available ${available}, Qty ${qty}`);
+          }
+          if (activityId === "sell_to_outlet" && productName) {
+            if (row.buyingPrice !== undefined && row.buyingPrice !== null && row.buyingPrice !== "") {
+              buyingPriceSummary.add(`${productName}: ${row.buyingPrice}`);
+            }
+            if (row.sellingPrice !== undefined && row.sellingPrice !== null && row.sellingPrice !== "") {
+              sellingPriceSummary.add(`${productName}: ${row.sellingPrice}`);
+            }
+          }
+        }
+
+        if (activityId === "posm_deployment") {
+          const deployed = Boolean(activity.payload?.deployed);
+          if (deployed) {
+            posmInstalled = "Yes";
+            const qty = Number(activity.payload?.quantity ?? 0);
+            if (Number.isFinite(qty) && qty > 0) posmUnits += qty;
+          }
+        }
+        if (activityId === "free_sample_distribution") {
+          const given = Boolean(activity.payload?.given);
+          if (given) {
+            freeSampleGiven = "Yes";
+            const qty = Number(activity.payload?.quantity ?? 0);
+            if (Number.isFinite(qty) && qty > 0) freeSampleQuantity += qty;
+          }
+          const productName = String(activity.payload?.productName ?? "").trim();
+          if (productName) freeSampleProduct = productName;
         }
       }
-    }
 
-    for (const sale of sales ?? []) {
-      const context = sale.outlet_id ? outletContextMap.get(sale.outlet_id) : null;
+      const visitSales = salesByVisit.get(visit.id) ?? [];
+      const quantitySold = visitSales.reduce((sum, row) => {
+        if (!(Number(row.quantity ?? 0) > 0 || Number(row.sales_value ?? 0) > 0)) return sum;
+        return sum + Number(row.quantity ?? 0);
+      }, 0);
+      const totalSalesValue = visitSales.reduce((sum, row) => {
+        if (!(Number(row.quantity ?? 0) > 0 || Number(row.sales_value ?? 0) > 0)) return sum;
+        return sum + Number(row.sales_value ?? 0);
+      }, 0);
+      const outletStatus: "Converted" | "Onboarded" =
+        quantitySold > 0 || totalSalesValue > 0 ? "Converted" : "Onboarded";
+
       lines.push([
-        csvEscape("sale"),
-        csvEscape(sale.id),
-        csvEscape(campaignMap.get(sale.campaign_id ?? "") ?? "-"),
-        csvEscape(context?.name ?? (sale.outlet_id ? outletDbMap.get(sale.outlet_id)?.name ?? "-" : "-")),
+        csvEscape(visit.id),
+        csvEscape(campaignMap.get(visit.campaign_id ?? "") ?? "-"),
+        csvEscape(context?.name ?? "Unknown Outlet"),
         csvEscape(context?.address ?? "N/A"),
         csvEscape(context?.phone ?? "N/A"),
-        csvEscape(context?.status ?? "Onboarded"),
-        csvEscape(context?.posmInstalled ?? "No"),
-        csvEscape(context?.posmUnits ?? 0),
-        csvEscape("No"),
-        csvEscape("-"),
-        csvEscape(0),
-        csvEscape(profileMap.get(sale.agent_id ?? "") ?? "-"),
+        csvEscape(outletStatus),
+        csvEscape(posmInstalled),
+        csvEscape(posmUnits),
+        csvEscape(freeSampleGiven),
+        csvEscape(freeSampleProduct || "-"),
+        csvEscape(freeSampleQuantity),
+        csvEscape(profileMap.get(visit.agent_id ?? "") ?? "-"),
         csvEscape(context?.area ?? "N/A"),
-        csvEscape(sale.created_at),
-        csvEscape(sale.conversion_status ?? "-"),
-        csvEscape("sell_to_outlet"),
-        csvEscape("sell_to_outlet"),
-        csvEscape(sale.product_name ?? "-"),
-        csvEscape(""),
-        csvEscape(Number(sale.quantity ?? 0)),
-        csvEscape(""),
-        csvEscape(""),
-        csvEscape(Number(sale.sales_value ?? 0).toFixed(2)),
+        csvEscape(visit.created_at),
+        csvEscape([...activitiesCompleted].join(", ") || "-"),
+        csvEscape([...productsChecked].join(", ") || "-"),
+        csvEscape([...availabilitySummary].join("; ") || "-"),
+        csvEscape([...priceSummary].join("; ") || "-"),
+        csvEscape([...productSurveySummary].join("; ") || "-"),
+        csvEscape(quantitySold),
+        csvEscape(totalSalesValue.toFixed(2)),
+        csvEscape([...buyingPriceSummary].join("; ") || "-"),
+        csvEscape([...sellingPriceSummary].join("; ") || "-"),
       ].join(","));
     }
 
@@ -415,42 +348,115 @@ export async function GET(request: NextRequest) {
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": 'attachment; filename="campaign-activities.csv"',
+        "Content-Disposition": 'attachment; filename="campaign-business-summary.csv"',
       },
     });
   }
 
-  const rows = new Map<string, { visits: number; conversions: number; salesValue: number }>();
-  const convertedVisitIds = new Set(
-    (sales ?? [])
-      .filter((sale) => Number(sale.quantity ?? 0) > 0 || Number(sale.sales_value ?? 0) > 0)
-      .map((sale) => sale.visit_id)
-      .filter(Boolean)
-  );
+  const lines = [
+    "ActivityType,ActivityId,Campaign,Outlet,Outlet Address,Outlet Phone Number,Outlet Status,POSM Installed,POSM Units,Free Sample Given,Free Sample Product,Free Sample Quantity,Agent,Area,Timestamp,Status,TaskType,Activity,Product,Availability,Quantity,BuyingPrice,SellingPrice,SalesValue",
+  ];
+
   for (const visit of visits ?? []) {
-    if (!visit.agent_id) continue;
-    const current = rows.get(visit.agent_id) ?? { visits: 0, conversions: 0, salesValue: 0 };
-    current.visits += 1;
-    if (convertedVisitIds.has(visit.id)) current.conversions += 1;
-    rows.set(visit.agent_id, current);
-  }
-  for (const sale of sales ?? []) {
-    if (!sale.agent_id) continue;
-    const current = rows.get(sale.agent_id) ?? { visits: 0, conversions: 0, salesValue: 0 };
-    current.salesValue += Number(sale.sales_value ?? 0);
-    rows.set(sale.agent_id, current);
+    const context = visit.outlet_id ? outletContextMap.get(visit.outlet_id) : null;
+    const base = [
+      csvEscape("visit"),
+      csvEscape(visit.id),
+      csvEscape(campaignMap.get(visit.campaign_id ?? "") ?? "-"),
+      csvEscape(context?.name ?? (visit.outlet_id ? outletDbMap.get(visit.outlet_id)?.name ?? "-" : "-")),
+      csvEscape(context?.address ?? "N/A"),
+      csvEscape(context?.phone ?? "N/A"),
+      csvEscape(context?.status ?? "Onboarded"),
+      csvEscape(context?.posmInstalled ?? "No"),
+      csvEscape(context?.posmUnits ?? 0),
+      csvEscape(profileMap.get(visit.agent_id ?? "") ?? "-"),
+      csvEscape(context?.area ?? ([visit.lga, visit.state].filter(Boolean).join(", ") || "N/A")),
+      csvEscape(visit.created_at),
+      csvEscape(visit.visit_outcome_label ?? visit.outcome ?? "-"),
+      csvEscape(visit.task_type ?? "-"),
+    ];
+
+    const payload = normalizeTaskPayload(visit.task_payload);
+    const activities = Array.isArray(payload.activities) ? payload.activities : [];
+    const freeSampleActivity = activities.find((item) => item.activityId === "free_sample_distribution");
+    const freeSampleGiven = Boolean(freeSampleActivity?.payload?.given) ? "Yes" : "No";
+    const freeSampleProduct = String(freeSampleActivity?.payload?.productName ?? "").trim() || "-";
+    const freeSampleQuantityValue = Number(freeSampleActivity?.payload?.quantity ?? 0);
+    const freeSampleQuantity = Number.isFinite(freeSampleQuantityValue) && freeSampleQuantityValue > 0 ? freeSampleQuantityValue : 0;
+
+    if (activities.length === 0) {
+      lines.push([
+        ...base,
+        csvEscape(freeSampleGiven),
+        csvEscape(freeSampleProduct),
+        csvEscape(freeSampleQuantity),
+        csvEscape(""),
+        csvEscape(""),
+        csvEscape(""),
+        csvEscape(""),
+        csvEscape(""),
+        csvEscape(""),
+        csvEscape(""),
+      ].join(","));
+      continue;
+    }
+
+    for (const activity of activities) {
+      const activityName = activity.activityId ?? "-";
+      const products = Array.isArray(activity.payload?.products) ? activity.payload?.products : [];
+      const expandedRows = products.length > 0 ? products : [activity.payload ?? {}];
+
+      for (const row of expandedRows) {
+        const typedRow = row as Record<string, unknown>;
+        const availability = typedRow.available === true ? "Yes" : typedRow.available === false ? "No" : "";
+        const quantity = typedRow.quantity ?? "";
+        const buyingPrice = typedRow.buyingPrice ?? "";
+        const sellingPrice = typedRow.sellingPrice ?? "";
+        const salesValue = typedRow.price ?? "";
+        lines.push([
+          ...base,
+          csvEscape(freeSampleGiven),
+          csvEscape(freeSampleProduct),
+          csvEscape(freeSampleQuantity),
+          csvEscape(activityName),
+          csvEscape(String(typedRow.productName ?? "-")),
+          csvEscape(String(availability)),
+          csvEscape(String(quantity)),
+          csvEscape(String(buyingPrice)),
+          csvEscape(String(sellingPrice)),
+          csvEscape(String(salesValue)),
+        ].join(","));
+      }
+    }
   }
 
-  const lines = ["Rep,Visits,Conversions,ConversionRatePercent,SalesValue"];
-  for (const [agentId, metrics] of rows.entries()) {
-    const repName = profileMap.get(agentId) ?? "Unknown Rep";
-    const rate = metrics.visits ? (metrics.conversions / metrics.visits) * 100 : 0;
+  for (const sale of sales ?? []) {
+    const context = sale.outlet_id ? outletContextMap.get(sale.outlet_id) : null;
     lines.push([
-      csvEscape(repName),
-      csvEscape(metrics.visits),
-      csvEscape(metrics.conversions),
-      csvEscape(rate.toFixed(2)),
-      csvEscape(metrics.salesValue.toFixed(2)),
+      csvEscape("sale"),
+      csvEscape(sale.id),
+      csvEscape(campaignMap.get(sale.campaign_id ?? "") ?? "-"),
+      csvEscape(context?.name ?? (sale.outlet_id ? outletDbMap.get(sale.outlet_id)?.name ?? "-" : "-")),
+      csvEscape(context?.address ?? "N/A"),
+      csvEscape(context?.phone ?? "N/A"),
+      csvEscape(context?.status ?? "Onboarded"),
+      csvEscape(context?.posmInstalled ?? "No"),
+      csvEscape(context?.posmUnits ?? 0),
+      csvEscape("No"),
+      csvEscape("-"),
+      csvEscape(0),
+      csvEscape(profileMap.get(sale.agent_id ?? "") ?? "-"),
+      csvEscape(context?.area ?? "N/A"),
+      csvEscape(sale.created_at),
+      csvEscape(sale.conversion_status ?? "-"),
+      csvEscape("sell_to_outlet"),
+      csvEscape("sell_to_outlet"),
+      csvEscape(sale.product_name ?? "-"),
+      csvEscape(""),
+      csvEscape(Number(sale.quantity ?? 0)),
+      csvEscape(""),
+      csvEscape(""),
+      csvEscape(Number(sale.sales_value ?? 0).toFixed(2)),
     ].join(","));
   }
 
@@ -459,7 +465,7 @@ export async function GET(request: NextRequest) {
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": 'attachment; filename="rep-performance.csv"',
+      "Content-Disposition": 'attachment; filename="campaign-activities.csv"',
     },
   });
 }

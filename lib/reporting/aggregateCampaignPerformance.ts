@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { resolveDateWindow } from "@/lib/server/query-window";
 import type {
   AggregatedPerformanceResult,
   PerformanceFilters,
@@ -7,24 +8,15 @@ import type {
   PerformanceRow,
 } from "@/lib/reporting/types";
 
-type VisitRow = {
-  id: string;
-  created_at: string;
-  campaign_id: string | null;
-  outlet_id: string | null;
+type PerformanceDetailRpcRow = {
+  visit_date: string;
+  area: string;
   agent_id: string | null;
-  lga: string | null;
-  task_payload: unknown;
-};
-
-type SaleRow = {
-  id: string;
-  created_at: string;
-  campaign_id: string | null;
-  outlet_id: string | null;
-  visit_id: string | null;
-  quantity: number | null;
-  sales_value: number | null;
+  achieved_visits: number;
+  achieved_conversions: number;
+  achieved_sales_value: number;
+  achieved_samples: number;
+  posm_deployed_outlets: number;
 };
 
 type CampaignTargetRow = {
@@ -37,13 +29,6 @@ type CampaignTargetRow = {
 type ProfileRow = {
   user_id: string;
   full_name: string | null;
-};
-
-type DetailBucket = {
-  row: PerformanceRow;
-  visitedOutlets: Set<string>;
-  convertedOutlets: Set<string>;
-  posmOutlets: Set<string>;
 };
 
 function asNumber(value: unknown) {
@@ -67,10 +52,6 @@ function extractSalesTarget(config: unknown) {
     if (amount > 0) return amount;
   }
   return 0;
-}
-
-function toIsoDay(value: string) {
-  return new Date(value).toISOString().slice(0, 10);
 }
 
 function rate(achieved: number, planned: number) {
@@ -131,53 +112,38 @@ export async function aggregateCampaignPerformance(
   organizationId: string,
   filters: PerformanceFilters
 ): Promise<AggregatedPerformanceResult> {
-  let visitsQuery = supabase
-    .from("visits")
-    .select("id, created_at, campaign_id, outlet_id, agent_id, lga, task_payload")
-    .eq("organization_id", organizationId);
-  let salesQuery = supabase
-    .from("sales")
-    .select("id, created_at, campaign_id, outlet_id, visit_id, quantity, sales_value")
-    .eq("organization_id", organizationId);
+  // No fallback here previously — landing on this page with no filters ran a
+  // fully unbounded visits fetch including task_payload. 30 days matches the
+  // default already used on reports/overview.
+  const dateWindow = resolveDateWindow(filters.dateFrom ?? null, filters.dateTo ?? null, 30);
+  const campaignId = filters.campaignId && filters.campaignId !== "all" ? filters.campaignId : null;
+  const dateFromIso = dateWindow.dateFrom ? `${dateWindow.dateFrom}T00:00:00.000Z` : null;
+  const dateToIso = dateWindow.dateTo ? `${dateWindow.dateTo}T23:59:59.999Z` : null;
 
-  if (filters.campaignId && filters.campaignId !== "all") {
-    visitsQuery = visitsQuery.eq("campaign_id", filters.campaignId);
-    salesQuery = salesQuery.eq("campaign_id", filters.campaignId);
-  }
-  if (filters.dateFrom) {
-    visitsQuery = visitsQuery.gte("created_at", `${filters.dateFrom}T00:00:00.000Z`);
-    salesQuery = salesQuery.gte("created_at", `${filters.dateFrom}T00:00:00.000Z`);
-  }
-  if (filters.dateTo) {
-    visitsQuery = visitsQuery.lte("created_at", `${filters.dateTo}T23:59:59.999Z`);
-    salesQuery = salesQuery.lte("created_at", `${filters.dateTo}T23:59:59.999Z`);
-  }
-
-  const [{ data: visits, error: visitsError }, { data: sales, error: salesError }, { data: profiles }] = await Promise.all([
-    visitsQuery,
-    salesQuery,
+  const [detailRes, { data: profiles }] = await Promise.all([
+    supabase.rpc("reports_performance_detail", {
+      p_organization_id: organizationId,
+      p_campaign_id: campaignId,
+      p_date_from: dateFromIso,
+      p_date_to: dateToIso,
+    }),
     supabase.from("profiles").select("user_id, full_name"),
   ]);
-  if (visitsError) throw new Error(visitsError.message);
-  if (salesError) throw new Error(salesError.message);
+  if (detailRes.error) throw new Error(detailRes.error.message);
 
-  const visitRows = (visits ?? []) as VisitRow[];
-  const saleRows = (sales ?? []) as SaleRow[];
   const profileRows = (profiles ?? []) as ProfileRow[];
   const profileMap = new Map(profileRows.map((p) => [p.user_id, p.full_name ?? "Unknown Agent"]));
-  const visitMap = new Map(visitRows.map((visit) => [visit.id, visit]));
 
-  const campaignIds = new Set<string>();
-  for (const visit of visitRows) if (visit.campaign_id) campaignIds.add(visit.campaign_id);
-  for (const sale of saleRows) if (sale.campaign_id) campaignIds.add(sale.campaign_id);
-  const activeCampaignIds = [...campaignIds];
-  const { data: campaigns } = activeCampaignIds.length
-    ? await supabase
-        .from("campaigns")
-        .select("id, target_outlets, target_conversions, runtime_form_config")
-        .eq("organization_id", organizationId)
-        .in("id", activeCampaignIds)
-    : { data: [] as CampaignTargetRow[] };
+  // Planned targets come from campaign config, not visit/sale rows — when no
+  // specific campaign is selected this now sums every campaign in the org
+  // rather than only ones with activity in the filtered window (a small,
+  // deliberate simplification now that the achieved side is RPC-aggregated).
+  let campaignsQuery = supabase
+    .from("campaigns")
+    .select("id, target_outlets, target_conversions, runtime_form_config")
+    .eq("organization_id", organizationId);
+  if (campaignId) campaignsQuery = campaignsQuery.eq("id", campaignId);
+  const { data: campaigns } = await campaignsQuery;
   const campaignRows = (campaigns ?? []) as CampaignTargetRow[];
 
   const plannedTotals = campaignRows.reduce(
@@ -191,78 +157,24 @@ export async function aggregateCampaignPerformance(
     { visits: 0, conversions: 0, sales: 0, samples: 0 }
   );
 
-  const detailMap = new Map<string, DetailBucket>();
-  for (const visit of visitRows) {
-    const date = toIsoDay(visit.created_at);
-    const area = (visit.lga ?? "Unknown Area").trim() || "Unknown Area";
-    const agentId = visit.agent_id ?? "unassigned";
-    const agentName = visit.agent_id ? (profileMap.get(visit.agent_id) ?? "Unknown Agent") : "Unassigned";
-    const key = `${date}__${area}__${agentId}`;
-    const existing = detailMap.get(key) ?? {
-      row: createRow({
-        groupKey: key,
-        rowType: "detail",
-        level: 2,
-        date,
-        area,
-        agentId: visit.agent_id,
-        agentName,
-      }),
-      visitedOutlets: new Set<string>(),
-      convertedOutlets: new Set<string>(),
-      posmOutlets: new Set<string>(),
-    };
-
-    if (visit.outlet_id) existing.visitedOutlets.add(visit.outlet_id);
-    const payload = (visit.task_payload ?? {}) as {
-      activities?: Array<{ activityId?: string; payload?: Record<string, unknown> }>;
-    };
-    for (const activity of payload.activities ?? []) {
-      if (activity.activityId === "free_sample_distribution" && activity.payload?.given === true) {
-        const qty = asNumber(activity.payload?.quantity);
-        if (qty > 0) existing.row.achievedSamples += qty;
-      }
-      if (activity.activityId === "posm_deployment" && activity.payload?.deployed === true && visit.outlet_id) {
-        existing.posmOutlets.add(visit.outlet_id);
-      }
-    }
-    detailMap.set(key, existing);
-  }
-
-  for (const sale of saleRows) {
-    const validSale = asNumber(sale.quantity) > 0 || asNumber(sale.sales_value) > 0;
-    if (!validSale) continue;
-    const sourceVisit = sale.visit_id ? visitMap.get(sale.visit_id) : null;
-    if (!sourceVisit) continue;
-    const date = toIsoDay(sourceVisit.created_at);
-    const area = (sourceVisit.lga ?? "Unknown Area").trim() || "Unknown Area";
-    const agentId = sourceVisit.agent_id ?? "unassigned";
-    const agentName = sourceVisit.agent_id ? (profileMap.get(sourceVisit.agent_id) ?? "Unknown Agent") : "Unassigned";
-    const key = `${date}__${area}__${agentId}`;
-    const existing = detailMap.get(key) ?? {
-      row: createRow({
-        groupKey: key,
-        rowType: "detail",
-        level: 2,
-        date,
-        area,
-        agentId: sourceVisit.agent_id,
-        agentName,
-      }),
-      visitedOutlets: new Set<string>(),
-      convertedOutlets: new Set<string>(),
-      posmOutlets: new Set<string>(),
-    };
-    if (sale.outlet_id) existing.convertedOutlets.add(sale.outlet_id);
-    existing.row.achievedSalesValue += asNumber(sale.sales_value);
-    detailMap.set(key, existing);
-  }
-
-  const detailRows = [...detailMap.values()].map((bucket) => {
-    bucket.row.achievedVisits = bucket.visitedOutlets.size;
-    bucket.row.achievedConversions = bucket.convertedOutlets.size;
-    bucket.row.posmDeployedOutlets = bucket.posmOutlets.size;
-    return bucket.row;
+  const detailRows: PerformanceRow[] = ((detailRes.data ?? []) as PerformanceDetailRpcRow[]).map((bucket) => {
+    const agentName = bucket.agent_id ? profileMap.get(bucket.agent_id) ?? "Unknown Agent" : "Unassigned";
+    const key = `${bucket.visit_date}__${bucket.area}__${bucket.agent_id ?? "unassigned"}`;
+    const row = createRow({
+      groupKey: key,
+      rowType: "detail",
+      level: 2,
+      date: bucket.visit_date,
+      area: bucket.area,
+      agentId: bucket.agent_id,
+      agentName,
+    });
+    row.achievedVisits = Number(bucket.achieved_visits);
+    row.achievedConversions = Number(bucket.achieved_conversions);
+    row.achievedSalesValue = Number(bucket.achieved_sales_value);
+    row.achievedSamples = Number(bucket.achieved_samples);
+    row.posmDeployedOutlets = Number(bucket.posm_deployed_outlets);
+    return row;
   });
 
   const activeGroupCount = Math.max(1, detailRows.length);
@@ -359,9 +271,10 @@ export async function aggregateCampaignPerformance(
   const meta: PerformanceMeta = {
     groupBy: "hierarchy",
     filtersApplied: {
-      campaignId: filters.campaignId && filters.campaignId !== "all" ? filters.campaignId : null,
-      dateFrom: filters.dateFrom ?? null,
-      dateTo: filters.dateTo ?? null,
+      campaignId,
+      dateFrom: dateWindow.dateFrom,
+      dateTo: dateWindow.dateTo,
+      isDefaultWindow: dateWindow.isDefaultWindow,
     },
   };
 
