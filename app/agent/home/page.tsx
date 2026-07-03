@@ -9,8 +9,19 @@ import { ReloadIcon, Task01Icon, Location01Icon, ArrowRight01Icon, Alert02Icon }
 
 import InstallPromptCard from "@/components/agent/InstallPromptCard";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import { authorizedFetch } from "@/lib/api/client";
 import { useAgentBootstrap } from "@/hooks/useAgentBootstrap";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import {
+  cacheAgentCampaigns,
+  cacheAgentSubmissions,
+  getCachedAgentCampaigns,
+  getCachedAgentSubmissions,
+  isLikelyOfflineError,
+  isOfflinePreloadRequiredError,
+  OfflinePreloadRequiredError,
+} from "@/lib/offline/agent-cache";
 import { cn } from "@/lib/utils";
 
 type Campaign = {
@@ -30,38 +41,81 @@ type Submission = {
   createdAt: string;
 };
 
+type OfflineList<T> = {
+  items: T[];
+  offlineStatus: "fresh" | "cached";
+};
+
 export default function AgentHomePage() {
+  const isOnline = useOnlineStatus();
   const bootstrapQuery = useAgentBootstrap();
   const campaignsQuery = useQuery({
     queryKey: ["agent-home-campaigns"],
-    queryFn: async () => {
-      const res = await authorizedFetch<{ success: boolean; campaigns?: Campaign[]; message?: string }>("/api/agent/campaigns");
-      if (!res.success) throw new Error(res.message || "Unable to load campaigns.");
-      return res.campaigns ?? [];
+    queryFn: async (): Promise<OfflineList<Campaign>> => {
+      try {
+        const res = await authorizedFetch<{ success: boolean; campaigns?: Campaign[]; message?: string }>("/api/agent/campaigns");
+        if (!res.success) throw new Error(res.message || "Unable to load campaigns.");
+        const campaigns = res.campaigns ?? [];
+        await cacheAgentCampaigns(campaigns);
+        return { items: campaigns, offlineStatus: "fresh" };
+      } catch (error) {
+        if (isLikelyOfflineError(error)) {
+          const cached = await getCachedAgentCampaigns<Campaign>();
+          if (cached) return { items: cached, offlineStatus: "cached" };
+          throw new OfflinePreloadRequiredError("Reconnect once to load your assigned campaigns for offline use.");
+        }
+        throw error;
+      }
     },
   });
   const submissionsQuery = useQuery({
     queryKey: ["agent-home-submissions"],
-    queryFn: async () => {
-      const res = await authorizedFetch<{ success: boolean; submissions?: Submission[]; message?: string }>("/api/agent/submissions");
-      if (!res.success) throw new Error(res.message || "Unable to load submissions.");
-      return res.submissions ?? [];
+    queryFn: async (): Promise<OfflineList<Submission>> => {
+      try {
+        const res = await authorizedFetch<{ success: boolean; submissions?: Submission[]; message?: string }>("/api/agent/submissions");
+        if (!res.success) throw new Error(res.message || "Unable to load submissions.");
+        const submissions = res.submissions ?? [];
+        await cacheAgentSubmissions(submissions);
+        return { items: submissions, offlineStatus: "fresh" };
+      } catch (error) {
+        if (isLikelyOfflineError(error)) {
+          const cached = await getCachedAgentSubmissions<Submission>();
+          if (cached) return { items: cached, offlineStatus: "cached" };
+          return { items: [], offlineStatus: "cached" };
+        }
+        throw error;
+      }
     },
   });
 
   useEffect(() => {
-    if (bootstrapQuery.error) toast.error((bootstrapQuery.error as Error).message);
+    if (bootstrapQuery.error && !isOfflinePreloadRequiredError(bootstrapQuery.error)) toast.error((bootstrapQuery.error as Error).message);
   }, [bootstrapQuery.error]);
   useEffect(() => {
-    if (campaignsQuery.error) toast.error((campaignsQuery.error as Error).message);
+    if (campaignsQuery.error && !isOfflinePreloadRequiredError(campaignsQuery.error)) toast.error((campaignsQuery.error as Error).message);
   }, [campaignsQuery.error]);
   useEffect(() => {
-    if (submissionsQuery.error) toast.error((submissionsQuery.error as Error).message);
+    if (submissionsQuery.error && !isOfflinePreloadRequiredError(submissionsQuery.error)) toast.error((submissionsQuery.error as Error).message);
   }, [submissionsQuery.error]);
 
-  const campaigns = useMemo(() => campaignsQuery.data ?? [], [campaignsQuery.data]);
-  const submissions = useMemo(() => submissionsQuery.data ?? [], [submissionsQuery.data]);
+  const bootstrapCampaigns = useMemo<Campaign[]>(() => {
+    return (bootstrapQuery.data?.assignedCampaigns ?? []).map((campaign) => ({
+      id: campaign.id,
+      name: campaign.name ?? "Campaign",
+      status: campaign.status,
+    }));
+  }, [bootstrapQuery.data?.assignedCampaigns]);
+
+  const campaigns = useMemo(
+    () => campaignsQuery.data?.items ?? bootstrapCampaigns,
+    [bootstrapCampaigns, campaignsQuery.data?.items]
+  );
+  const submissions = useMemo(() => submissionsQuery.data?.items ?? [], [submissionsQuery.data?.items]);
   const syncState = bootstrapQuery.data?.syncState;
+  const usingCachedData = bootstrapQuery.data?.offlineStatus === "cached"
+    || campaignsQuery.data?.offlineStatus === "cached"
+    || submissionsQuery.data?.offlineStatus === "cached";
+  const needsOnlinePreload = isOfflinePreloadRequiredError(bootstrapQuery.error) || isOfflinePreloadRequiredError(campaignsQuery.error);
 
   const todayStats = useMemo(() => {
     const today = new Date().toDateString();
@@ -83,8 +137,8 @@ export default function AgentHomePage() {
   const nextCampaign = featuredCampaigns[0] ?? null;
 
   const displayName = bootstrapQuery.data?.profile.fullName || "Field Agent";
-  const isLoading = bootstrapQuery.isLoading || campaignsQuery.isLoading || submissionsQuery.isLoading;
-  const identityLoading = bootstrapQuery.isPending || (!bootstrapQuery.data?.profile?.fullName && bootstrapQuery.isFetching);
+  const isLoading = !needsOnlinePreload && (bootstrapQuery.isLoading || campaignsQuery.isLoading || submissionsQuery.isLoading);
+  const identityLoading = !needsOnlinePreload && (bootstrapQuery.isPending || (!bootstrapQuery.data?.profile?.fullName && bootstrapQuery.isFetching));
   const activeRate = campaigns.length ? (activeCampaigns.length / campaigns.length) * 100 : 0;
   const visitsChangeText = useMemo(() => {
     const previous = todayStats.visitsYesterday;
@@ -97,9 +151,19 @@ export default function AgentHomePage() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
+  if (needsOnlinePreload && campaigns.length === 0) {
+    return (
+      <main className="mt-2 space-y-5 pb-24">
+        <InstallPromptCard />
+        <OfflineNotice mode="preload" />
+      </main>
+    );
+  }
+
   return (
     <main className="mt-2 space-y-5 pb-24">
       <InstallPromptCard />
+      {(!isOnline || usingCachedData) ? <OfflineNotice mode={usingCachedData ? "cached" : "offline"} /> : null}
       <section>
         {identityLoading ? (
           <>
@@ -204,6 +268,32 @@ export default function AgentHomePage() {
   );
 }
 
+function OfflineNotice({ mode }: { mode: "offline" | "cached" | "preload" }) {
+  if (mode === "preload") {
+    return (
+      <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-amber-950">
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="border-amber-300 bg-white/70 text-amber-900">Needs online preload</Badge>
+        </div>
+        <p className="mt-3 text-sm font-medium">This device is not ready for offline field work yet.</p>
+        <p className="mt-1 text-sm opacity-80">Reconnect once, open Home and Campaigns, then this screen can load cached agent data offline.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold">Offline mode</p>
+        <Badge variant="outline" className="border-amber-300 bg-white/70 text-amber-900">Cached data</Badge>
+      </div>
+      <p className="mt-1 text-xs opacity-80">
+        Showing the latest data saved on this device. Reconnect to refresh campaign assignments and activity.
+      </p>
+    </section>
+  );
+}
+
 function HeroStat({
   label,
   value,
@@ -266,10 +356,10 @@ function CampaignCard({ campaign }: { campaign: Campaign }) {
           <p className="line-clamp-2 text-base font-semibold leading-tight">{campaign.name}</p>
           <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
             <span>{statusText}</span>
-            <span>•</span>
+            <span>-</span>
             <span>
               {campaign.completedVisits ?? 0}
-              {campaign.target_outlets ? `/${campaign.target_outlets}` : ""} visits • {Math.round(progress)}% done
+              {campaign.target_outlets ? `/${campaign.target_outlets}` : ""} visits - {Math.round(progress)}% done
             </span>
           </div>
         </div>

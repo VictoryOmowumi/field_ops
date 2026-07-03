@@ -29,6 +29,12 @@ export interface SyncLogRecord {
   timestamp: string;
 }
 
+export interface AgentCacheRecord {
+  id: string;
+  payload: unknown;
+  updatedAt: string;
+}
+
 export class ActivationIQDB extends Dexie {
   outlets!: Table<Outlet, string>;
   visits!: Table<Visit, string>;
@@ -38,6 +44,7 @@ export class ActivationIQDB extends Dexie {
   submissionsCache!: Table<Record<string, unknown>, string>;
   evidenceBlobs!: Table<{ id: string; queueId: string; fileName: string; fileType: string; blob: Blob; createdAt: string }, string>;
   syncLogs!: Table<SyncLogRecord, string>;
+  agentCache!: Table<AgentCacheRecord, string>;
 
   constructor() {
     super("activationiq_db");
@@ -51,10 +58,28 @@ export class ActivationIQDB extends Dexie {
       evidenceBlobs: "id, queueId, createdAt",
       syncLogs: "id, queueId, status, timestamp",
     });
+    this.version(4).stores({
+      outlets: "id, syncStatus, createdAt, updatedAt",
+      visits: "id, campaignId, outletId, agentId, outcome, syncStatus, createdAt, updatedAt",
+      sales: "id, visitId, outletId, agentId, syncStatus, createdAt, updatedAt",
+      syncQueue: "id, entityType, entityId, retryCount, createdAt, idempotencyKey, status, campaignId, organizationId",
+      campaignsCache: "id, organizationId, createdAt",
+      submissionsCache: "id, campaignId, organizationId, createdAt",
+      evidenceBlobs: "id, queueId, createdAt",
+      syncLogs: "id, queueId, status, timestamp",
+      agentCache: "id, updatedAt",
+    });
   }
 }
 
 export const db = new ActivationIQDB();
+
+// Close this connection when another tab or HMR module requests a version
+// upgrade. Without this, the upgrade blocks indefinitely and every subsequent
+// IndexedDB read/write hangs, causing the RequireRole skeleton to persist.
+db.on("versionchange", () => {
+  db.close();
+});
 
 /** Retries once after reopening the connection if the browser closed it (e.g. backgrounding/memory pressure). */
 export async function withDbRetry<T>(operation: () => Promise<T>): Promise<T> {
@@ -68,3 +93,4 @@ export async function withDbRetry<T>(operation: () => Promise<T>): Promise<T> {
     throw error;
   }
 }
+

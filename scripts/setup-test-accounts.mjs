@@ -24,6 +24,12 @@ const testAccounts = [
     fullName: "Test Agent",
   },
   {
+    email: "nakowahealthcentre@gmail.com",
+    password: "nakowa123",
+    role: "agent",
+    fullName: "Nakowa Test Agent",
+  },
+  {
     email: "admin.test@ActivationIQ.local",
     password: "ActivationIQ123!",
     role: "admin",

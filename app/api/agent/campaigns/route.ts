@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   if (!membership) return forbidden();
 
   const supabase = createServerSupabaseClient();
-  const [{ data: assignments }, { data: campaigns }, { data: visits }] = await Promise.all([
+  const [{ data: assignments }, { data: campaigns }] = await Promise.all([
     supabase
       .from("campaign_assignments")
       .select("campaign_id, status")
@@ -34,18 +34,28 @@ export async function GET(request: NextRequest) {
       .eq("organization_id", membership.organizationId)
       .in("status", ["active", "draft"])
       .order("created_at", { ascending: false }),
-    supabase
-      .from("visits")
-      .select("campaign_id")
-      .eq("organization_id", membership.organizationId)
-      .eq("agent_id", user.id),
   ]);
 
   const assignedCampaignIds = new Set((assignments ?? []).map((x) => x.campaign_id));
+
+  // Count visits per campaign scoped to this agent only.
+  // Filter to assigned campaign IDs first to keep the query bounded.
+  const assignedIdList = (campaigns ?? [])
+    .filter((c) => assignedCampaignIds.has(c.id))
+    .map((c) => c.id);
+
   const visitCounts = new Map<string, number>();
-  for (const row of visits ?? []) {
-    const current = visitCounts.get(row.campaign_id) ?? 0;
-    visitCounts.set(row.campaign_id, current + 1);
+  if (assignedIdList.length > 0) {
+    const { data: visitRows } = await supabase
+      .from("visits")
+      .select("campaign_id")
+      .eq("organization_id", membership.organizationId)
+      .eq("agent_id", user.id)
+      .in("campaign_id", assignedIdList)
+      .limit(5000);
+    for (const row of visitRows ?? []) {
+      visitCounts.set(row.campaign_id, (visitCounts.get(row.campaign_id) ?? 0) + 1);
+    }
   }
 
   const items = (campaigns ?? [])

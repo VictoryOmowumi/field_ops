@@ -1,10 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getAuthenticatedUserFromRequest } from "@/lib/auth/server-auth";
+import { getAuthenticatedUserFromRequest, isAuthProviderUnavailableError } from "@/lib/auth/server-auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
-  const user = await getAuthenticatedUserFromRequest(request);
+  let user;
+  try {
+    user = await getAuthenticatedUserFromRequest(request);
+  } catch (error) {
+    if (isAuthProviderUnavailableError(error)) {
+      return NextResponse.json(
+        { success: false, offline: true, message: "Authentication provider is unavailable. Use cached offline access if available." },
+        { status: 503 }
+      );
+    }
+    throw error;
+  }
+
   if (!user) {
     return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
   }
