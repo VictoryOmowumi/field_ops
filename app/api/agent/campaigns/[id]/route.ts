@@ -43,7 +43,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
       .select("id, outcome, created_at")
       .eq("organization_id", membership.organizationId)
       .eq("campaign_id", id)
-      .eq("agent_id", user.id),
+      .eq("agent_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(2000),
   ]);
 
   if (!campaignRes.data) return NextResponse.json({ success: false, message: "Campaign not found." }, { status: 404 });

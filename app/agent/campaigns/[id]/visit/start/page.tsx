@@ -13,6 +13,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { authorizedFetch } from "@/lib/api/client";
+import {
+  cacheAgentCampaignDetail,
+  getCachedAgentCampaignDetail,
+  isLikelyOfflineError,
+  isOfflinePreloadRequiredError,
+  OfflinePreloadRequiredError,
+  type OfflineAware,
+} from "@/lib/offline/agent-cache";
 import { db } from "@/lib/offline/db";
 import { enqueueSyncRecord } from "@/lib/offline/queue";
 import { deriveVisitTaskType } from "@/lib/workflow";
@@ -155,10 +163,23 @@ export default function AgentVisitStartPage() {
 
   const campaignQuery = useQuery({
     queryKey: ["agent-campaign-workflow", campaignId],
-    queryFn: async () =>
-      (
-        await authorizedFetch<{ success: boolean; campaign: CampaignResponse }>(`/api/agent/campaigns/${campaignId}`)
-      ).campaign,
+    retry: (_, error) => !isLikelyOfflineError(error) && !isOfflinePreloadRequiredError(error),
+    queryFn: async (): Promise<OfflineAware<CampaignResponse>> => {
+      try {
+        const campaign = (
+          await authorizedFetch<{ success: boolean; campaign: CampaignResponse }>(`/api/agent/campaigns/${campaignId}`)
+        ).campaign;
+        await cacheAgentCampaignDetail(campaign);
+        return { ...campaign, offlineStatus: "fresh" };
+      } catch (error) {
+        if (isLikelyOfflineError(error)) {
+          const cached = await getCachedAgentCampaignDetail<CampaignResponse>(campaignId);
+          if (cached) return { ...cached, offlineStatus: "cached" };
+          throw new OfflinePreloadRequiredError("Reconnect once and open this campaign before starting visits offline.");
+        }
+        throw error;
+      }
+    },
   });
   const gpsRequired = campaignQuery.data?.workflow?.validationRules.requireGpsBeforeSubmit ?? false;
 
@@ -242,7 +263,8 @@ export default function AgentVisitStartPage() {
 
     const compressedPhotos = await Promise.all(photos.map((file) => compressEvidencePhoto(file)));
 
-    if (!isOnline) {
+    // Queue logic shared between true-offline and server-unreachable fallback cases.
+    async function doOfflineQueue(toastMsg: string) {
       const outletDependencyIds: string[] = [];
       let resolvedOutletId: string;
       let visitState: string | null;
@@ -359,50 +381,65 @@ export default function AgentVisitStartPage() {
         });
       }
 
-      toast.success("Offline: visit saved to sync queue.");
-      router.push(`/agent/campaigns/${campaignId}`);
+      toast.success(toastMsg);
+      // Full navigation so the SW handles it (network-first + cache fallback); router.push() triggers an RSC fetch that always fails offline.
+      window.location.assign(`/agent/campaigns/${campaignId}`);
+    }
+
+    if (!isOnline) {
+      await doOfflineQueue("Offline: visit saved to sync queue.");
       return;
     }
 
-    const visitResponse = await authorizedFetch<{ success: boolean; visit: { id: string } }>("/api/agent/visits", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(enrichedPayload),
-    });
+    try {
+      const visitResponse = await authorizedFetch<{ success: boolean; visit: { id: string } }>("/api/agent/visits", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(enrichedPayload),
+      });
 
-    if (compressedPhotos.length > 0) {
-      void (async () => {
-        const uploadResults = await Promise.allSettled(
-          compressedPhotos.map(async (photo) => {
-            const formData = new FormData();
-            formData.append("file", photo.file);
-            formData.append("idempotencyKey", clientId("photo"));
-            formData.append("originalFileName", photo.originalFileName);
-            formData.append("originalFileSize", String(photo.originalFileSize));
-            formData.append("compressedFileSize", String(photo.compressedFileSize));
-            formData.append("mimeType", photo.mimeType);
-            await authorizedFetch(`/api/agent/visits/${visitResponse.visit.id}/evidence`, {
-              method: "POST",
-              body: formData,
-            });
-          })
-        );
-
-        const failedUploads = uploadResults.filter((result) => result.status === "rejected").length;
-        if (failedUploads > 0) {
-          toast.error(
-            `${failedUploads} photo${failedUploads === 1 ? "" : "s"} failed to upload. Open this visit later to retry evidence upload.`
+      if (compressedPhotos.length > 0) {
+        void (async () => {
+          const uploadResults = await Promise.allSettled(
+            compressedPhotos.map(async (photo) => {
+              const formData = new FormData();
+              formData.append("file", photo.file);
+              formData.append("idempotencyKey", clientId("photo"));
+              formData.append("originalFileName", photo.originalFileName);
+              formData.append("originalFileSize", String(photo.originalFileSize));
+              formData.append("compressedFileSize", String(photo.compressedFileSize));
+              formData.append("mimeType", photo.mimeType);
+              await authorizedFetch(`/api/agent/visits/${visitResponse.visit.id}/evidence`, {
+                method: "POST",
+                body: formData,
+              });
+            })
           );
-        }
-      })();
-    }
 
-    toast.success(
-      photos.length > 0
-        ? "Visit captured. Photos are uploading in the background."
-        : "Visit captured successfully."
-    );
-    router.push(`/agent/campaigns/${campaignId}`);
+          const failedUploads = uploadResults.filter((result) => result.status === "rejected").length;
+          if (failedUploads > 0) {
+            toast.error(
+              `${failedUploads} photo${failedUploads === 1 ? "" : "s"} failed to upload. Open this visit later to retry evidence upload.`
+            );
+          }
+        })();
+      }
+
+      toast.success(
+        photos.length > 0
+          ? "Visit captured. Photos are uploading in the background."
+          : "Visit captured successfully."
+      );
+      router.push(`/agent/campaigns/${campaignId}`);
+    } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        // Server-side connectivity failure (auth provider DNS down, Supabase unreachable).
+        // Queue the visit for later sync instead of losing the agent's work.
+        await doOfflineQueue("Server temporarily unavailable. Visit saved to sync queue.");
+        return;
+      }
+      throw error;
+    }
   }
 
   if (campaignQuery.isLoading || !gpsReady) {
@@ -420,14 +457,26 @@ export default function AgentVisitStartPage() {
   }
 
   if (campaignQuery.error || !campaignQuery.data?.workflow) {
+    const needsOnlinePreload = isOfflinePreloadRequiredError(campaignQuery.error);
     return (
       <main className="space-y-4 pt-4">
         <AgentBackButton href={`/agent/campaigns/${campaignId}`} />
-        <SectionHeader title="Start Visit" subtitle="Campaign workflow" />
+        <SectionHeader title="Start Visit" subtitle={needsOnlinePreload ? "Offline preparation needed" : "Campaign workflow"} />
         <section className="rounded-2xl border border-border/70 bg-card p-4 space-y-3">
-          <p className="text-sm text-muted-foreground">
-            {(campaignQuery.error as Error | undefined)?.message ?? "Campaign workflow not found."}
-          </p>
+          {needsOnlinePreload ? (
+            <>
+              <Badge variant="outline" className="w-fit rounded-full border-amber-300 bg-amber-50 text-amber-900">
+                Needs online preload
+              </Badge>
+              <p className="text-sm text-muted-foreground">
+                Reconnect once and open this campaign before going offline. The visit form needs the cached campaign workflow.
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {(campaignQuery.error as Error | undefined)?.message ?? "Campaign workflow not found."}
+            </p>
+          )}
           <Button asChild className="rounded-full">
             <Link href={`/agent/campaigns/${campaignId}`}>Back to Campaign</Link>
           </Button>
@@ -451,9 +500,14 @@ export default function AgentVisitStartPage() {
         <div className="flex items-start justify-between gap-3">
           <SectionHeader title="Start Visit" subtitle={campaignQuery.data.name} />
           <Badge variant="outline" className="rounded-full">
-            {isOnline ? "Online" : "Offline"}
+            {campaignQuery.data.offlineStatus === "cached" ? "Cached workflow" : isOnline ? "Online" : "Offline"}
           </Badge>
         </div>
+        {campaignQuery.data.offlineStatus === "cached" ? (
+          <div className="mt-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
+            Offline mode: this visit form is using the campaign workflow saved on this device.
+          </div>
+        ) : null}
         {gpsError ? (
           <div className="mt-2 flex items-center gap-2">
             <p className="text-xs text-muted-foreground">{gpsError}</p>
@@ -481,3 +535,5 @@ export default function AgentVisitStartPage() {
     </main>
   );
 }
+
+

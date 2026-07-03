@@ -10,7 +10,7 @@ import OfflineRecoveryCollectorProvider from "@/components/providers/offline-rec
 export default function AgentLayout({ children }: { children: ReactNode }) {
   return (
     <RequireRole allowedRoles={["agent"]}>
-      <AppQueryProvider>
+      <AppQueryProvider liveMode>
         <BackgroundSyncProvider />
         <OfflineRecoveryCollectorProvider />
         <div className="mx-auto flex min-h-screen w-full max-w-md flex-col bg-background">
@@ -22,3 +22,4 @@ export default function AgentLayout({ children }: { children: ReactNode }) {
     </RequireRole>
   );
 }
+

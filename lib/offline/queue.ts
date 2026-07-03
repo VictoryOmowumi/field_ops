@@ -56,6 +56,16 @@ export async function getSyncableRecords(now: Date = new Date()): Promise<SyncQu
   return ready;
 }
 
+/**
+ * Puts a failed_terminal/retrying record back into "queued" with a fresh
+ * retry budget, so getSyncableRecords() picks it up on the next drain pass
+ * instead of waiting out its backoff window or staying permanently excluded.
+ * Used by the manual "Retry Failed" action only - normal sync never calls this.
+ */
+export async function requeueSyncRecord(id: string) {
+  await withDbRetry(() => db.syncQueue.update(id, { status: "queued", nextRetryAt: undefined, retryCount: 0 }));
+}
+
 export async function failSyncRecord(id: string, message: string) {
   await withDbRetry(() => db.syncQueue.update(id, { status: "failed_terminal", lastError: message, nextRetryAt: undefined }));
   await appendSyncLog({

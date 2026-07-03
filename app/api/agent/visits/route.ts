@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { isAgentAssignedToCampaign } from "@/lib/auth/agent-access";
 import { getPrimaryOrgMembership } from "@/lib/auth/org-context";
-import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
+import { getAuthenticatedUserFromRequest, hasRequiredRole, isAuthProviderUnavailableError } from "@/lib/auth/server-auth";
 import { deriveVisitTaskType, mapWorkflowOutcomeToVisitOutcome } from "@/lib/workflow";
 import { campaignWorkflowConfigV1Schema, workflowSubmissionSchema } from "@/schemas/workflow";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -31,7 +31,18 @@ function normalizePhone(input?: string | null) {
 }
 
 export async function POST(request: NextRequest) {
-  const user = await getAuthenticatedUserFromRequest(request);
+  let user: Awaited<ReturnType<typeof getAuthenticatedUserFromRequest>>;
+  try {
+    user = await getAuthenticatedUserFromRequest(request);
+  } catch (error) {
+    if (isAuthProviderUnavailableError(error)) {
+      return NextResponse.json(
+        { success: false, offline: true, message: "offline: authentication provider temporarily unavailable" },
+        { status: 503 }
+      );
+    }
+    throw error;
+  }
   if (!user) return unauthorized();
   if (!hasRequiredRole(user, ["agent", "admin", "super_admin"])) return forbidden();
   const membership = await getPrimaryOrgMembership(user.id);

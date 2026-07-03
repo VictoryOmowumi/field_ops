@@ -11,29 +11,16 @@ export function PwaRuntimeProvider() {
   useEffect(() => {
     if (!pwaFlags.offlineReadEnabled && !pwaFlags.offlineWriteEnabled) return;
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
-    const pathname = window.location.pathname;
-    const isAgentRoute = pathname.startsWith("/agent");
-    const isSharedRoute = pathname.startsWith("/shared/");
 
     let mounted = true;
     let refreshing = false;
 
-    async function unregisterAndClearCaches() {
-      try {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(registrations.map((registration) => registration.unregister()));
-        const keys = await caches.keys();
-        await Promise.all(keys.map((key) => caches.delete(key)));
-      } catch {
-        // no-op
-      }
-    }
-
     async function register() {
-      if (!isAgentRoute || isSharedRoute) {
-        await unregisterAndClearCaches();
-        return;
-      }
+      // Always register the SW — its scope (/agent/) handles route filtering.
+      // Previously gated on the initial pathname being /agent/*, which meant
+      // agents who landed on /login first never got the SW registered.
+      const isSharedRoute = window.location.pathname.startsWith("/shared/");
+      if (isSharedRoute) return;
       try {
         const registration = await navigator.serviceWorker.register("/service-worker.js", { scope: "/agent/" });
         await registration.update();

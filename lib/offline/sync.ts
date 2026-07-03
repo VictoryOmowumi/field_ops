@@ -1,6 +1,6 @@
 import type { SyncQueueRecord } from "@/lib/offline/db";
 import { authorizedFetch } from "@/lib/api/client";
-import { appendSyncLog, computeNextRetryAt } from "@/lib/offline/queue";
+import { appendSyncLog, computeNextRetryAt, getSyncableRecords } from "@/lib/offline/queue";
 import { db } from "@/lib/offline/db";
 
 export async function syncRecord(record: SyncQueueRecord) {
@@ -73,4 +73,39 @@ export async function syncRecord(record: SyncQueueRecord) {
     });
     return { id: record.id, success: false, status: terminal ? "failed_terminal" : "failed_retryable" as const };
   }
+}
+
+export type DrainSyncResult = {
+  synced: number;
+  failed: number;
+};
+
+/**
+ * Single source of truth for draining the sync queue, used by both the
+ * background sync provider and the manual sync page. Always pulls the next
+ * batch through getSyncableRecords() so outlet -> visit -> photo dependency
+ * order is respected. Loops passes (rather than a single pass) so that a
+ * one-shot manual "Sync Now" click fully drains a dependency chain in one
+ * go instead of only unblocking the next link and waiting for the next tick.
+ * Each pass only re-includes a record if it's newly eligible (a dependency
+ * just cleared); anything left ineligible (backoff window, terminal) drops
+ * out of getSyncableRecords() immediately, so this always terminates within
+ * at most maxPasses passes.
+ */
+export async function drainSyncQueue(maxPasses = 25): Promise<DrainSyncResult> {
+  let synced = 0;
+  let failed = 0;
+
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    const queue = await getSyncableRecords();
+    if (queue.length === 0) break;
+
+    for (const item of queue) {
+      const result = await syncRecord(item);
+      if (result.success) synced += 1;
+      else failed += 1;
+    }
+  }
+
+  return { synced, failed };
 }
