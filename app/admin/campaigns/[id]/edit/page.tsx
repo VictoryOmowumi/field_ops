@@ -78,6 +78,7 @@ export default function EditCampaignPage() {
     [selectedProducts, freeSampleProductConfig]
   );
   const supervisors = useMemo(() => users.filter((u) => u.role === "supervisor" || u.role === "org_admin"), [users]);
+  const supervisorNameById = useMemo(() => new Map(supervisors.map((u) => [u.id, u.name])), [supervisors]);
   const campaignTasks = useMemo(() => tasksForTemplate(workflowTemplate), [workflowTemplate]);
   const hasProductDrivenTask = useMemo(
     () =>
@@ -364,28 +365,36 @@ export default function EditCampaignPage() {
               </Select>
             </Field>
             <Field label="Assigned supervisors">
-              <div className="rounded-2xl border border-border/70 p-3">
-                {supervisors.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No supervisors found.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {supervisors.map((u) => (
-                      <label key={u.id} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={selectedSupervisorIds.includes(u.id)}
-                          onChange={() =>
-                            setSelectedSupervisorIds((prev) =>
-                              prev.includes(u.id) ? prev.filter((id) => id !== u.id) : [...prev, u.id]
-                            )
-                          }
-                        />
-                        <span>{u.name}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
+              {supervisors.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border px-4 py-3 text-sm text-muted-foreground">
+                  No supervisors found.
+                </div>
+              ) : (
+                <Combobox
+                  items={supervisors.map((u) => u.id)}
+                  multiple
+                  value={selectedSupervisorIds}
+                  onValueChange={setSelectedSupervisorIds}
+                >
+                  <ComboboxChips>
+                    <ComboboxValue>
+                      {selectedSupervisorIds.map((id) => (
+                        <ComboboxChip key={id}>{supervisorNameById.get(id) ?? id}</ComboboxChip>
+                      ))}
+                    </ComboboxValue>
+                    <ComboboxChipsInput placeholder="Select supervisors..." />
+                  </ComboboxChips>
+                  <ComboboxContent>
+                    <ComboboxList getSearchValue={(id) => supervisorNameById.get(id) ?? id}>
+                      {(id) => (
+                        <ComboboxItem key={id} value={id}>
+                          {supervisorNameById.get(id) ?? id}
+                        </ComboboxItem>
+                      )}
+                    </ComboboxList>
+                  </ComboboxContent>
+                </Combobox>
+              )}
             </Field>
           </div>
         </section>

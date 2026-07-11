@@ -86,6 +86,7 @@ export default function NewCampaignPage() {
     () => users.filter((user) => user.role === "supervisor" || user.role === "org_admin"),
     [users]
   );
+  const supervisorNameById = useMemo(() => new Map(supervisors.map((supervisor) => [supervisor.id, supervisor.name])), [supervisors]);
   const hasProductDrivenTask = useMemo(
     () =>
       campaignTasks.includes("sell_to_outlet")
@@ -339,30 +340,36 @@ export default function NewCampaignPage() {
               </Select>
             </Field>
             <Field label="Assigned supervisors">
-              <div className="rounded-2xl border border-border/70 p-3">
-                {supervisors.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No supervisors found.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {supervisors.map((supervisor) => (
-                      <label key={supervisor.id} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={selectedSupervisorIds.includes(supervisor.id)}
-                          onChange={() =>
-                            setSelectedSupervisorIds((prev) =>
-                              prev.includes(supervisor.id)
-                                ? prev.filter((id) => id !== supervisor.id)
-                                : [...prev, supervisor.id]
-                            )
-                          }
-                        />
-                        <span>{supervisor.name}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
+              {supervisors.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border px-4 py-3 text-sm text-muted-foreground">
+                  No supervisors found.
+                </div>
+              ) : (
+                <Combobox
+                  items={supervisors.map((supervisor) => supervisor.id)}
+                  multiple
+                  value={selectedSupervisorIds}
+                  onValueChange={setSelectedSupervisorIds}
+                >
+                  <ComboboxChips>
+                    <ComboboxValue>
+                      {selectedSupervisorIds.map((id) => (
+                        <ComboboxChip key={id}>{supervisorNameById.get(id) ?? id}</ComboboxChip>
+                      ))}
+                    </ComboboxValue>
+                    <ComboboxChipsInput placeholder="Select supervisors..." />
+                  </ComboboxChips>
+                  <ComboboxContent>
+                    <ComboboxList getSearchValue={(id) => supervisorNameById.get(id) ?? id}>
+                      {(id) => (
+                        <ComboboxItem key={id} value={id}>
+                          {supervisorNameById.get(id) ?? id}
+                        </ComboboxItem>
+                      )}
+                    </ComboboxList>
+                  </ComboboxContent>
+                </Combobox>
+              )}
             </Field>
           </div>
         </section>
