@@ -3,9 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-access";
 import { buildWorkflowConfigFromTemplate } from "@/lib/workflow";
-import { getCampaignAnalyticsSummary } from "@/lib/campaign/intelligence";
+import { computeAndStoreCampaignAnalyticsSnapshot, getCampaignAnalyticsSnapshot, getCampaignAnalyticsSummary } from "@/lib/campaign/intelligence";
 import { campaignWorkflowConfigV1Schema, workflowTemplateSchema } from "@/schemas/workflow";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { evaluateActivationGate } from "@/lib/billing/activation-gate";
+import { storageProvider } from "@/lib/storage";
+import { captureException } from "@/lib/observability/sentry";
 
 function unauthorized() {
   return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
@@ -57,7 +60,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
     .eq("role", "supervisor")
     .eq("status", "active");
 
-  const summary = await getCampaignAnalyticsSummary(supabase, data.organization_id, data.id);
+  // A completed/archived campaign's numbers are final — read the frozen snapshot instead of
+  // re-running the live RPCs on every page load. Draft/active campaigns are still changing, so
+  // they keep computing live.
+  const summary =
+    data.status === "completed" || data.status === "archived"
+      ? await getCampaignAnalyticsSnapshot(supabase, data.organization_id, data.id)
+      : await getCampaignAnalyticsSummary(supabase, data.organization_id, data.id);
   return NextResponse.json({
     success: true,
     campaign: { ...data, supervisor_user_ids: (supervisorAssignments ?? []).map((item) => item.user_id) },
@@ -71,7 +80,7 @@ type UpdateCampaignPayload = {
   description?: string | null;
   startDate?: string | null;
   endDate?: string | null;
-  status?: "draft" | "active" | "completed";
+  status?: "draft" | "active" | "completed" | "archived" | "cancelled";
   state?: string | null;
   lga?: string | null;
   targetOutlets?: number | null;
@@ -107,12 +116,34 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   const payload = (await request.json()) as UpdateCampaignPayload;
   const supabase = createServerSupabaseClient();
 
+  // Phase 8: archived campaigns are read-only. Reject the whole request rather than trying to
+  // figure out which individual fields are "safe" to still allow through.
+  const { data: campaignBeforePatch } = await supabase
+    .from("campaigns")
+    .select("status, start_date, end_date")
+    .eq("id", id)
+    .eq("organization_id", membership.organizationId)
+    .maybeSingle();
+  if (campaignBeforePatch?.status === "archived") {
+    return NextResponse.json(
+      { success: false, code: "campaign_archived", message: "This campaign is archived and read-only." },
+      { status: 409 }
+    );
+  }
+
   const patch: Record<string, unknown> = {};
   if (payload.name !== undefined) patch.name = payload.name?.trim();
   if (payload.campaignType !== undefined) patch.campaign_type = payload.campaignType?.trim() || null;
   if (payload.description !== undefined) patch.description = payload.description?.trim() || null;
   if (payload.startDate !== undefined) patch.start_date = payload.startDate || null;
   if (payload.endDate !== undefined) patch.end_date = payload.endDate || null;
+
+  const effectiveStartDate = (payload.startDate !== undefined ? payload.startDate : campaignBeforePatch?.start_date) ?? null;
+  const effectiveEndDate = (payload.endDate !== undefined ? payload.endDate : campaignBeforePatch?.end_date) ?? null;
+  if (effectiveStartDate && effectiveEndDate && effectiveEndDate < effectiveStartDate) {
+    return NextResponse.json({ success: false, message: "End date can't be before the start date." }, { status: 400 });
+  }
+
   if (payload.state !== undefined) patch.state = payload.state?.trim() || null;
   if (payload.lga !== undefined) patch.lga = payload.lga?.trim() || null;
   if (payload.targetOutlets !== undefined) patch.target_outlets = payload.targetOutlets;
@@ -168,6 +199,44 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     patch.launched_at = new Date().toISOString();
   }
 
+  // Phase 8: completed_at drives the retention countdown and the archival scheduler — it has to
+  // be stamped at the moment of transition, not derived later from updated_at (which changes on
+  // any edit, not just this one).
+  if (patch.status === "completed" && campaignBeforePatch?.status !== "completed") {
+    patch.completed_at = new Date().toISOString();
+  }
+
+  // Phase 5: Commercial Activation Gate — only the Draft/Completed -> Active transition is
+  // gated. Re-saving a campaign that's already active (no-op on status) never re-triggers this.
+  if (patch.status === "active") {
+    const { data: currentCampaign } = await supabase
+      .from("campaigns")
+      .select("status")
+      .eq("id", id)
+      .eq("organization_id", membership.organizationId)
+      .maybeSingle();
+
+    if (currentCampaign && currentCampaign.status !== "active") {
+      const gate = await evaluateActivationGate({
+        organizationId: membership.organizationId,
+        campaignId: id,
+        actorUserId: user.id,
+      });
+      if (gate.blocked) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: "commercial_activation_blocked",
+            message: "This campaign can't be activated until commercial approval requirements are met.",
+            reason: gate.reason,
+            blockingInvoiceIds: gate.blockingInvoiceIds,
+          },
+          { status: 409 }
+        );
+      }
+    }
+  }
+
   const { data, error } = await supabase
     .from("campaigns")
     .update(patch)
@@ -178,6 +247,19 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   if (error || !data) {
     return NextResponse.json({ success: false, message: error?.message ?? "Failed to update campaign." }, { status: 500 });
+  }
+
+  // A completed campaign's numbers are final — freeze them into a snapshot now rather than
+  // re-running the expensive live RPCs on every future read. Backgrounded and non-fatal: if this
+  // fails (or times out on a very large campaign), the PATCH still succeeds, and the next read
+  // of this campaign's analytics lazily computes and stores the snapshot itself.
+  if (patch.status === "completed" && campaignBeforePatch?.status !== "completed") {
+    void computeAndStoreCampaignAnalyticsSnapshot(supabase, membership.organizationId, id).catch((snapshotError) => {
+      captureException(snapshotError, {
+        organizationId: membership.organizationId,
+        route: "/api/admin/campaigns/[id] (snapshot on completion)",
+      });
+    });
   }
 
   if (payload.assignedSupervisorUserIds !== undefined) {
@@ -248,12 +330,18 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
   const { data: campaign, error: campaignError } = await supabase
     .from("campaigns")
-    .select("id, organization_id")
+    .select("id, organization_id, status")
     .eq("id", id)
     .eq("organization_id", membership.organizationId)
     .maybeSingle();
   if (campaignError || !campaign) {
     return NextResponse.json({ success: false, message: campaignError?.message ?? "Campaign not found." }, { status: 404 });
+  }
+  if (campaign.status === "archived") {
+    return NextResponse.json(
+      { success: false, code: "campaign_archived", message: "This campaign is archived and read-only — it can't be deleted from here." },
+      { status: 409 }
+    );
   }
 
   const { data: visits, error: visitsError } = await supabase
@@ -267,16 +355,18 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
   if (visitIds.length > 0) {
     const { data: evidenceRows, error: evidenceError } = await supabase
       .from("visit_evidence")
-      .select("file_url")
+      .select("file_url, storage_provider")
       .eq("organization_id", membership.organizationId)
       .in("visit_id", visitIds);
     if (evidenceError) return NextResponse.json({ success: false, message: evidenceError.message }, { status: 500 });
 
-    const evidencePaths = [...new Set((evidenceRows ?? []).map((row) => row.file_url).filter(Boolean))];
-    if (evidencePaths.length > 0) {
-      const { error: storageError } = await supabase.storage.from("evidence").remove(evidencePaths);
-      if (storageError) {
-        console.warn(`Campaign delete storage cleanup warning: ${storageError.message}`);
+    const evidenceRefs = (evidenceRows ?? [])
+      .filter((row) => Boolean(row.file_url))
+      .map((row) => ({ file_url: row.file_url, storage_provider: row.storage_provider === "r2" ? "r2" as const : "supabase" as const }));
+    if (evidenceRefs.length > 0) {
+      const result = await storageProvider.deleteEvidenceFiles(evidenceRefs);
+      if (result.warning) {
+        console.warn(`Campaign delete storage cleanup warning: ${result.warning}`);
       }
     }
 

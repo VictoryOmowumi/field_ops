@@ -7,8 +7,12 @@ import { captureException } from "@/lib/observability/sentry";
 import { recordSystemEvent } from "@/lib/observability/system-events";
 import { withPerformanceTracking } from "@/lib/observability/performance";
 
+// "photo" is deliberately not a valid entityType here — evidence bytes never travel through
+// this JSON batch endpoint (see lib/offline/sync.ts's syncPhotoRecord, which uploads them via
+// multipart to /api/agent/visits/[id]/evidence instead, the same path the online capture flow
+// uses). A JSON-only insert has no way to get real bytes into storage.
 type SyncItem = {
-  entityType: "outlet" | "visit" | "sale" | "photo";
+  entityType: "outlet" | "visit" | "sale";
   idempotencyKey: string;
   payload: Record<string, unknown>;
 };
@@ -145,44 +149,6 @@ async function syncBatch(
           continue;
         }
         const { error } = await supabase.from("sales").insert(payload);
-        if (error) throw error;
-      } else if (item.entityType === "photo") {
-        const rawPayload = item.payload as Record<string, unknown>;
-        const payload = {
-          ...item.payload,
-          organization_id: membership.organizationId,
-        };
-        const id = String(rawPayload.id ?? "");
-        if (!id) throw new Error("Photo evidence id is required for sync.");
-
-        const visitId = rawPayload.visit_id ? String(rawPayload.visit_id) : "";
-        if (!visitId) throw new Error("Visit id is required for evidence sync.");
-        const { data: parentVisit } = await supabase
-          .from("visits")
-          .select("id")
-          .eq("id", visitId)
-          .eq("organization_id", membership.organizationId)
-          .maybeSingle();
-        if (!parentVisit) {
-          results.push({
-            idempotencyKey: item.idempotencyKey,
-            status: "failed_terminal",
-            message: "Evidence cannot be synced: its visit was never created.",
-          });
-          continue;
-        }
-
-        const { data: existing } = await supabase
-          .from("visit_evidence")
-          .select("id")
-          .eq("id", id)
-          .eq("organization_id", membership.organizationId)
-          .maybeSingle();
-        if (existing) {
-          results.push({ idempotencyKey: item.idempotencyKey, status: "duplicate" });
-          continue;
-        }
-        const { error } = await supabase.from("visit_evidence").insert(payload);
         if (error) throw error;
       }
 

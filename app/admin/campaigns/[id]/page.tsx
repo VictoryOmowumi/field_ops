@@ -57,9 +57,11 @@ export default function CampaignDetailsPage() {
         deletingEvidenceId={vm.deletingEvidenceId}
         exportingActivities={vm.exportingActivities}
         launching={vm.launching}
+        markingComplete={vm.markingComplete}
         deletingCampaign={vm.deletingCampaign}
         onExportActivities={() => void vm.downloadCampaignActivitiesExport()}
         onLaunchCampaign={() => void vm.launchCampaign()}
+        onMarkComplete={() => void vm.markCampaignComplete()}
         onDeleteCampaign={() => void vm.deleteCampaign()}
         onDeleteEvidence={(evidenceId) => void vm.deleteEvidence(evidenceId)}
         onLoadMoreEvidence={() => void vm.loadMoreEvidence()}

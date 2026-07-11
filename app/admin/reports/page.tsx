@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -47,10 +47,16 @@ export default function ReportsPage() {
     const str = params.toString();
     return str ? `?${str}` : "";
   }, [campaignId, dateFrom, dateTo]);
-  useEffect(() => {
+
+  // Reset pagination when the filters change — adjusted during render (React's recommended
+  // pattern for this) rather than in a useEffect, which would commit a render with stale page
+  // numbers first and only fix it a tick later.
+  const [prevQueryString, setPrevQueryString] = useState(queryString);
+  if (queryString !== prevQueryString) {
+    setPrevQueryString(queryString);
     setRepPage(1);
     setProductPage(1);
-  }, [queryString]);
+  }
 
   const campaignsQuery = useQuery({
     queryKey: ["admin-reports-campaigns"],

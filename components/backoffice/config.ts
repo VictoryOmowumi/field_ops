@@ -8,6 +8,7 @@ import {
   GearsIcon,
   Megaphone01Icon,
   PulseIcon,
+  Invoice01Icon,
 } from "@hugeicons/core-free-icons";
 
 import type { BackofficeRole, NavAction, UtilityAction } from "./types";
@@ -26,6 +27,7 @@ export const superAdminNav: NavAction[] = [
   { label: "Platform", href: "/super-admin/platform", icon: PulseIcon },
   { label: "Organizations", href: "/super-admin/organizations", icon: Store01Icon },
   { label: "Campaign Ops", href: "/super-admin/campaigns", icon: Megaphone01Icon },
+  { label: "Billing", href: "/super-admin/billing", icon: Invoice01Icon },
   { label: "Users", href: "/super-admin/users", icon: User03Icon },
   { label: "Settings", href: "/super-admin/settings", icon: GearsIcon },
 ];

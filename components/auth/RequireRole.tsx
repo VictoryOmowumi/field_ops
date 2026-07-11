@@ -230,6 +230,14 @@ export default function RequireRole({
           return;
         }
 
+        // Billing stays org-side functionality (the API routes are untouched), but the page and
+        // nav link are hidden from every org role — only super_admin's /super-admin/billing is
+        // meant to be the visible billing surface for now.
+        if (pathname.startsWith("/admin/billing")) {
+          router.replace(redirectOnOrgDeniedTo);
+          return;
+        }
+
         if (membership?.role) {
           await cacheAgentAuthContext({
             userId: session.user.id,

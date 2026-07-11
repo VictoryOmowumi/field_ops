@@ -1,6 +1,8 @@
 {
   "crons": [
     { "path": "/api/internal/monitoring/checks", "schedule": "*/15 * * * *" },
-    { "path": "/api/internal/monitoring/daily-summary", "schedule": "0 7 * * *" }
+    { "path": "/api/internal/monitoring/daily-summary", "schedule": "0 7 * * *" },
+    { "path": "/api/internal/campaigns/archive", "schedule": "0 3 * * *" },
+    { "path": "/api/internal/storage/migration", "schedule": "*/3 * * * *" }
   ]
 }

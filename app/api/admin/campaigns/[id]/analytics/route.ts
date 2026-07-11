@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-access";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
-import { getCampaignAnalyticsSummary, getCampaignMapPoints } from "@/lib/campaign/intelligence";
-import { resolveDateWindow } from "@/lib/server/query-window";
+import { getCampaignAnalyticsSnapshot, getCampaignAnalyticsSummary, getCampaignMapPoints } from "@/lib/campaign/intelligence";
+import { resolveCampaignDefaultWindow, resolveDateWindow } from "@/lib/server/query-window";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { captureException } from "@/lib/observability/sentry";
 import { withPerformanceTracking } from "@/lib/observability/performance";
@@ -29,16 +29,42 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const supabase = createServerSupabaseClient();
   const dateFrom = request.nextUrl.searchParams.get("dateFrom");
   const dateTo = request.nextUrl.searchParams.get("dateTo");
-  const mapDateWindow = resolveDateWindow(dateFrom, dateTo, 2);
+  const hasDateFilter = Boolean(dateFrom || dateTo);
   const mapPage = Math.max(1, Number(request.nextUrl.searchParams.get("mapPage") ?? "1"));
   const mapPageSize = Math.min(500, Math.max(20, Number(request.nextUrl.searchParams.get("mapPageSize") ?? "200")));
 
   try {
+    // A completed/archived campaign's numbers are final — serve the frozen snapshot instead of
+    // re-running the live RPCs, and default the map window to the campaign's own lifetime instead
+    // of "last 2 days from today" (almost always empty for a campaign that's been over a while).
+    // Both only apply to the unfiltered view; an explicit date range always runs live.
+    let campaignRow: { status: string; start_date: string | null; end_date: string | null; created_at: string } | null = null;
+    if (!hasDateFilter) {
+      const { data } = await supabase
+        .from("campaigns")
+        .select("status, start_date, end_date, created_at")
+        .eq("id", id)
+        .eq("organization_id", membership.organizationId)
+        .maybeSingle();
+      campaignRow = data;
+    }
+    const isFinished = campaignRow?.status === "completed" || campaignRow?.status === "archived";
+    const useSnapshot = !hasDateFilter && isFinished;
+
+    const campaignDefaultWindow = campaignRow ? resolveCampaignDefaultWindow(campaignRow) : null;
+    const mapDateWindow =
+      !hasDateFilter && isFinished && campaignDefaultWindow
+        ? resolveDateWindow(campaignDefaultWindow.dateFrom, campaignDefaultWindow.dateTo, 2)
+        : resolveDateWindow(dateFrom, dateTo, 2);
+
     const [summary, mapPoints] = await Promise.all([
       withPerformanceTracking(
         "query",
-        "campaign_analytics_summary",
-        () => getCampaignAnalyticsSummary(supabase, membership.organizationId, id, { dateFrom, dateTo }),
+        useSnapshot ? "campaign_analytics_snapshot" : "campaign_analytics_summary",
+        () =>
+          useSnapshot
+            ? getCampaignAnalyticsSnapshot(supabase, membership.organizationId, id)
+            : getCampaignAnalyticsSummary(supabase, membership.organizationId, id, { dateFrom, dateTo }),
         membership.organizationId
       ),
       getCampaignMapPoints(supabase, membership.organizationId, id, {

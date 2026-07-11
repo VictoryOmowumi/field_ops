@@ -3,8 +3,11 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { getSettingFieldType } from "@/lib/platform/settings-schema";
 import { supabaseClient } from "@/lib/supabase/client";
 import type { PlatformSettingItem } from "@/types/platform";
 
@@ -74,7 +77,7 @@ export default function SuperAdminSettingsPage() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Platform Settings</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Global defaults for sync reliability and tenant operations.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Global defaults for sync reliability, tenant operations, storage, and the commercial rollout.</p>
         </div>
         {editing ? (
           <div className="flex gap-2">
@@ -104,9 +107,13 @@ export default function SuperAdminSettingsPage() {
                 <td className="px-4 py-4 text-muted-foreground">{item.label}</td>
                 <td className="px-4 py-4">
                   {editing ? (
-                    <Input value={draft[item.key] ?? item.value} onChange={(event) => setDraft((prev) => ({ ...prev, [item.key]: event.target.value }))} />
+                    <SettingValueEditor
+                      settingKey={item.key}
+                      value={draft[item.key] ?? item.value}
+                      onChange={(value) => setDraft((prev) => ({ ...prev, [item.key]: value }))}
+                    />
                   ) : (
-                    item.value
+                    <SettingValueDisplay settingKey={item.key} value={item.value} />
                   )}
                 </td>
               </tr>
@@ -118,3 +125,78 @@ export default function SuperAdminSettingsPage() {
   );
 }
 
+function SettingValueEditor({
+  settingKey,
+  value,
+  onChange,
+}: {
+  settingKey: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const fieldType = getSettingFieldType(settingKey);
+
+  if (fieldType.kind === "boolean") {
+    return (
+      <Select value={value === "true" ? "true" : "false"} onValueChange={onChange}>
+        <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="true">Enabled</SelectItem>
+          <SelectItem value="false">Disabled</SelectItem>
+        </SelectContent>
+      </Select>
+    );
+  }
+
+  if (fieldType.kind === "select") {
+    return (
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          {fieldType.options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  }
+
+  if (fieldType.kind === "number") {
+    return (
+      <Input
+        type="number"
+        min={fieldType.min}
+        step={fieldType.step}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-40"
+      />
+    );
+  }
+
+  return <Input value={value} onChange={(event) => onChange(event.target.value)} />;
+}
+
+function SettingValueDisplay({ settingKey, value }: { settingKey: string; value: string }) {
+  const fieldType = getSettingFieldType(settingKey);
+
+  if (fieldType.kind === "boolean") {
+    const enabled = value === "true";
+    return (
+      <Badge
+        className={`rounded-full ${
+          enabled ? "bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/10" : "bg-muted text-muted-foreground hover:bg-muted"
+        }`}
+      >
+        {enabled ? "Enabled" : "Disabled"}
+      </Badge>
+    );
+  }
+
+  if (fieldType.kind === "select") {
+    const option = fieldType.options.find((item) => item.value === value);
+    return <span>{option?.label ?? value}</span>;
+  }
+
+  return <span>{value}</span>;
+}

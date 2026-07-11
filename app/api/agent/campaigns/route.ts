@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
       .from("campaigns")
       .select("id, name, status, start_date, end_date, state, lga, target_outlets")
       .eq("organization_id", membership.organizationId)
-      .in("status", ["active", "draft"])
+      .eq("status", "active")
       .order("created_at", { ascending: false }),
   ]);
 

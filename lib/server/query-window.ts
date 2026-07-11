@@ -17,6 +17,22 @@ export function resolveRollingWindowDates(days: number) {
 // instead of leaving it null.
 const MAX_OPEN_ENDED_RANGE_DAYS = 31;
 
+/**
+ * A finished campaign's own lifetime, not "the last N days from today" — the rolling-window
+ * fallback in resolveDateWindow anchors to the current date, which is almost always empty for a
+ * campaign that ended weeks or months ago. Pass the result into resolveDateWindow in place of
+ * the raw query params when the caller didn't supply an explicit range.
+ */
+export function resolveCampaignDefaultWindow(campaign: {
+  start_date?: string | null;
+  end_date?: string | null;
+  created_at?: string | null;
+}) {
+  const dateFrom = campaign.start_date ?? (campaign.created_at ? campaign.created_at.slice(0, 10) : null);
+  const dateTo = campaign.end_date ?? new Date().toISOString().slice(0, 10);
+  return { dateFrom, dateTo };
+}
+
 export function resolveDateWindow(
   dateFrom?: string | null,
   dateTo?: string | null,

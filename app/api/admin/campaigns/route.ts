@@ -5,6 +5,7 @@ import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-acces
 import { buildWorkflowConfigFromTemplate } from "@/lib/workflow";
 import { campaignWorkflowConfigV1Schema, workflowTemplateSchema } from "@/schemas/workflow";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { ensurePendingActivation } from "@/lib/billing/activation-service";
 
 type CreateCampaignPayload = {
   name: string;
@@ -175,6 +176,9 @@ export async function POST(request: NextRequest) {
 
   const payload = (await request.json()) as Partial<CreateCampaignPayload>;
   if (!payload.name?.trim()) return badRequest("Campaign name is required.");
+  if (payload.startDate && payload.endDate && payload.endDate < payload.startDate) {
+    return badRequest("End date can't be before the start date.");
+  }
 
   const membership = await getOrgMembershipForUser(user.id);
   if (!membership || !hasAllowedOrgRole(membership.role, ["org_admin"])) return forbidden();
@@ -228,8 +232,13 @@ export async function POST(request: NextRequest) {
       campaign_tasks: payload.campaignTasks ?? ["register_outlet", "sell_to_outlet"],
       campaign_workflow_template: workflowTemplate.data,
       campaign_workflow: workflow,
-      status: payload.status || "draft",
-      launched_at: payload.status === "active" ? new Date().toISOString() : null,
+      // Every new campaign starts as Draft, full stop — this is not optional and does not read
+      // payload.status. The Phase 5 commercial activation gate only runs on the Draft -> Active
+      // transition in PATCH /api/admin/campaigns/[id]; a caller-supplied status here would create
+      // a campaign already Active without ever passing through that check. Activation always
+      // happens as a separate, later, gated step.
+      status: "draft",
+      launched_at: null,
     })
     .select("id, organization_id, name, campaign_type, description, start_date, end_date, status, state, lga, target_outlets, target_conversions, expected_reps, outlet_types, products, form_requirements, runtime_form_config, campaign_tasks, campaign_workflow_template, campaign_workflow, launched_at, created_at")
     .single();
@@ -237,6 +246,23 @@ export async function POST(request: NextRequest) {
   if (error || !data) {
     return NextResponse.json(
       { success: false, message: error?.message || "Failed to create campaign." },
+      { status: 500 }
+    );
+  }
+
+  // Every campaign gets a commercial activation record (pending_approval) the moment it exists,
+  // so the Super Admin approval queue is populated live rather than only from the Phase 1
+  // backfill of historical campaigns. This does NOT gate activation — that's Phase 5.
+  try {
+    await ensurePendingActivation({ campaignId: data.id, organizationId: membership.organizationId });
+  } catch (activationError) {
+    await supabase.from("campaigns").delete().eq("id", data.id).eq("organization_id", membership.organizationId);
+    return NextResponse.json(
+      {
+        success: false,
+        message:
+          activationError instanceof Error ? activationError.message : "Failed to create campaign activation record.",
+      },
       { status: 500 }
     );
   }

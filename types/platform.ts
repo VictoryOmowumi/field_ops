@@ -164,7 +164,7 @@ export type PlatformMonitoringSummary = {
 };
 
 export type PlatformSettingItem = {
-  section: "Sync" | "Storage" | "Tenant";
+  section: "Sync" | "Storage" | "Tenant" | "Commercial";
   label: string;
   key: string;
   value: string;

@@ -3,7 +3,68 @@ import { authorizedFetch } from "@/lib/api/client";
 import { appendSyncLog, computeNextRetryAt, getSyncableRecords } from "@/lib/offline/queue";
 import { db } from "@/lib/offline/db";
 
+/**
+ * Photo records never go through the generic JSON batch endpoint below — the actual image
+ * bytes live locally in db.evidenceBlobs (queued at capture time, see visit/start/page.tsx),
+ * and only a placeholder `offline://<queueId>` file_url sits in the sync-queue payload. This
+ * pulls the real blob back out and uploads it through the same multipart endpoint the online
+ * capture path uses, so visit_evidence.file_url ends up pointing at real storage instead of
+ * that placeholder string.
+ */
+async function syncPhotoRecord(record: SyncQueueRecord) {
+  try {
+    const payload = record.payload as Record<string, unknown>;
+    const visitId = payload.visit_id ? String(payload.visit_id) : "";
+    if (!visitId) throw new Error("Visit id is required for evidence sync.");
+
+    const blobRow = await db.evidenceBlobs.where("queueId").equals(record.id).first();
+    if (!blobRow) throw new Error("Cached photo data is missing on this device and can't be synced.");
+
+    const formData = new FormData();
+    formData.append("file", blobRow.blob, blobRow.fileName);
+    formData.append("idempotencyKey", record.idempotencyKey ?? record.id);
+    if (typeof payload.original_file_name === "string") formData.append("originalFileName", payload.original_file_name);
+    if (typeof payload.original_file_size === "number") formData.append("originalFileSize", String(payload.original_file_size));
+    if (typeof payload.compressed_file_size === "number") formData.append("compressedFileSize", String(payload.compressed_file_size));
+    if (typeof payload.mime_type === "string") formData.append("mimeType", payload.mime_type);
+
+    await authorizedFetch(`/api/agent/visits/${visitId}/evidence`, {
+      method: "POST",
+      body: formData,
+    });
+
+    await db.evidenceBlobs.delete(blobRow.id);
+    await db.syncQueue.delete(record.id);
+    await appendSyncLog({
+      id: `${record.id}-${Date.now()}`,
+      queueId: record.id,
+      status: "synced",
+      timestamp: new Date().toISOString(),
+    });
+    return { id: record.id, success: true, status: "synced" as const };
+  } catch (error) {
+    const retryCount = (record.retryCount ?? 0) + 1;
+    const terminal = retryCount >= 5;
+    await db.syncQueue.update(record.id, {
+      retryCount,
+      status: terminal ? "failed_terminal" : "retrying",
+      lastError: (error as Error).message,
+      nextRetryAt: terminal ? undefined : computeNextRetryAt(retryCount),
+    });
+    await appendSyncLog({
+      id: `${record.id}-${Date.now()}`,
+      queueId: record.id,
+      status: terminal ? "failed_terminal" : "failed_retryable",
+      message: (error as Error).message,
+      timestamp: new Date().toISOString(),
+    });
+    return { id: record.id, success: false, status: terminal ? "failed_terminal" : "failed_retryable" as const };
+  }
+}
+
 export async function syncRecord(record: SyncQueueRecord) {
+  if (record.entityType === "photo") return syncPhotoRecord(record);
+
   try {
     const result = await authorizedFetch<{
       success: boolean;

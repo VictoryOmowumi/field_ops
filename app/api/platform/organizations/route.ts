@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { hasRequiredRole, getAuthenticatedUserFromRequest } from "@/lib/auth/server-auth";
 import { normalizePhoneToE164 } from "@/lib/auth/phone";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createBillingAccount } from "@/lib/billing/repository";
 
 type CreateOrganizationPayload = {
   name: string;
@@ -136,6 +137,27 @@ export async function POST(request: NextRequest) {
   if (orgError || !organization) {
     return NextResponse.json(
       { success: false, message: orgError?.message || "Failed to create organization." },
+      { status: 500 }
+    );
+  }
+
+  // Every organization needs a commercial home from the moment it exists — Phase 1 of the
+  // commercial licensing rollout backfilled this for pre-existing orgs, but new orgs created
+  // going forward get it here. implementation_fee_status starts "pending" (a genuinely new
+  // commercial relationship), unlike the backfill's "paid" grandfather clause.
+  try {
+    await createBillingAccount({
+      organizationId: organization.id,
+      implementationFeeStatus: "pending",
+      billingContactEmail: body.billingEmail?.trim() || null,
+    });
+  } catch (billingAccountError) {
+    await supabase.from("organizations").delete().eq("id", organization.id);
+    return NextResponse.json(
+      {
+        success: false,
+        message: billingAccountError instanceof Error ? billingAccountError.message : "Failed to create billing account.",
+      },
       { status: 500 }
     );
   }

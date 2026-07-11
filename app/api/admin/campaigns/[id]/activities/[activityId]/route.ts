@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-access";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { storageProvider } from "@/lib/storage";
 
 type RouteContext = {
   params: Promise<{ id: string; activityId: string }>;
@@ -56,7 +57,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
       const { data: evidence } = await supabase
         .from("visit_evidence")
-        .select("id, file_url, created_at")
+        .select("id, file_url, storage_provider, created_at")
         .eq("organization_id", membership.organizationId)
         .eq("visit_id", visit.id)
         .is("deleted_at", null)
@@ -70,12 +71,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
         .order("created_at", { ascending: false });
 
       const evidenceRows = evidence ?? [];
-      const evidencePaths = evidenceRows.map((row) => row.file_url);
-      const signed =
-        evidencePaths.length > 0
-          ? await supabase.storage.from("evidence").createSignedUrls(evidencePaths, 60 * 60)
-          : { data: [] as Array<{ path: string; signedUrl: string }> };
-      const signedUrlMap = new Map((signed.data ?? []).map((row) => [row.path, row.signedUrl]));
+      const signedUrlMap = await storageProvider.getEvidenceSignedUrls(
+        evidenceRows.map((row) => ({ file_url: row.file_url, storage_provider: row.storage_provider })),
+        60 * 60
+      );
 
       return NextResponse.json({
         success: true,

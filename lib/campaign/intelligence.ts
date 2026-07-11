@@ -7,6 +7,7 @@ import type {
   CampaignEvidencePagination,
   CampaignMapPoint,
 } from "@/types/campaign-intelligence";
+import { storageProvider } from "@/lib/storage";
 
 type ActivityFilters = {
   page?: number;
@@ -325,6 +326,91 @@ export async function getCampaignAnalyticsSummary(
   };
 }
 
+/** Runs the full (unfiltered) analytics computation and freezes it into campaign_analytics_snapshots. */
+export async function computeAndStoreCampaignAnalyticsSnapshot(
+  supabase: SupabaseClient,
+  organizationId: string,
+  campaignId: string
+): Promise<CampaignAnalyticsSummary> {
+  const summary = await getCampaignAnalyticsSummary(supabase, organizationId, campaignId);
+  const { error } = await supabase.from("campaign_analytics_snapshots").upsert(
+    {
+      campaign_id: campaignId,
+      organization_id: organizationId,
+      total_submissions: summary.totalSubmissions,
+      conversions: summary.conversions,
+      converted_outlets: summary.convertedOutlets,
+      sales_count: summary.salesCount ?? 0,
+      units_sold: summary.unitsSold ?? 0,
+      achieved_visits: summary.achievedVisits,
+      unique_outlets: summary.uniqueOutlets,
+      areas_covered: summary.areasCovered,
+      conversion_rate: summary.conversionRate,
+      sync_health: summary.syncHealth,
+      posm_checks: summary.posmChecks,
+      posm_deployed: summary.posmDeployed,
+      posm_units: summary.posmUnits,
+      posm_deployment_rate: summary.posmDeploymentRate,
+      planned_free_samples: summary.plannedFreeSamples ?? 0,
+      distributed_free_samples: summary.distributedFreeSamples ?? 0,
+      remaining_free_samples: summary.remainingFreeSamples ?? 0,
+      free_sample_achievement_rate: summary.freeSampleAchievementRate ?? 0,
+      computed_at: new Date().toISOString(),
+    },
+    { onConflict: "campaign_id" }
+  );
+  if (error) throw new Error(`Failed to store campaign analytics snapshot: ${error.message}`);
+  return summary;
+}
+
+function snapshotRowToSummary(row: Record<string, unknown>): CampaignAnalyticsSummary {
+  return {
+    totalSubmissions: Number(row.total_submissions ?? 0),
+    conversions: Number(row.conversions ?? 0),
+    convertedOutlets: Number(row.converted_outlets ?? 0),
+    salesCount: Number(row.sales_count ?? 0),
+    unitsSold: Number(row.units_sold ?? 0),
+    achievedVisits: Number(row.achieved_visits ?? 0),
+    uniqueOutlets: Number(row.unique_outlets ?? 0),
+    areasCovered: Number(row.areas_covered ?? 0),
+    conversionRate: Number(row.conversion_rate ?? 0),
+    syncHealth: Number(row.sync_health ?? 0),
+    posmChecks: Number(row.posm_checks ?? 0),
+    posmDeployed: Number(row.posm_deployed ?? 0),
+    posmUnits: Number(row.posm_units ?? 0),
+    posmDeploymentRate: Number(row.posm_deployment_rate ?? 0),
+    plannedFreeSamples: Number(row.planned_free_samples ?? 0),
+    distributedFreeSamples: Number(row.distributed_free_samples ?? 0),
+    remainingFreeSamples: Number(row.remaining_free_samples ?? 0),
+    freeSampleAchievementRate: Number(row.free_sample_achievement_rate ?? 0),
+    recentTrend: [],
+  };
+}
+
+/**
+ * Serves the frozen snapshot for a completed/archived campaign instead of re-running the live
+ * RPCs. Falls back to computing (and storing) one on the spot if it doesn't exist yet, so
+ * campaigns that completed before this table existed self-heal on first read rather than needing
+ * a separate backfill migration. Only valid for the unfiltered view — a date/area-filtered slice
+ * still needs the live query, since the snapshot only ever represents the full campaign lifetime.
+ */
+export async function getCampaignAnalyticsSnapshot(
+  supabase: SupabaseClient,
+  organizationId: string,
+  campaignId: string
+): Promise<CampaignAnalyticsSummary> {
+  const { data: existing, error } = await supabase
+    .from("campaign_analytics_snapshots")
+    .select("*")
+    .eq("organization_id", organizationId)
+    .eq("campaign_id", campaignId)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to load campaign analytics snapshot: ${error.message}`);
+  if (existing) return snapshotRowToSummary(existing);
+
+  return computeAndStoreCampaignAnalyticsSnapshot(supabase, organizationId, campaignId);
+}
+
 export async function getCampaignMetricsDiagnostics(
   supabase: SupabaseClient,
   organizationId: string,
@@ -614,7 +700,7 @@ export async function getCampaignEvidence(
   const { data: evidenceRows, count: total } = visitIds.length
     ? await supabase
         .from("visit_evidence")
-        .select("id, visit_id, file_url, created_at, file_name, file_type, file_size, original_file_name, original_file_size, compressed_file_size, mime_type", { count: "exact" })
+        .select("id, visit_id, file_url, storage_provider, created_at, file_name, file_type, file_size, original_file_name, original_file_size, compressed_file_size, mime_type", { count: "exact" })
         .eq("organization_id", organizationId)
         .is("deleted_at", null)
         .in("visit_id", visitIds)
@@ -625,6 +711,7 @@ export async function getCampaignEvidence(
       id: string;
       visit_id: string;
       file_url: string;
+      storage_provider?: string | null;
       created_at: string;
       file_name?: string | null;
       file_type?: string | null;
@@ -643,10 +730,15 @@ export async function getCampaignEvidence(
     userIds.length ? supabase.from("profiles").select("user_id, full_name").in("user_id", userIds) : Promise.resolve({ data: [] as Array<{ user_id: string; full_name: string | null }> }),
   ]);
 
-  const signed = includeSigned && scopedEvidence.length > 0
-    ? await supabase.storage.from("evidence").createSignedUrls(scopedEvidence.map((row) => row.file_url), 60 * 60)
-    : { data: [] as Array<{ path: string; signedUrl: string }> };
-  const signedMap = new Map((signed.data ?? []).map((row) => [row.path, row.signedUrl]));
+  const signedMap = includeSigned
+    ? await storageProvider.getEvidenceSignedUrls(
+        scopedEvidence.map((row) => ({
+          file_url: row.file_url,
+          storage_provider: row.storage_provider === "r2" ? "r2" : "supabase",
+        })),
+        60 * 60
+      )
+    : new Map<string, string>();
   const outletMap = new Map((outlets ?? []).map((item) => [item.id, item.name]));
   const profileMap = new Map((profiles ?? []).map((item) => [item.user_id, item.full_name ?? "Unknown"]));
 

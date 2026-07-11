@@ -41,6 +41,23 @@ export default function EvidenceGallery({
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {evidence.map((item) => {
           const src = item.signed_url ?? item.file_url;
+          // A record whose evidence hasn't finished syncing from this device yet (or, for older
+          // data, one that synced before the offline photo-upload fix) has a placeholder
+          // `offline://...` file_url rather than a real one — next/image can't render that as a
+          // host, so show a pending state instead of crashing.
+          if (src.startsWith("offline://")) {
+            return (
+              <div
+                key={item.id}
+                className="flex h-24 w-full flex-col items-center justify-center gap-1 rounded-xl border border-border/70 bg-muted/20 text-center"
+              >
+                <p className="text-[11px] text-muted-foreground">Pending sync</p>
+                <p className="truncate px-2 text-[10px] text-muted-foreground">
+                  {new Date(item.created_at).toLocaleString()}
+                </p>
+              </div>
+            );
+          }
           return (
             <button
               key={item.id}

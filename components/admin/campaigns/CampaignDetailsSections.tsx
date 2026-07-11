@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { More02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft, BarChart3, Download, ImageIcon, LayoutList, Loader2, MapIcon, Pencil, Rocket, Share2, Trash2, Users } from "lucide-react";
+import { ArrowLeft, BarChart3, CheckCircle2, Download, ImageIcon, LayoutList, Loader2, MapIcon, Pencil, Rocket, Share2, Trash2, Users } from "lucide-react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 
 import {
@@ -40,7 +40,7 @@ type Campaign = {
   description: string | null;
   start_date: string | null;
   end_date: string | null;
-  status: "draft" | "active" | "completed";
+  status: "draft" | "active" | "completed" | "archived" | "cancelled";
   state: string | null;
   lga: string | null;
   target_outlets: number | null;
@@ -107,9 +107,11 @@ type CampaignDetailsSectionsProps = {
   onLoadMoreEvidence: () => void;
   exportingActivities: boolean;
   launching: boolean;
+  markingComplete: boolean;
   deletingCampaign: boolean;
   onExportActivities: () => void;
   onLaunchCampaign: () => void;
+  onMarkComplete: () => void;
   onDeleteCampaign: () => void;
   onOpenShareDialog: () => void;
   onOpenAssignDialog: () => void;
@@ -158,9 +160,11 @@ export function CampaignDetailsSections({
   onLoadMoreEvidence,
   exportingActivities,
   launching,
+  markingComplete,
   deletingCampaign,
   onExportActivities,
   onLaunchCampaign,
+  onMarkComplete,
   onDeleteCampaign,
   onOpenShareDialog,
   onOpenAssignDialog,
@@ -247,11 +251,13 @@ export function CampaignDetailsSections({
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{campaign.description || "No campaign description yet."}</p>
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button className="rounded-full px-5" asChild>
-          <Link href={`/admin/campaigns/${campaign.id}/edit`} className="inline-flex items-center gap-2">
-            <Pencil className="size-4" />Edit
-          </Link>
-        </Button>
+        {campaign.status !== "archived" ? (
+          <Button className="rounded-full px-5" asChild>
+            <Link href={`/admin/campaigns/${campaign.id}/edit`} className="inline-flex items-center gap-2">
+              <Pencil className="size-4" />Edit
+            </Link>
+          </Button>
+        ) : null}
         {campaign.status === "draft" ? (
           <Button className="rounded-full px-5" disabled={launching} onClick={onLaunchCampaign}>
             <span className="inline-flex items-center gap-2">
@@ -278,6 +284,14 @@ export function CampaignDetailsSections({
             <DropdownMenuItem onClick={onOpenShareDialog}>
               <Share2 className="size-4" />Share Campaign
             </DropdownMenuItem>
+            {campaign.status === "active" ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem disabled={markingComplete} onClick={onMarkComplete}>
+                  <CheckCircle2 className="size-4" />{markingComplete ? "Marking complete…" : "Mark Complete"}
+                </DropdownMenuItem>
+              </>
+            ) : null}
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" disabled={deletingCampaign} onClick={() => setDeleteOpen(true)}>
               <Trash2 className="size-4" />{deletingCampaign ? "Deleting…" : "Delete Campaign"}
