@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -126,7 +126,6 @@ async function compressEvidencePhoto(file: File): Promise<CompressedEvidence> {
 
 export default function AgentVisitStartPage() {
   const params = useParams<{ id: string }>();
-  const router = useRouter();
   const campaignId = params.id;
   const hasGeolocation = typeof navigator !== "undefined" && "geolocation" in navigator;
 
@@ -136,6 +135,32 @@ export default function AgentVisitStartPage() {
   );
   const [gpsReady, setGpsReady] = useState(!hasGeolocation);
   const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
+  // Bumped instead of navigating away after a successful submit — remounts GuidedVisitFlow with
+  // a fresh key, which resets all of its internal form state back to defaults so the agent can
+  // start the next visit immediately without leaving this page (campaign data, GPS, and the
+  // nearby-outlets list all live in this parent and stay put across the reset).
+  const [formResetKey, setFormResetKey] = useState(0);
+
+  // The page-load GPS capture below is only for showing nearby outlets to pick from before the
+  // agent starts filling the form. The coordinate actually recorded against the visit is captured
+  // fresh at the moment of submit (see handleSubmit) — the agent may have moved between visits,
+  // especially now that the form resets in place instead of reloading the page.
+  function captureFreshGps(): Promise<{ latitude: number; longitude: number; locationAccuracy: number } | null> {
+    if (!hasGeolocation) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          resolve({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            locationAccuracy: position.coords.accuracy,
+          });
+        },
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    });
+  }
 
   function requestGps() {
     if (!hasGeolocation) {
@@ -229,7 +254,14 @@ export default function AgentVisitStartPage() {
       ).outlets,
   });
 
-  async function handleSubmit(payload: WorkflowSubmissionPayload, photos: File[]) {
+  async function handleSubmit(rawPayload: WorkflowSubmissionPayload, photos: File[]) {
+    // Capture location fresh at the moment of submit rather than trusting whatever was captured
+    // on page load — the agent may have walked to a different outlet since then, especially
+    // across consecutive visits now that the form resets in place instead of reloading.
+    const freshGps = await captureFreshGps();
+    if (freshGps) setGps(freshGps);
+    const payload: WorkflowSubmissionPayload = { ...rawPayload, gps: freshGps ?? rawPayload.gps };
+
     if (
       campaignQuery.data?.workflow?.validationRules.requireGpsBeforeSubmit &&
       (typeof payload.gps?.latitude !== "number" || typeof payload.gps?.longitude !== "number")
@@ -384,8 +416,10 @@ export default function AgentVisitStartPage() {
       }
 
       toast.success(toastMsg);
-      // Full navigation so the SW handles it (network-first + cache fallback); router.push() triggers an RSC fetch that always fails offline.
-      window.location.assign(`/agent/campaigns/${campaignId}`);
+      // No navigation at all anymore (this used to be a hard window.location.assign specifically
+      // because client-side routing fails offline) — resetting the form in place sidesteps that
+      // problem entirely rather than needing a workaround for it.
+      setFormResetKey((key) => key + 1);
     }
 
     if (!isOnline) {
@@ -432,7 +466,7 @@ export default function AgentVisitStartPage() {
           ? "Visit captured. Photos are uploading in the background."
           : "Visit captured successfully."
       );
-      router.push(`/agent/campaigns/${campaignId}`);
+      setFormResetKey((key) => key + 1);
     } catch (error) {
       if (isLikelyOfflineError(error)) {
         // Server-side connectivity failure (auth provider DNS down, Supabase unreachable).
@@ -524,6 +558,7 @@ export default function AgentVisitStartPage() {
       </section>
 
       <GuidedVisitFlow
+        key={formResetKey}
         campaignId={campaignId}
         workflow={campaignQuery.data.workflow}
         outletTypes={campaignQuery.data.outlet_types ?? []}
