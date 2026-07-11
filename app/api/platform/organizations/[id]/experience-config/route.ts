@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { invalidateBrandCache } from "@/lib/branding/server";
 
 function unauthorized() {
   return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
@@ -60,6 +61,8 @@ export async function PATCH(
     .eq("id", id);
 
   if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+
+  invalidateBrandCache();
 
   return NextResponse.json({ success: true });
 }

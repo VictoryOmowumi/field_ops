@@ -27,7 +27,7 @@ type Campaign = {
   description: string | null;
   start_date: string | null;
   end_date: string | null;
-  status: "draft" | "active" | "completed";
+  status: "draft" | "active" | "completed" | "archived" | "cancelled";
   state: string | null;
   lga: string | null;
   target_outlets: number | null;
@@ -81,6 +81,7 @@ export function useCampaignDetailsPage(campaignId?: string) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [launching, setLaunching] = useState(false);
+  const [markingComplete, setMarkingComplete] = useState(false);
   const [assignments, setAssignments] = useState<CampaignAssignment[]>([]);
   const [activities, setActivities] = useState<CampaignActivity[]>([]);
   const [activitiesTotal, setActivitiesTotal] = useState(0);
@@ -382,6 +383,32 @@ export function useCampaignDetailsPage(campaignId?: string) {
     toast.success("Campaign is now live.");
   }
 
+  async function markCampaignComplete() {
+    if (!campaign) return;
+    setMarkingComplete(true);
+    const { data } = await supabaseClient.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) {
+      setMarkingComplete(false);
+      toast.error("Session expired. Please sign in again.");
+      return;
+    }
+
+    const response = await fetch(`/api/admin/campaigns/${campaign.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ status: "completed" }),
+    });
+    const result = (await response.json()) as { success: boolean; message?: string; campaign?: Campaign };
+    setMarkingComplete(false);
+    if (!response.ok || !result.success || !result.campaign) {
+      toast.error(result.message ?? "Failed to mark campaign complete.");
+      return;
+    }
+    setCampaign(result.campaign);
+    toast.success("Campaign marked as completed.");
+  }
+
   async function deleteCampaign() {
     if (!campaignId) return;
     setDeletingCampaign(true);
@@ -421,8 +448,14 @@ export function useCampaignDetailsPage(campaignId?: string) {
         type: "campaign-activities",
         campaignId: campaign.id,
       });
-      if (dateFrom) params.set("dateFrom", dateFrom);
-      if (dateTo) params.set("dateTo", dateTo);
+      // The export endpoint defaults to a 30-day window when no dates are given — fine for an
+      // in-progress campaign, but a raw-data export of a completed/archived one should cover its
+      // full lifetime by default, not silently get truncated to the last 30 days.
+      const isFinished = campaign.status === "completed" || campaign.status === "archived";
+      const effectiveDateFrom = dateFrom || (isFinished ? campaign.start_date : null);
+      const effectiveDateTo = dateTo || (isFinished ? new Date().toISOString().slice(0, 10) : null);
+      if (effectiveDateFrom) params.set("dateFrom", effectiveDateFrom);
+      if (effectiveDateTo) params.set("dateTo", effectiveDateTo);
       const response = await fetch(`/api/admin/reports/export?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -729,6 +762,7 @@ export function useCampaignDetailsPage(campaignId?: string) {
     campaign,
     loading,
     launching,
+    markingComplete,
     exportingActivities,
     refreshing,
     summary,
@@ -781,6 +815,7 @@ export function useCampaignDetailsPage(campaignId?: string) {
     setShareRecipientEmail,
     loadActivities,
     launchCampaign,
+    markCampaignComplete,
     deleteCampaign,
     downloadCampaignActivitiesExport,
     createShareLink,

@@ -363,6 +363,9 @@ export default function AgentVisitStartPage() {
           entityId: photoQueueId,
           campaignId,
           dependencyIds: [submissionId],
+          // No file_url here — syncPhotoRecord (lib/offline/sync.ts) uploads the actual blob
+          // from db.evidenceBlobs via multipart when this record syncs, and the server assigns
+          // the real file_url at that point, the same as the online capture path.
           payload: {
             id: evidenceId,
             visit_id: visitId,
@@ -373,7 +376,6 @@ export default function AgentVisitStartPage() {
             original_file_size: photo.originalFileSize,
             compressed_file_size: photo.compressedFileSize,
             mime_type: photo.mimeType,
-            file_url: `offline://${photoQueueId}`,
           },
           idempotencyKey: photoQueueId,
           retryCount: 0,

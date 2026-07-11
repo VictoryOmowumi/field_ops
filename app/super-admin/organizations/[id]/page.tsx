@@ -62,6 +62,8 @@ type Org = {
 
 type Member = { id: string; name: string; role: string; status: string };
 
+const MEMBERS_PAGE_SIZE = 10;
+
 function titleCase(value: string | null | undefined) {
   if (!value) return "-";
   return value.charAt(0).toUpperCase() + value.slice(1);
@@ -73,11 +75,40 @@ export default function OrganizationDetailsPage() {
   const orgId = params.id;
   const [org, setOrg] = useState<Org | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  const [membersPage, setMembersPage] = useState(1);
+  const [membersTotal, setMembersTotal] = useState(0);
+  const [membersLoading, setMembersLoading] = useState(false);
   const [toggling, setToggling] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteInput, setDeleteInput] = useState("");
   const [roleChanging, setRoleChanging] = useState<string | null>(null);
   const deleteInputRef = useRef<HTMLInputElement>(null);
+
+  // Reload a specific page of members — used by the Previous/Next buttons. Deliberately not
+  // referenced from the mount effect below, which has its own self-contained loader for the
+  // initial page.
+  async function loadMembers(page: number) {
+    setMembersLoading(true);
+    const { data } = await supabaseClient.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) { setMembersLoading(false); return; }
+    const res = await fetch(`/api/platform/organizations/${orgId}/users?page=${page}&pageSize=${MEMBERS_PAGE_SIZE}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const result = (await res.json()) as {
+      success: boolean;
+      users?: Member[];
+      pagination?: { page: number; pageSize: number; total: number };
+    };
+    setMembersLoading(false);
+    if (!res.ok || !result.success) {
+      toast.error("Failed to load team members.");
+      return;
+    }
+    setMembers(result.users ?? []);
+    setMembersPage(result.pagination?.page ?? page);
+    setMembersTotal(result.pagination?.total ?? 0);
+  }
 
   useEffect(() => {
     async function loadOrg() {
@@ -86,19 +117,29 @@ export default function OrganizationDetailsPage() {
       if (!token) return;
       const [orgRes, membersRes] = await Promise.all([
         fetch(`/api/platform/organizations/${orgId}`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`/api/platform/organizations/${orgId}/users`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`/api/platform/organizations/${orgId}/users?page=1&pageSize=${MEMBERS_PAGE_SIZE}`, { headers: { Authorization: `Bearer ${token}` } }),
       ]);
       const orgResult = (await orgRes.json()) as { success: boolean; message?: string; organization?: Org };
-      const membersResult = (await membersRes.json()) as { success: boolean; users?: Member[] };
+      const membersResult = (await membersRes.json()) as {
+        success: boolean;
+        users?: Member[];
+        pagination?: { page: number; pageSize: number; total: number };
+      };
       if (!orgRes.ok || !orgResult.success || !orgResult.organization) {
         toast.error(orgResult.message ?? "Failed to load organization.");
         return;
       }
       setOrg(orgResult.organization);
-      if (membersResult.success) setMembers(membersResult.users ?? []);
+      if (membersResult.success) {
+        setMembers(membersResult.users ?? []);
+        setMembersPage(membersResult.pagination?.page ?? 1);
+        setMembersTotal(membersResult.pagination?.total ?? 0);
+      }
     }
     void loadOrg();
   }, [orgId]);
+
+  const membersTotalPages = Math.max(1, Math.ceil(membersTotal / MEMBERS_PAGE_SIZE));
 
   async function confirmToggleSuspend() {
     if (!org) return;
@@ -282,30 +323,66 @@ export default function OrganizationDetailsPage() {
           {members.length === 0 ? (
             <p className="mt-4 text-sm text-muted-foreground">No members yet.</p>
           ) : (
-            <div className="mt-4 space-y-2">
-              {members.map((m) => (
-                <div key={m.id} className="flex items-center gap-3 rounded-2xl bg-muted/35 px-3 py-2.5">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{m.name}</p>
-                    <p className="text-xs text-muted-foreground">{m.status}</p>
-                  </div>
-                  <Select
-                    value={m.role}
-                    disabled={roleChanging === m.id}
-                    onValueChange={(role) => void changeRole(m.id, role)}
+            <>
+              <div className="mt-4 overflow-hidden rounded-2xl border border-border/60">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50 text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">Name</th>
+                      <th className="px-3 py-2 text-left font-medium">Status</th>
+                      <th className="px-3 py-2 text-left font-medium">Role</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {members.map((m) => (
+                      <tr key={m.id} className="border-t border-border/60">
+                        <td className="px-3 py-2.5 font-medium">{m.name}</td>
+                        <td className="px-3 py-2.5 text-muted-foreground">{m.status}</td>
+                        <td className="px-3 py-2.5">
+                          <Select
+                            value={m.role}
+                            disabled={roleChanging === m.id}
+                            onValueChange={(role) => void changeRole(m.id, role)}
+                          >
+                            <SelectTrigger className="h-7 w-32 rounded-full text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="org_admin">Org Admin</SelectItem>
+                              <SelectItem value="supervisor">Supervisor</SelectItem>
+                              <SelectItem value="agent">Agent</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                <span>
+                  Page {membersPage} of {membersTotalPages} · {membersTotal} member{membersTotal === 1 ? "" : "s"}
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="rounded-full"
+                    disabled={membersLoading || membersPage <= 1}
+                    onClick={() => void loadMembers(membersPage - 1)}
                   >
-                    <SelectTrigger className="h-7 w-32 rounded-full text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="org_admin">Org Admin</SelectItem>
-                      <SelectItem value="supervisor">Supervisor</SelectItem>
-                      <SelectItem value="agent">Agent</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="rounded-full"
+                    disabled={membersLoading || membersPage >= membersTotalPages}
+                    onClick={() => void loadMembers(membersPage + 1)}
+                  >
+                    Next
+                  </Button>
                 </div>
-              ))}
-            </div>
+              </div>
+            </>
           )}
         </section>
       </div>

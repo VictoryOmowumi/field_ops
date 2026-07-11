@@ -6,6 +6,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { captureException } from "@/lib/observability/sentry";
 import { recordSystemEvent } from "@/lib/observability/system-events";
 import { recordPerformanceMetric } from "@/lib/observability/performance";
+import { storageProvider } from "@/lib/storage";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -17,10 +18,6 @@ function unauthorized() {
 
 function forbidden() {
   return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
-}
-
-function sanitizeFileName(fileName: string) {
-  return fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {
@@ -35,7 +32,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   const { data: visit, error: visitError } = await supabase
     .from("visits")
-    .select("id, organization_id, agent_id")
+    .select("id, organization_id, agent_id, campaign_id")
     .eq("id", visitId)
     .eq("organization_id", membership.organizationId)
     .eq("agent_id", user.id)
@@ -56,9 +53,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ success: false, message: "file is required." }, { status: 400 });
   }
 
-  const safeFileName = sanitizeFileName(file.name || "evidence.jpg");
-  const filePath = `${membership.organizationId}/${visitId}/${idempotencyKey || Date.now().toString()}-${safeFileName}`;
-
   if (idempotencyKey) {
     const { data: duplicateEvidence } = await supabase
       .from("visit_evidence")
@@ -77,24 +71,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const bytes = await file.arrayBuffer();
 
   const uploadStartedAt = Date.now();
-  const { error: uploadError } = await supabase.storage
-    .from("evidence")
-    .upload(filePath, bytes, {
-      contentType: file.type || "application/octet-stream",
-      upsert: false,
-    });
-  const uploadDurationMs = Date.now() - uploadStartedAt;
-
-  if (!uploadError) {
-    void recordPerformanceMetric({
-      metricType: "upload",
-      operation: "evidence_upload",
-      durationMs: uploadDurationMs,
+  let uploaded: Awaited<ReturnType<typeof storageProvider.uploadEvidenceFile>>;
+  try {
+    uploaded = await storageProvider.uploadEvidenceFile({
       organizationId: membership.organizationId,
+      visitId,
+      fileName: file.name || "evidence.jpg",
+      contentType: file.type || "application/octet-stream",
+      bytes,
+      idempotencyKey,
     });
-  }
-
-  if (uploadError) {
+  } catch (uploadError) {
+    const message = uploadError instanceof Error ? uploadError.message : "Failed to upload evidence file.";
     captureException(uploadError, {
       userId: user.id,
       organizationId: membership.organizationId,
@@ -103,19 +91,30 @@ export async function POST(request: NextRequest, context: RouteContext) {
     await recordSystemEvent({
       eventType: "upload_failed",
       severity: "error",
-      message: uploadError.message,
+      message,
       organizationId: membership.organizationId,
       metadata: { visitId },
     });
-    return NextResponse.json({ success: false, message: uploadError.message }, { status: 500 });
+    return NextResponse.json({ success: false, message }, { status: 500 });
   }
+  const uploadDurationMs = Date.now() - uploadStartedAt;
+  void recordPerformanceMetric({
+    metricType: "upload",
+    operation: "evidence_upload",
+    durationMs: uploadDurationMs,
+    organizationId: membership.organizationId,
+  });
 
   const { data, error: evidenceError } = await supabase
     .from("visit_evidence")
     .insert({
       organization_id: membership.organizationId,
       visit_id: visitId,
-      file_url: filePath,
+      campaign_id: visit.campaign_id,
+      file_url: uploaded.path,
+      storage_provider: uploaded.storageProvider,
+      bucket: uploaded.bucket,
+      object_key: uploaded.objectKey,
       file_name: file.name,
       file_type: file.type || null,
       file_size: file.size,

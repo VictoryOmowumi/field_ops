@@ -1,40 +1,47 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { supabaseClient } from "@/lib/supabase/client";
+import { DataTable, type ColumnDef } from "@/components/shared/DataTable";
+import { authorizedFetch } from "@/lib/api/client";
 import type { PlatformUserRow } from "@/types/platform";
 
 export default function SuperAdminUsersPage() {
-  const [users, setUsers] = useState<PlatformUserRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
 
-  useEffect(() => {
-    async function loadUsers() {
-      const { data } = await supabaseClient.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) {
-        setLoading(false);
-        toast.error("Session expired. Please sign in again.");
-        return;
-      }
+  const query = useQuery({
+    queryKey: ["super-admin-users", page],
+    queryFn: async () => {
+      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+      return authorizedFetch<{ success: boolean; users: PlatformUserRow[]; total: number }>(
+        `/api/platform/users?${params.toString()}`
+      );
+    },
+  });
 
-      const response = await fetch("/api/platform/users", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const result = (await response.json()) as { success: boolean; message?: string; users?: PlatformUserRow[] };
-      setLoading(false);
-      if (!response.ok || !result.success) {
-        toast.error(result.message ?? "Failed to load users.");
-        return;
-      }
-      setUsers(result.users ?? []);
-    }
-    void loadUsers();
-  }, []);
+  if (query.error) toast.error((query.error as Error).message);
+
+  const columns: ColumnDef<PlatformUserRow>[] = [
+    { key: "name", header: "Name", sortable: true, render: (row) => <span className="font-medium">{row.name}</span> },
+    { key: "role", header: "Role", render: (row) => <span className="text-muted-foreground">{row.role}</span> },
+    { key: "scope", header: "Scope", render: (row) => <span className="text-muted-foreground">{row.scope}</span> },
+    { key: "status", header: "Status", render: (row) => <span className="text-muted-foreground">{row.status}</span> },
+    {
+      key: "action",
+      header: "Action",
+      align: "right",
+      render: (row) => (
+        <Button variant="outline" className="rounded-full" asChild>
+          <Link href={`/super-admin/users/${row.id}`}>Manage</Link>
+        </Button>
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-6 pb-10">
@@ -43,39 +50,21 @@ export default function SuperAdminUsersPage() {
         <p className="mt-1 text-sm text-muted-foreground">Role audit and access scope across all organizations.</p>
       </div>
 
-      <section className="overflow-hidden rounded-3xl border border-border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50 text-muted-foreground">
-            <tr>
-              <th className="px-4 py-3 text-left">Name</th>
-              <th className="px-4 py-3 text-left">Role</th>
-              <th className="px-4 py-3 text-left">Scope</th>
-              <th className="px-4 py-3 text-left">Status</th>
-              <th className="px-4 py-3 text-left">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr className="border-t border-border"><td className="px-4 py-4 text-muted-foreground" colSpan={5}>Loading users...</td></tr>
-            ) : users.length === 0 ? (
-              <tr className="border-t border-border"><td className="px-4 py-4 text-muted-foreground" colSpan={5}>No users found.</td></tr>
-            ) : users.map((item, index) => (
-              <tr key={`${item.id}-${index}`} className="border-t border-border">
-                <td className="px-4 py-4 font-medium">{item.name}</td>
-                <td className="px-4 py-4">{item.role}</td>
-                <td className="px-4 py-4">{item.scope}</td>
-                <td className="px-4 py-4">{item.status}</td>
-                <td className="px-4 py-4">
-                  <Button variant="outline" className="rounded-full" asChild>
-                    <Link href={`/super-admin/users/${item.id}`}>Manage</Link>
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+      <DataTable
+        columns={columns}
+        data={query.data?.users ?? []}
+        rowKey={(row) => row.id}
+        loading={query.isLoading}
+        emptyTitle="No users found"
+        emptyDescription="Users will appear here once organizations invite their teams."
+        pagination={{
+          page,
+          pageSize,
+          total: query.data?.total ?? 0,
+          hasMore: page * pageSize < (query.data?.total ?? 0),
+          onPageChange: setPage,
+        }}
+      />
     </div>
   );
 }
-

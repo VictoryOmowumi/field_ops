@@ -8,12 +8,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (auth.error) return auth.error;
 
   const { id } = await params;
+  const page = Math.max(1, Number(request.nextUrl.searchParams.get("page")) || 1);
+  const pageSize = Math.min(50, Math.max(1, Number(request.nextUrl.searchParams.get("pageSize")) || 10));
+
   const supabase = createServerSupabaseClient();
-  const { data: memberships, error } = await supabase
+  const { data: memberships, error, count } = await supabase
     .from("organization_users")
-    .select("user_id, role, status")
+    .select("user_id, role, status", { count: "exact" })
     .eq("organization_id", id)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .range((page - 1) * pageSize, (page - 1) * pageSize + pageSize - 1);
   if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 });
 
   const userIds = (memberships ?? []).map((m) => m.user_id);
@@ -29,7 +33,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     status: titleCase(m.status),
   }));
 
-  return NextResponse.json({ success: true, users });
+  return NextResponse.json({ success: true, users, pagination: { page, pageSize, total: count ?? users.length } });
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

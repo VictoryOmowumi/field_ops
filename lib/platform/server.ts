@@ -17,6 +17,12 @@ export function titleCase(value: string | null | undefined) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+export async function getPlatformSettingValue(key: string): Promise<string | null> {
+  const supabase = createServerSupabaseClient();
+  const { data } = await supabase.from("platform_settings").select("value").eq("key", key).maybeSingle();
+  return data?.value ?? null;
+}
+
 export async function writePlatformAuditLog(input: {
   actorUserId: string;
   targetType: string;

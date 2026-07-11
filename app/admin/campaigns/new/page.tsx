@@ -45,7 +45,6 @@ export default function NewCampaignPage() {
 
   const [name, setName] = useState("");
   const [campaignType, setCampaignType] = useState("");
-  const [status, setStatus] = useState<"draft" | "active" | "completed">("draft");
   const [stateName, setStateName] = useState("");
   const [selectedSupervisorIds, setSelectedSupervisorIds] = useState<string[]>([]);
   const [startDate, setStartDate] = useState("");
@@ -134,7 +133,6 @@ export default function NewCampaignPage() {
       JSON.stringify({
         name,
         campaignType,
-        status,
         stateName,
         selectedSupervisorIds,
         startDate,
@@ -161,6 +159,10 @@ export default function NewCampaignPage() {
   async function createCampaign() {
     if (!name.trim()) {
       toast.error("Campaign name is required.");
+      return;
+    }
+    if (startDate && endDate && endDate < startDate) {
+      toast.error("End date can't be before the start date.");
       return;
     }
     const parsedProducts = mapSelectedProductsToPayload(selectedProducts);
@@ -228,7 +230,6 @@ export default function NewCampaignPage() {
       body: JSON.stringify({
         name,
         campaignType: campaignType || undefined,
-        status,
         startDate: startDate || undefined,
         endDate: endDate || undefined,
         state: stateName || undefined,
@@ -335,16 +336,6 @@ export default function NewCampaignPage() {
               <Select value={campaignType} onValueChange={setCampaignType}>
                 <SelectTrigger><SelectValue placeholder="Select campaign type" /></SelectTrigger>
                 <SelectContent>{campaignTypes.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent>
-              </Select>
-            </Field>
-            <Field label="Status">
-              <Select value={status} onValueChange={(value: "draft" | "active" | "completed") => setStatus(value)}>
-                <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="draft">Draft</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                </SelectContent>
               </Select>
             </Field>
             <Field label="Assigned supervisors">

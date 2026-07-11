@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { invalidateBrandCache } from "@/lib/branding/server";
 
 function unauthorized() {
   return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
@@ -205,6 +206,8 @@ export async function PATCH(
   if (!data) {
     return NextResponse.json({ success: false, message: "Organization not found." }, { status: 404 });
   }
+
+  invalidateBrandCache();
 
   return NextResponse.json({ success: true, organization: data });
 }

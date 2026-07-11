@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
       .from("campaigns")
       .select("id, name, status, start_date, end_date, state, lga, outlet_types, products, campaign_workflow_template, campaign_workflow")
       .eq("organization_id", membership.organizationId)
-      .in("status", ["active", "draft"])
+      .eq("status", "active")
       .order("created_at", { ascending: false }),
     supabase
       .from("campaign_assignments")

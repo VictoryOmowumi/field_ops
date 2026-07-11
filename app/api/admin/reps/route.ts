@@ -202,12 +202,13 @@ export async function GET(request: NextRequest) {
   const from = (page - 1) * pageSize;
   const pageItems = filteredItems.slice(from, from + pageSize);
 
-  await Promise.all(
-    pageItems.map(async (item) => {
-      const { data: authUserData } = await supabase.auth.admin.getUserById(item.userId);
-      item.lastSignInAt = authUserData.user?.last_sign_in_at ?? null;
-    })
-  );
+  // One bulk listUsers() call instead of one getUserById() per rep — GoTrue's admin API has no
+  // bulk "get users by ID list", but listUsers() lets us replace N parallel round-trips with 1.
+  const { data: authUsersPage } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const lastSignInByUserId = new Map((authUsersPage?.users ?? []).map((authUser) => [authUser.id, authUser.last_sign_in_at ?? null]));
+  for (const item of pageItems) {
+    item.lastSignInAt = lastSignInByUserId.get(item.userId) ?? null;
+  }
 
   return NextResponse.json({ success: true, reps: pageItems, total, page, pageSize, states });
 }

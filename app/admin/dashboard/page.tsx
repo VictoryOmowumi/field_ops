@@ -57,9 +57,7 @@ type TerritoryPoint = {
 
 export default function AdminDashboardPage() {
   const { config } = useTenantExperience();
-  if (config.dashboards.variant === "command-center") {
-    return <CommandCenterDashboard />;
-  }
+  const isCommandCenter = config.dashboards.variant === "command-center";
 
   const t = useTerminology();
   const [showFilters, setShowFilters] = useState(false);
@@ -77,9 +75,15 @@ export default function AdminDashboardPage() {
     const str = params.toString();
     return str ? `?${str}` : "";
   }, [campaignId, dateFrom, dateTo]);
-  useEffect(() => {
+
+  // Reset pagination when the filters change — adjusted during render (React's recommended
+  // pattern for this) rather than in a useEffect, which would commit a render with a stale page
+  // number first and only fix it a tick later.
+  const [prevQueryString, setPrevQueryString] = useState(queryString);
+  if (queryString !== prevQueryString) {
+    setPrevQueryString(queryString);
     setActivityPage(1);
-  }, [queryString]);
+  }
 
   const campaignsQuery = useQuery({
     queryKey: ["admin-dashboard-campaigns"],
@@ -87,6 +91,7 @@ export default function AdminDashboardPage() {
       const result = await authorizedFetch<{ success: boolean; campaigns: Array<{ id: string; name: string }> }>("/api/admin/campaigns?lite=1");
       return result.campaigns ?? [];
     },
+    enabled: !isCommandCenter,
   });
 
   const query = useQuery({
@@ -96,6 +101,7 @@ export default function AdminDashboardPage() {
         success: boolean;
         summary: DashboardSummary;
       }>(`/api/admin/dashboard/summary${queryString}`),
+    enabled: !isCommandCenter,
   });
   const insightsQuery = useQuery({
     queryKey: ["admin-dashboard-insights", queryString, activityPage],
@@ -107,6 +113,7 @@ export default function AdminDashboardPage() {
         territoryPerformance: TerritoryPoint[];
         pagination: { page: number; pageSize: number; total: number; hasMore: boolean };
       }>(`/api/admin/dashboard/insights${queryString}${queryString ? "&" : "?"}page=${activityPage}&pageSize=10`),
+    enabled: !isCommandCenter,
   });
 
   useEffect(() => {
@@ -144,6 +151,10 @@ export default function AdminDashboardPage() {
     () => trend.map((item) => ({ ...item, failedUploads: pendingUploads })),
     [trend, pendingUploads]
   );
+
+  if (isCommandCenter) {
+    return <CommandCenterDashboard />;
+  }
 
   return (
     <div className="flex flex-col gap-6 pb-10">

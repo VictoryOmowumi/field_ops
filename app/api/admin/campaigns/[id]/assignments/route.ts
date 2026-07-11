@@ -76,50 +76,29 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
   const supabase = createServerSupabaseClient();
 
-  const { data: campaign, error: campaignError } = await supabase
-    .from("campaigns")
-    .select("id, organization_id")
-    .eq("id", id)
-    .eq("organization_id", membership.organizationId)
-    .maybeSingle();
+  // Validate everything up front, in parallel, before any writes — so an invalid
+  // supervisor ID can never leave agent assignments partially overwritten.
+  const [
+    { data: campaign, error: campaignError },
+    { data: validSupervisors, error: supervisorValidationError },
+  ] = await Promise.all([
+    supabase
+      .from("campaigns")
+      .select("id, organization_id")
+      .eq("id", id)
+      .eq("organization_id", membership.organizationId)
+      .maybeSingle(),
+    supabase
+      .from("organization_users")
+      .select("user_id, role")
+      .eq("organization_id", membership.organizationId)
+      .in("user_id", supervisorUserIds.length ? supervisorUserIds : ["00000000-0000-0000-0000-000000000000"])
+      .in("role", ["supervisor", "org_admin"]),
+  ]);
 
   if (campaignError || !campaign) {
     return NextResponse.json({ success: false, message: campaignError?.message ?? "Campaign not found." }, { status: 404 });
   }
-
-  const { error: clearAgentsError } = await supabase
-    .from("campaign_assignments")
-    .delete()
-    .eq("campaign_id", id)
-    .eq("organization_id", membership.organizationId)
-    .eq("role", "agent");
-
-  if (clearAgentsError) {
-    return NextResponse.json({ success: false, message: clearAgentsError.message }, { status: 500 });
-  }
-
-  if (agentUserIds.length > 0) {
-    const rows = agentUserIds.map((userId) => ({
-      organization_id: membership.organizationId,
-      campaign_id: id,
-      user_id: userId,
-      role: "agent",
-      status: "active",
-    }));
-
-    const { error: insertAgentsError } = await supabase.from("campaign_assignments").insert(rows);
-    if (insertAgentsError) {
-      return NextResponse.json({ success: false, message: insertAgentsError.message }, { status: 500 });
-    }
-  }
-
-  const { data: validSupervisors, error: supervisorValidationError } = await supabase
-    .from("organization_users")
-    .select("user_id, role")
-    .eq("organization_id", membership.organizationId)
-    .in("user_id", supervisorUserIds.length ? supervisorUserIds : ["00000000-0000-0000-0000-000000000000"])
-    .in("role", ["supervisor", "org_admin"]);
-
   if (supervisorValidationError) {
     return NextResponse.json({ success: false, message: supervisorValidationError.message }, { status: 500 });
   }
@@ -133,29 +112,63 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     );
   }
 
-  const { error: clearSupervisorsError } = await supabase
-    .from("campaign_assignments")
-    .delete()
-    .eq("campaign_id", id)
-    .eq("organization_id", membership.organizationId)
-    .eq("role", "supervisor");
+  const [{ error: clearAgentsError }, { error: clearSupervisorsError }] = await Promise.all([
+    supabase
+      .from("campaign_assignments")
+      .delete()
+      .eq("campaign_id", id)
+      .eq("organization_id", membership.organizationId)
+      .eq("role", "agent"),
+    supabase
+      .from("campaign_assignments")
+      .delete()
+      .eq("campaign_id", id)
+      .eq("organization_id", membership.organizationId)
+      .eq("role", "supervisor"),
+  ]);
 
+  if (clearAgentsError) {
+    return NextResponse.json({ success: false, message: clearAgentsError.message }, { status: 500 });
+  }
   if (clearSupervisorsError) {
     return NextResponse.json({ success: false, message: clearSupervisorsError.message }, { status: 500 });
   }
 
+  // PromiseLike, not Promise — Supabase's query builder is thenable (awaitable, works fine with
+  // Promise.all) but doesn't implement the full Promise interface (.catch/.finally), which is
+  // what Promise<T>[] structurally requires.
+  const insertOps: PromiseLike<{ error: { message: string } | null }>[] = [];
+  if (agentUserIds.length > 0) {
+    insertOps.push(
+      supabase.from("campaign_assignments").insert(
+        agentUserIds.map((userId) => ({
+          organization_id: membership.organizationId,
+          campaign_id: id,
+          user_id: userId,
+          role: "agent",
+          status: "active",
+        }))
+      )
+    );
+  }
   if (supervisorUserIds.length > 0) {
-    const rows = supervisorUserIds.map((userId) => ({
-      organization_id: membership.organizationId,
-      campaign_id: id,
-      user_id: userId,
-      role: "supervisor",
-      status: "active",
-    }));
-    const { error: insertSupervisorsError } = await supabase.from("campaign_assignments").insert(rows);
-    if (insertSupervisorsError) {
-      return NextResponse.json({ success: false, message: insertSupervisorsError.message }, { status: 500 });
-    }
+    insertOps.push(
+      supabase.from("campaign_assignments").insert(
+        supervisorUserIds.map((userId) => ({
+          organization_id: membership.organizationId,
+          campaign_id: id,
+          user_id: userId,
+          role: "supervisor",
+          status: "active",
+        }))
+      )
+    );
+  }
+
+  const insertResults = await Promise.all(insertOps);
+  const insertError = insertResults.find((result) => result.error)?.error;
+  if (insertError) {
+    return NextResponse.json({ success: false, message: insertError.message }, { status: 500 });
   }
 
   return NextResponse.json({ success: true });

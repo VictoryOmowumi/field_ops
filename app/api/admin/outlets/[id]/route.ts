@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-access";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { storageProvider } from "@/lib/storage";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -73,7 +74,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     visitIds.length
       ? supabase
           .from("visit_evidence")
-          .select("id, visit_id, file_url, file_name, file_type, file_size, created_at")
+          .select("id, visit_id, file_url, storage_provider, file_name, file_type, file_size, created_at")
           .eq("organization_id", membership.organizationId)
           .is("deleted_at", null)
           .in("visit_id", visitIds)
@@ -90,18 +91,19 @@ export async function GET(request: NextRequest, context: RouteContext) {
     id: string;
     visit_id: string;
     file_url: string;
+    storage_provider?: string | null;
     file_name?: string | null;
     file_type?: string | null;
     file_size?: number | null;
     created_at: string;
   }>;
-  const evidencePaths = evidenceRows.map((row) => row.file_url);
-  const signedUrls =
-    evidencePaths.length > 0
-      ? await supabase.storage.from("evidence").createSignedUrls(evidencePaths, 60 * 60)
-      : { data: [] as Array<{ path: string; signedUrl: string }> };
-
-  const signedUrlMap = new Map((signedUrls.data ?? []).map((item) => [item.path, item.signedUrl]));
+  const signedUrlMap = await storageProvider.getEvidenceSignedUrls(
+    evidenceRows.map((row) => ({
+      file_url: row.file_url,
+      storage_provider: row.storage_provider === "r2" ? "r2" : "supabase",
+    })),
+    60 * 60
+  );
   const profileMap = new Map((profiles ?? []).map((profile) => [profile.user_id, profile.full_name ?? "Unknown Agent"]));
 
   const evidenceByVisit = new Map<string, Array<Record<string, unknown>>>();

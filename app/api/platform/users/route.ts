@@ -8,6 +8,9 @@ export async function GET(request: NextRequest) {
   const auth = await requireSuperAdmin(request);
   if (auth.error) return auth.error;
 
+  const page = Math.max(1, Number(request.nextUrl.searchParams.get("page") ?? "1") || 1);
+  const pageSize = Math.min(50, Math.max(1, Number(request.nextUrl.searchParams.get("pageSize") ?? "20") || 20));
+
   const supabase = createServerSupabaseClient();
   const [membershipsRes, profilesRes] = await Promise.all([
     supabase
@@ -40,6 +43,10 @@ export async function GET(request: NextRequest) {
     status: titleCase(m.status),
   }));
 
-  return NextResponse.json({ success: true, users: rows });
+  const total = rows.length;
+  const from = (page - 1) * pageSize;
+  const users = rows.slice(from, from + pageSize);
+
+  return NextResponse.json({ success: true, users, total, page, pageSize });
 }
 

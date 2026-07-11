@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getOrgMembershipForUser, hasAllowedOrgRole } from "@/lib/auth/org-access";
 import { getAuthenticatedUserFromRequest, hasRequiredRole } from "@/lib/auth/server-auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { storageProvider } from "@/lib/storage";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -30,7 +31,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
   const { data: evidence, error: evidenceError } = await supabase
     .from("visit_evidence")
-    .select("id, organization_id, file_url, deleted_at")
+    .select("id, organization_id, file_url, storage_provider, deleted_at")
     .eq("id", id)
     .eq("organization_id", membership.organizationId)
     .maybeSingle();
@@ -62,9 +63,12 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
   let storageDeleted = false;
   let storageWarning: string | null = null;
   if (evidence.file_url) {
-    const { error: storageError } = await supabase.storage.from("evidence").remove([evidence.file_url]);
-    if (storageError) storageWarning = storageError.message;
-    else storageDeleted = true;
+    const result = await storageProvider.deleteEvidenceFile({
+      file_url: evidence.file_url,
+      storage_provider: evidence.storage_provider,
+    });
+    storageDeleted = result.deleted;
+    storageWarning = result.warning ?? null;
   }
 
   return NextResponse.json({

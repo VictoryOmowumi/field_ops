@@ -72,12 +72,15 @@ async function submitVisit(
   const supabase = createServerSupabaseClient();
   const { data: campaign, error: campaignError } = await supabase
     .from("campaigns")
-    .select("id, state, campaign_workflow")
+    .select("id, state, status, campaign_workflow")
     .eq("organization_id", membership.organizationId)
     .eq("id", payload.campaignId)
     .maybeSingle();
   if (campaignError || !campaign) {
     return NextResponse.json({ success: false, message: "Campaign not found." }, { status: 404 });
+  }
+  if (campaign.status !== "active") {
+    return NextResponse.json({ success: false, message: "This campaign is not active yet." }, { status: 403 });
   }
 
   const parsedWorkflow = campaignWorkflowConfigV1Schema.safeParse(campaign.campaign_workflow);

@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import ProductCatalogSelector from "@/components/admin/ProductCatalogSelector";
+import CampaignActivationBlocked, { type ActivationBlockedReason } from "@/components/campaigns/CampaignActivationBlocked";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -49,10 +50,11 @@ export default function EditCampaignPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [users, setUsers] = useState<OrgUser[]>([]);
+  const [activationBlockedReason, setActivationBlockedReason] = useState<ActivationBlockedReason | null>(null);
 
   const [name, setName] = useState("");
   const [campaignType, setCampaignType] = useState("");
-  const [status, setStatus] = useState<"draft" | "active" | "completed">("draft");
+  const [status, setStatus] = useState<"draft" | "active" | "completed" | "archived" | "cancelled">("draft");
   const [stateName, setStateName] = useState("");
   const [selectedSupervisorIds, setSelectedSupervisorIds] = useState<string[]>([]);
   const [startDate, setStartDate] = useState("");
@@ -127,7 +129,7 @@ export default function EditCampaignPage() {
       const campaign = campaignResult.campaign as Record<string, unknown>;
       setName((campaign.name as string) ?? "");
       setCampaignType((campaign.campaign_type as string) ?? "");
-      setStatus(((campaign.status as "draft" | "active" | "completed") ?? "draft"));
+      setStatus(((campaign.status as "draft" | "active" | "completed" | "archived" | "cancelled") ?? "draft"));
       setStateName((campaign.state as string) ?? "");
       setSelectedSupervisorIds(Array.isArray(campaign.supervisor_user_ids) ? (campaign.supervisor_user_ids as string[]) : []);
       setStartDate((campaign.start_date as string) ?? "");
@@ -176,6 +178,10 @@ export default function EditCampaignPage() {
   }, [campaignId]);
 
   async function save() {
+    if (startDate && endDate && endDate < startDate) {
+      toast.error("End date can't be before the start date.");
+      return;
+    }
     const parsedProducts = mapSelectedProductsToPayload(selectedProducts);
     const configuredFreeSamples = getConfiguredFreeSampleProducts(selectedProducts, freeSampleProductConfig);
     if (hasProductDrivenTask && parsedProducts.length === 0) {
@@ -304,6 +310,10 @@ export default function EditCampaignPage() {
     const result = await response.json();
     setSaving(false);
     if (!response.ok || !result.success) {
+      if (result.code === "commercial_activation_blocked") {
+        setActivationBlockedReason(result.reason as ActivationBlockedReason);
+        return;
+      }
       toast.error(result.message ?? "Failed to save campaign.");
       return;
     }
@@ -323,12 +333,36 @@ export default function EditCampaignPage() {
         <Button variant="outline" className="rounded-full" asChild><Link href={`/admin/campaigns/${campaignId}`}>Cancel</Link></Button>
       </div>
 
+      {status === "archived" ? (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+          This campaign is archived and read-only. Historical data, reports, and evidence remain fully accessible — editing is disabled.
+        </div>
+      ) : null}
+
       <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
         <section className="rounded-4xl bg-card p-6 shadow-sm ring-1 ring-border/60">
           <div className="mt-1 grid gap-5 md:grid-cols-2">
             <Field label="Campaign name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
             <Field label="Campaign type"><Select value={campaignType} onValueChange={setCampaignType}><SelectTrigger><SelectValue placeholder="Select campaign type" /></SelectTrigger><SelectContent>{campaignTypes.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select></Field>
-            <Field label="Status"><Select value={status} onValueChange={(v: "draft" | "active" | "completed") => setStatus(v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="draft">Draft</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="completed">Completed</SelectItem></SelectContent></Select></Field>
+            <Field label="Status">
+              <Select
+                value={status}
+                disabled={status === "archived"}
+                onValueChange={(v: "draft" | "active" | "completed") => setStatus(v)}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  {/* Archived/cancelled are set by the retention scheduler or a super admin, never
+                      picked manually here — shown only so an already-archived campaign doesn't
+                      render an empty/invalid select. */}
+                  {status === "archived" ? <SelectItem value="archived" disabled>Archived</SelectItem> : null}
+                  {status === "cancelled" ? <SelectItem value="cancelled" disabled>Cancelled</SelectItem> : null}
+                </SelectContent>
+              </Select>
+            </Field>
             <Field label="Assigned supervisors">
               <div className="rounded-2xl border border-border/70 p-3">
                 {supervisors.length === 0 ? (
@@ -481,9 +515,14 @@ export default function EditCampaignPage() {
         </section>
 
         <div className="flex justify-end gap-2">
-          <Button className="rounded-full px-6" disabled={saving} onClick={save}>{saving ? "Saving..." : "Save Changes"}</Button>
+          <Button className="rounded-full px-6" disabled={saving || status === "archived"} onClick={save}>{saving ? "Saving..." : "Save Changes"}</Button>
         </div>
       </form>
+
+      <CampaignActivationBlocked
+        reason={activationBlockedReason}
+        onOpenChange={(open) => { if (!open) setActivationBlockedReason(null); }}
+      />
     </div>
   );
 }
