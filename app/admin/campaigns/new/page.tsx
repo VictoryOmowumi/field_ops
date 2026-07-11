@@ -115,7 +115,7 @@ export default function NewCampaignPage() {
       const { data } = await supabaseClient.auth.getSession();
       const token = data.session?.access_token;
       if (!token) return;
-      const response = await fetch("/api/admin/users", { headers: { Authorization: `Bearer ${token}` } });
+      const response = await fetch("/api/admin/users?pageSize=all", { headers: { Authorization: `Bearer ${token}` } });
       const result = (await response.json()) as {
         success: boolean;
         users?: Array<{ id: string; name: string; role: string }>;

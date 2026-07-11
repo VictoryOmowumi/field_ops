@@ -115,7 +115,7 @@ export default function EditCampaignPage() {
 
       const [campaignRes, usersRes] = await Promise.all([
         fetch(`/api/admin/campaigns/${campaignId}`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch("/api/admin/users", { headers: { Authorization: `Bearer ${token}` } }),
+        fetch("/api/admin/users?pageSize=all", { headers: { Authorization: `Bearer ${token}` } }),
       ]);
       const campaignResult = await campaignRes.json();
       const usersResult = await usersRes.json();
