@@ -6,6 +6,8 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { captureException } from "@/lib/observability/sentry";
 import { recordSystemEvent } from "@/lib/observability/system-events";
 import { withPerformanceTracking } from "@/lib/observability/performance";
+import { mapWorkflowOutcomeToVisitOutcome } from "@/lib/workflow";
+import type { VisitOutcomeCode } from "@/types/workflow";
 
 // "photo" is deliberately not a valid entityType here — evidence bytes never travel through
 // this JSON batch endpoint (see lib/offline/sync.ts's syncPhotoRecord, which uploads them via
@@ -54,6 +56,9 @@ async function syncBatch(
       if (item.entityType === "outlet") {
         const payload = {
           ...item.payload,
+          // Reaching the server is what "synced" means. The client queues offline records as
+          // "pending", so copying its value through would leave them pending forever.
+          sync_status: "synced",
           organization_id: membership.organizationId,
           created_by: user.id,
         };
@@ -100,11 +105,14 @@ async function syncBatch(
           continue;
         }
 
+        // Offline visits are queued with outcome "pending"; derive the real outcome from the
+        // outcome code the same way the online path does (POST /api/agent/visits).
+        const outcomeCode = rawPayload.visit_outcome_code ? (String(rawPayload.visit_outcome_code) as VisitOutcomeCode) : null;
         const payload = {
           id: rawPayload.id,
           campaign_id: rawPayload.campaign_id,
           outlet_id: outletId,
-          outcome: rawPayload.outcome ?? null,
+          outcome: outcomeCode ? mapWorkflowOutcomeToVisitOutcome(outcomeCode) : (rawPayload.outcome ?? null),
           task_type: rawPayload.task_type ?? null,
           task_payload: rawPayload.task_payload ?? null,
           visit_outcome_code: rawPayload.visit_outcome_code ?? null,
@@ -114,7 +122,7 @@ async function syncBatch(
           latitude: rawPayload.latitude ?? null,
           longitude: rawPayload.longitude ?? null,
           location_accuracy: rawPayload.location_accuracy ?? null,
-          sync_status: rawPayload.sync_status ?? "synced",
+          sync_status: "synced",
           organization_id: membership.organizationId,
           agent_id: user.id,
         };

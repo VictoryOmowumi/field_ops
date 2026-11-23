@@ -1,0 +1,77 @@
+# Replaces the two high-frequency Vercel crons. GitHub only fires `schedule` triggers from the
+# repository's DEFAULT branch, so this file must be merged there before it runs on its own.
+#
+# This repository is PUBLIC, so Actions logs are public. Print only the HTTP status code: never
+# the response body, the URL or the secret. curl runs without -S and without -v for that reason.
+name: Scheduled jobs
+
+on:
+  schedule:
+    - cron: "*/30 * * * *" # monitoring checks
+    - cron: "17 * * * *" # evidence migration
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  monitoring-checks:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '*/30 * * * *'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    concurrency:
+      group: scheduled-monitoring-checks
+      cancel-in-progress: false
+    steps:
+      - name: Call monitoring checks
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          INTERNAL_MONITORING_SECRET: ${{ secrets.INTERNAL_MONITORING_SECRET }}
+          ENDPOINT_PATH: /api/internal/monitoring/checks
+          MAX_TIME_SECONDS: "120"
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_URL:-}" ] || [ -z "${INTERNAL_MONITORING_SECRET:-}" ]; then
+            echo "::error::A required GitHub secret is not set."
+            exit 1
+          fi
+          code=$(printf 'Authorization: Bearer %s\n' "$INTERNAL_MONITORING_SECRET" \
+            | curl -s -o /dev/null -w '%{http_code}' --max-time "$MAX_TIME_SECONDS" -H @- "${APP_URL%/}${ENDPOINT_PATH}" 2>/dev/null) || true
+          code="${code:-000}"
+          echo "HTTP status: $code"
+          case "$code" in
+            2??) ;;
+            *) echo "::error::Request failed with HTTP status $code"; exit 1 ;;
+          esac
+
+  evidence-migration:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 * * * *'
+    runs-on: ubuntu-24.04
+    # The endpoint's maxDuration is 180 seconds.
+    timeout-minutes: 5
+    concurrency:
+      group: scheduled-evidence-migration
+      cancel-in-progress: false
+    steps:
+      - name: Call evidence migration
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          INTERNAL_MONITORING_SECRET: ${{ secrets.INTERNAL_MONITORING_SECRET }}
+          ENDPOINT_PATH: /api/internal/storage/migration
+          MAX_TIME_SECONDS: "200"
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_URL:-}" ] || [ -z "${INTERNAL_MONITORING_SECRET:-}" ]; then
+            echo "::error::A required GitHub secret is not set."
+            exit 1
+          fi
+          code=$(printf 'Authorization: Bearer %s\n' "$INTERNAL_MONITORING_SECRET" \
+            | curl -s -o /dev/null -w '%{http_code}' --max-time "$MAX_TIME_SECONDS" -H @- "${APP_URL%/}${ENDPOINT_PATH}" 2>/dev/null) || true
+          code="${code:-000}"
+          echo "HTTP status: $code"
+          case "$code" in
+            2??) ;;
+            *) echo "::error::Request failed with HTTP status $code"; exit 1 ;;
+          esac

@@ -11,12 +11,13 @@ export type MigrationItemResult = {
 };
 
 export type MediaMigrationSummary = {
-  jobId: string;
+  jobId: string | null;
   mode: "dry_run" | "live";
   candidateCount: number;
   migratedCount: number;
   failedCount: number;
   items: MigrationItemResult[];
+  skipped?: boolean;
 };
 
 const DEFAULT_BATCH_SIZE = 25;
@@ -36,9 +37,26 @@ export async function runMediaMigrationBatch(opts: {
   mode: "dry_run" | "live";
   batchSize?: number;
   actorUserId?: string;
+  /** Scheduled runs only: when nothing qualifies, return without writing a job or audit row. */
+  skipWhenEmpty?: boolean;
 }): Promise<MediaMigrationSummary> {
   const supabase = createServerSupabaseClient();
   const batchSize = opts.batchSize ?? DEFAULT_BATCH_SIZE;
+
+  if (opts.skipWhenEmpty) {
+    // Must use the same filters as the candidate query below.
+    const { count, error: countError } = await supabase
+      .from("visit_evidence")
+      .select("id, campaigns!inner(status)", { head: true, count: "exact" })
+      .eq("storage_provider", "supabase")
+      .eq("archive_status", "hot")
+      .is("deleted_at", null)
+      .eq("campaigns.status", "archived");
+    if (countError) throw new Error(countError.message);
+    if (count === 0) {
+      return { jobId: null, mode: opts.mode, candidateCount: 0, migratedCount: 0, failedCount: 0, items: [], skipped: true };
+    }
+  }
 
   const { data: job, error: jobError } = await supabase
     .from("evidence_migration_jobs")

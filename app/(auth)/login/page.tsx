@@ -32,6 +32,19 @@ const phoneLoginSchema = z.object({
 type LoginValues = z.infer<typeof loginSchema>;
 type PhoneLoginValues = z.infer<typeof phoneLoginSchema>;
 
+const GET_SESSION_TIMEOUT_MS = 6000;
+const COMPLETE_SIGN_IN_TIMEOUT_MS = 15000;
+
+class LoginTimeoutError extends Error {}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new LoginTimeoutError()), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 type AuthContextResponse = {
   success: boolean;
   user?: {
@@ -144,23 +157,40 @@ function LoginPageContent() {
   }
 
   useEffect(() => {
-    async function init() {
-      const { data } = await supabaseClient.auth.getSession();
-      const session = data.session;
-      if (!session) {
-        setCheckingSession(false);
-        return;
-      }
+    let cancelled = false;
 
-      const result = await completeSignIn(session.user, session);
-      if (!result.ok) {
+    async function init() {
+      let verifyingSession = false;
+      try {
+        const { data } = await withTimeout(supabaseClient.auth.getSession(), GET_SESSION_TIMEOUT_MS);
+        if (cancelled) return;
+        const session = data.session;
+        if (!session) {
+          setCheckingSession(false);
+          return;
+        }
+
+        verifyingSession = true;
+        const result = await withTimeout(completeSignIn(session.user, session), COMPLETE_SIGN_IN_TIMEOUT_MS);
+        if (cancelled) return;
+        if (!result.ok) {
+          setCheckingSession(false);
+          if (result.message) toast.error(result.message);
+          return;
+        }
+      } catch (error) {
+        if (cancelled) return;
         setCheckingSession(false);
-        if (result.message) toast.error(result.message);
-        return;
+        if (verifyingSession && error instanceof LoginTimeoutError) {
+          toast.error("We couldn't verify your session in time. Please sign in again.");
+        }
       }
     }
 
     void init();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nextPath, orgSlug, router]);
 
