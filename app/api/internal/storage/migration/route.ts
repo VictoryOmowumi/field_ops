@@ -7,20 +7,20 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 // Batch tuned for Vercel Pro: ~1.5s/item observed in practice (download + double-checksum + R2
 // upload + verify + 3 row writes), so 100 items comfortably fits inside maxDuration with room
-// for network variance. This cron runs every few minutes (see vercel.json) rather than once a
-// day — at 25/day a large campaign's backlog would take years; at this pace it clears in hours.
+// for network variance. Runs hourly from GitHub Actions (.github/workflows/scheduled-jobs.yml),
+// and an idle run exits after one count query without writing a job or audit row.
 export const maxDuration = 180;
 const BATCH_SIZE = 100;
 
-// Cron-triggered (see vercel.json). Same guardrail pattern as /api/internal/campaigns/archive —
+// Triggered by GitHub Actions. Same guardrail pattern as /api/internal/campaigns/archive —
 // the flag decides live vs. dry_run, never the caller.
 export async function GET(request: NextRequest) {
   if (!isInternalRequestAuthorized(request)) {
     return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
   }
 
-  // Now that this fires every few minutes instead of once a day, a prior invocation could still
-  // legitimately be mid-batch — or it could have been killed by a platform timeout without ever
+  // A prior invocation (scheduled or manual) could still legitimately be mid-batch — or it could
+  // have been killed by a platform timeout without ever
   // reaching its own "completed"/"failed" update. A job older than maxDuration plus a buffer
   // can't still be genuinely running, so treat it as abandoned rather than letting one stuck row
   // block every future run.
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
 
   const storageEnabled = await getPlatformSettingValue("commercial.storage.enabled");
   const mode = storageEnabled === "true" ? "live" : "dry_run";
-  const summary = await runMediaMigrationBatch({ mode, batchSize: BATCH_SIZE });
+  const summary = await runMediaMigrationBatch({ mode, batchSize: BATCH_SIZE, skipWhenEmpty: true });
 
   return NextResponse.json({ success: true, ranAt: new Date().toISOString(), ...summary });
 }
