@@ -83,14 +83,16 @@ jobs:
             echo "::error::Encryption failed."
             exit 1
           fi
-          if ! gpg --batch --quiet --pinentry-mode loopback --passphrase-fd 3 \
-            --decrypt "$work/$name.gpg" 3<<<"$BACKUP_PASSPHRASE" 2>/dev/null \
-            | "$bin/pg_restore" --list >/dev/null 2>&1; then
+          # Decrypt to a file: piping into pg_restore --list breaks the pipe when it stops reading.
+          if ! gpg --batch --yes --quiet --pinentry-mode loopback --passphrase-fd 3 \
+            --output "$work/verify.dump" --decrypt "$work/$name.gpg" \
+            3<<<"$BACKUP_PASSPHRASE" >/dev/null 2>&1 \
+            || ! cmp -s "$work/$name" "$work/verify.dump"; then
             echo "::error::The encrypted file failed its decryption check."
             exit 1
           fi
 
-          rm -f "$work/$name"
+          rm -f "$work/$name" "$work/verify.dump"
           echo "BACKUP_FILE=$name.gpg" >> "$GITHUB_ENV"
           echo "Encrypted backup created."
 
