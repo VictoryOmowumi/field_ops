@@ -16,3 +16,4 @@ Database Rules
 - Never execute destructive SQL against production.
 - Never run DELETE, DROP, TRUNCATE, or mass UPDATE statements without explicit approval.
 - Treat production data as read-only unless specifically instructed.
+
